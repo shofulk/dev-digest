@@ -91,7 +91,8 @@ flowchart TB
 | Var | Default | Notes |
 |-----|---------|-------|
 | `DATABASE_URL` | `postgres://devdigest:devdigest@localhost:5432/devdigest` | required to migrate/serve |
-| `API_PORT` / `WEB_PORT` | `3001` / `3000` | API port; `WEB_PORT` also sets the allowed CORS origin |
+| `DEVDIGEST_PG_PORT` | `5432` | host port the Dockerized Postgres publishes; read by `scripts/dev.sh` (compose mapping + derived `DATABASE_URL`). Change it when 5432 is taken, and keep `DATABASE_URL` in sync |
+| `API_PORT` / `WEB_PORT` | `3001` / `3000` | API port; `WEB_PORT` also sets the allowed CORS origin (`http://localhost:$WEB_PORT`) and the port `client`'s `pnpm dev` listens on — `scripts/dev.sh` exports one value to both |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | — | optional, per-provider; also settable via Settings UI |
 | `GITHUB_TOKEN` | — | optional; PAT with repo scope (`GITHUB_PAT` accepted as a fallback) |
 | `EMBEDDINGS_ENABLED` | `false` | memory/RAG embeddings (OpenAI); off → **zero** OpenAI calls |
