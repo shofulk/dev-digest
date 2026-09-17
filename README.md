@@ -153,8 +153,17 @@ Postgres); everything else is hermetic. The browser e2e flows live in
 
 - **`relation ... does not exist` / API errors on first run** — migrations weren't
   applied. The server does **not** migrate on boot: run `cd server && pnpm db:migrate`.
-- **Port 5432 already in use** — another Postgres is running. Stop it, or change the
-  host port in `docker-compose.yml`.
+- **Port 5432 already in use** — another Postgres is running. Pick a free host port
+  instead of stopping it: `DEVDIGEST_PG_PORT=5435 ./scripts/dev.sh`, or persist it
+  with `DEVDIGEST_PG_PORT=5435` in `server/.env` (keep `DATABASE_URL` there in sync
+  so `pnpm --dir server dev` hits the same port). `dev.sh` passes the port to
+  compose, derives `DATABASE_URL` from it, and recreates the container if an
+  existing one publishes a different port.
+- **Port 3000 already in use** — another dev server has it. Run the web app
+  elsewhere: `WEB_PORT=3002 ./scripts/dev.sh`, or persist `WEB_PORT` in
+  `client/.env`. `dev.sh` exports it to both sides, so the API's CORS allow-origin
+  follows the web port automatically; setting it only in `client/.env` while
+  starting the API some other way gives a CORS error instead.
 - **`vector` type errors** — the pgvector extension is enabled by migration `0000`;
   make sure migrations ran against the Dockerized DB, not a different one.
 - **Reset everything** — `docker compose down -v` drops the volume, then re-run
