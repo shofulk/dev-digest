@@ -112,6 +112,31 @@ Dated summaries of sessions worth remembering as a whole.
 
 <!-- newest first: session-notes -->
 
+### 2026-09-17 — findings by severity, from the PR header to the PR list
+
+Built the L01 findings surfaces in one session, client-first and then server: severity
+counters with click-to-filter in the PR header (`?severity=` in the URL, `visibleFindings`
+as the single filter point), then the FINDINGS column on the PR list with a lazily-fetched
+popover per severity. Specs written before the code
+(`client/.spec/severity-counters.spec.md`, `client/.spec/findings-column.spec.md`).
+
+Four things worth carrying forward, each written up in the package files:
+
+- The first **runtime** import from the `@devdigest/shared` barrel broke `next dev` on every
+  route while `typecheck` and vitest stayed green — import the contract file directly
+  (`client/INSIGHTS.md`). Corollary, and the reason this session cost more than it should:
+  green tests do not prove the app boots. Load one route.
+- A popover in the PR list must be `position: fixed` (the list card clips it) — and must
+  **not** close on `scroll`, which was my own first answer and broke its inner scrolling
+  (`client/INSIGHTS.md`, with the superseding entry).
+- `findings` carries no `workspace_id`, so every aggregation over it joins `reviews` for
+  tenancy; neither FK column was indexed (`server/INSIGHTS.md`).
+- `git log --all --grep` found a previous, reverted implementation of the same column
+  (`97b6edc`) whose server diff was a ready-made reference for the aggregation idiom — the
+  habit the existing `server/INSIGHTS.md` entry recommends, paying off on the first try.
+
+**Evidence:** `client/.spec/findings-column.spec.md`
+
 ## Open Questions
 
 Things left unresolved, so the next session does not re-derive the same uncertainty.

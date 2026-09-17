@@ -7,7 +7,7 @@
 
 import React from "react";
 import { Icon, Badge } from "@devdigest/ui";
-import type { ReviewRecord, Verdict } from "@devdigest/shared";
+import type { ReviewRecord, Severity, Verdict } from "@devdigest/shared";
 import { formatCost } from "@/lib/format-cost";
 import { FindingsPanel } from "../FindingsPanel";
 import { VerdictBanner } from "../VerdictBanner";
@@ -33,6 +33,7 @@ export function ReviewRunAccordion({
   costUsd = null,
   targetRunId = null,
   targetNonce = 0,
+  severity = null,
 }: {
   review: ReviewRecord;
   prId: string;
@@ -45,6 +46,9 @@ export function ReviewRunAccordion({
    *  (driven from the Timeline: clicking an agent name navigates here). */
   targetRunId?: string | null;
   targetNonce?: number;
+  /** Severity filter for the body's list. The header counts below stay unfiltered — they
+   *  describe what this run found, not what is currently on screen. */
+  severity?: Severity | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -156,6 +160,7 @@ export function ReviewRunAccordion({
           )}
           <FindingsPanel
             findings={findings}
+            severity={severity}
             prId={prId}
             repoFullName={repoFullName}
             headSha={headSha}

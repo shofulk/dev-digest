@@ -42,6 +42,25 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-17 — `findings` has no `workspace_id`, so every aggregation over it must join `reviews` — and neither FK column is indexed
+
+`findings` hangs off `reviews` and carries no tenancy column of its own
+(`server/src/db/schema/reviews.ts`), so a query keyed on `findings.review_id` alone is
+*unscoped*: correct only as long as the review ids were already filtered. For anything
+per-PR (the list's severity tally) the shape is
+`.from(t.findings).innerJoin(t.reviews, eq(t.findings.reviewId, t.reviews.id)).where(and(eq(t.reviews.workspaceId, workspaceId), inArray(t.reviews.prId, prIds)))`
+— the join is the tenancy check, not an optimisation. A cross-workspace fixture in the
+`.it.test.ts` is the only thing that catches getting this wrong; the single-workspace seed
+never will.
+
+Second half: Postgres does not index FK columns, and neither `reviews.pr_id` nor
+`findings.review_id` had an index — every such read seq-scanned both tables. Added
+`reviews_pr_idx` / `findings_review_idx` following the `agent_runs_pr_idx` precedent
+(`schema/runs.ts`), i.e. in the `pgTable` extras callback plus `pnpm db:generate`, never a
+hand-written migration.
+
+**Evidence:** `server/src/modules/pulls/routes.ts:161`
+
 ### 2026-09-17 — a "missing" feature is often a feature that was surgically removed; find the removal commit before writing anything
 
 `README.md`'s "What you build in the course" table lists features deliberately carved out

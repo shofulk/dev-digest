@@ -9,6 +9,10 @@ import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { deriveReviewStatus } from './status.js';
 
+/** Per-severity finding tally carried by each PrMeta on the list endpoint. */
+type SeverityTally = NonNullable<PrMeta['findings_by_severity']>;
+const emptyTally = (): SeverityTally => ({ CRITICAL: 0, WARNING: 0, SUGGESTION: 0 });
+
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
  *   GET /repos/:id/pulls → list PRs for a repo (open + recently merged/closed,
@@ -113,8 +117,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
 
     // Latest-review SCORE per PR for the list's score ring. Computed on read
     // from reviews (no FK denorm); the list is small, so one IN-query + JS
-    // grouping is cheap. (The per-severity FINDINGS breakdown is intentionally
-    // not surfaced on the list — findings live on the PR detail page.)
+    // grouping is cheap.
     const prIds = rows.map((r) => r.id);
     const latestReviewByPr = new Map<string, { score: number | null }>();
     if (prIds.length > 0) {
@@ -148,6 +151,32 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       }
     }
 
+    // Per-severity FINDINGS counts per PR for the list's findings column. Summed
+    // over EVERY review of the PR — the same rule the PR header's counters use,
+    // so a PR's numbers never differ between the list and its detail page (the
+    // price is that re-reviewing the same problem counts it twice). `findings`
+    // has no workspace_id of its own, so tenancy comes from the join to
+    // `reviews`; and unlike the score above this is NOT filtered by kind,
+    // because /pulls/:id/reviews (what the detail page reads) isn't either.
+    const findingsByPr = new Map<string, SeverityTally>();
+    if (prIds.length > 0) {
+      const findingRows = await container.db
+        .select({ prId: t.reviews.prId, severity: t.findings.severity })
+        .from(t.findings)
+        .innerJoin(t.reviews, eq(t.findings.reviewId, t.reviews.id))
+        .where(and(eq(t.reviews.workspaceId, workspaceId), inArray(t.reviews.prId, prIds)));
+      for (const f of findingRows) {
+        let tally = findingsByPr.get(f.prId);
+        if (!tally) {
+          tally = emptyTally();
+          findingsByPr.set(f.prId, tally);
+        }
+        // `severity` is a plain text column, so a value outside the contract
+        // enum is ignored rather than inventing a fourth bucket.
+        if (f.severity in tally) tally[f.severity as keyof SeverityTally] += 1;
+      }
+    }
+
     const now = Date.now();
     return rows.map((r) => {
       const review = latestReviewByPr.get(r.id);
@@ -173,6 +202,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         updated_at: r.updatedAt?.toISOString() ?? null,
         score: review ? review.score : null,
         cost_usd: costByPr.get(r.id) ?? null,
+        findings_by_severity: findingsByPr.get(r.id) ?? emptyTally(),
       };
     });
   });

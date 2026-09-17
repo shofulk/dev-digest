@@ -6,7 +6,7 @@ import { RunStatus } from "../RunStatus";
 import { RunHistory } from "../RunHistory/RunHistory";
 import { ReviewRunAccordion } from "../ReviewRunAccordion";
 import { s } from "./styles";
-import type { FindingRecord, ReviewRecord, RunSummary, PrCommit } from "@devdigest/shared";
+import type { FindingRecord, ReviewRecord, RunSummary, PrCommit, Severity } from "@devdigest/shared";
 import type { UseMutationResult } from "@tanstack/react-query";
 
 interface FindingsTabProps {
@@ -14,6 +14,8 @@ interface FindingsTabProps {
   liveRunIds: string[];
   reviewRunning: boolean;
   lethalTrifecta: FindingRecord[];
+  /** Severity the findings lists are filtered on, or null for all of them. */
+  severity: Severity | null;
   runs: ReviewRecord[];
   prRuns: RunSummary[] | undefined;
   prCommits: PrCommit[];
@@ -31,6 +33,7 @@ export function FindingsTab({
   liveRunIds,
   reviewRunning,
   lethalTrifecta,
+  severity,
   runs,
   prRuns,
   prCommits,
@@ -47,6 +50,17 @@ export function FindingsTab({
   const costByRunId = React.useMemo(
     () => new Map((prRuns ?? []).map((r) => [r.run_id, r.cost_usd])),
     [prRuns],
+  );
+
+  // Which accordion opens by default: with a filter on, the first run that actually has a
+  // finding of that severity — otherwise a shared ?severity= link can open on a run whose
+  // body is empty. -1 (no run matches) simply leaves every accordion collapsed.
+  const firstOpenIdx = React.useMemo(
+    () =>
+      severity
+        ? runs.findIndex((r) => r.findings.some((f) => f.severity === severity))
+        : 0,
+    [runs, severity],
   );
 
   const handleCancelAll = useCallback(() => {
@@ -167,7 +181,8 @@ export function FindingsTab({
             key={review.id}
             review={review}
             prId={prId}
-            defaultOpen={i === 0}
+            defaultOpen={i === firstOpenIdx}
+            severity={severity}
             repoFullName={repoFullName}
             headSha={headSha}
             targetRunId={target?.runId ?? null}

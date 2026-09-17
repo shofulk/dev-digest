@@ -31,6 +31,17 @@
     "noMatchTitle": "No findings match",
     "noMatchBody": "Adjust the filters above, or run a review to generate findings."
   },
+  "severityFilter": {
+    "groupLabel": "Filter findings by severity",
+    "level": {
+      "CRITICAL": "critical",
+      "WARNING": "warning",
+      "SUGGESTION": "suggestion"
+    },
+    "select": "Show only {count} {level} findings",
+    "clear": "Clear the {level} filter",
+    "none": "No {level} findings"
+  },
   "runReview": {
     "runAll": "Run all enabled agents",
     "configureAgents": "Configure agents…",
@@ -91,6 +102,7 @@
       "author": "Author",
       "size": "Size",
       "score": "Score",
+      "findings": "Findings",
       "status": "Status",
       "cost": "Cost",
       "updated": "Updated"
@@ -100,7 +112,16 @@
     "errorBody": "The engine returned an error.",
     "emptyTitle": "No pull requests",
     "emptyAllBody": "No open PRs found for this repo yet. Refresh to sync from GitHub.",
-    "emptyStatusBody": "No PRs with status “{status}”."
+    "emptyStatusBody": "No PRs with status “{status}”.",
+    "findings": {
+      "never": "Not reviewed yet",
+      "clean": "No findings",
+      "popoverTitle": "{count} {level} findings",
+      "loading": "Loading findings…",
+      "emptyTitle": "No findings at this level",
+      "emptyBody": "They may have come from a run that was deleted since.",
+      "openInPr": "Open in PR"
+    }
   },
   "timeline": {
     "goToReview": "Jump to this run’s findings below",

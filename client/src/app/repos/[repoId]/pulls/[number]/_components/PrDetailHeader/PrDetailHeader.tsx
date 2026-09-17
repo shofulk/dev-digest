@@ -3,7 +3,9 @@
 import React, { useCallback } from "react";
 import { Icon, Avatar, Badge, Button, Tabs } from "@devdigest/ui";
 import { RunReviewDropdown } from "../RunReviewDropdown";
+import { SeverityCounters, type SeverityCounts } from "@/components/severity-counters";
 import { s } from "./styles";
+import type { Severity } from "@devdigest/shared";
 import type { PrDetail } from "@/lib/types";
 
 interface PrDetailHeaderProps {
@@ -11,9 +13,14 @@ interface PrDetailHeaderProps {
   prId: string | null;
   tab: string;
   findingsCount: number;
+  /** Findings per severity across every run of this PR — the counter row's numbers. */
+  severityCounts: SeverityCounts;
+  /** The severity the page is filtered on, or null for all findings. */
+  activeSeverity: Severity | null;
   /** github.com PR URL; null when the repo's full_name isn't known yet. */
   githubUrl?: string | null;
   onSetTab: (tab: string) => void;
+  onSelectSeverity: (severity: Severity | null) => void;
   onRunStart: () => void;
   onRunsStarted: () => void;
 }
@@ -23,8 +30,11 @@ export function PrDetailHeader({
   prId,
   tab,
   findingsCount,
+  severityCounts,
+  activeSeverity,
   githubUrl,
   onSetTab,
+  onSelectSeverity,
   onRunStart,
   onRunsStarted,
 }: PrDetailHeaderProps) {
@@ -99,6 +109,11 @@ export function PrDetailHeader({
           )}
         </div>
       </div>
+      <SeverityCounters
+        counts={severityCounts}
+        active={activeSeverity}
+        onSelect={onSelectSeverity}
+      />
       {(pr.status === "merged" || pr.status === "closed") && (
         <div style={s.staleBanner}>
           <Icon.AlertTriangle size={13} style={{ color: "var(--warn)", flexShrink: 0 }} />

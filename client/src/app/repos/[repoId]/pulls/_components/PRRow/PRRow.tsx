@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl";
 import { Icon, Avatar, Badge, CircularScore } from "@devdigest/ui";
 import type { PrMeta } from "@/lib/types";
 import { SIZE_COLOR, STATUS_META } from "../../constants";
+import { FindingsCell } from "../FindingsCell";
 import { formatCost, NO_COST } from "@/lib/format-cost";
 import { relativeTime, sizeOf } from "../../helpers";
 import { s } from "../../styles";
@@ -53,6 +54,9 @@ export function PRRow({ pr, repoId }: { pr: PrMeta; repoId: string }) {
         ) : (
           <span style={s.muted}>—</span>
         )}
+      </div>
+      <div style={s.findingsCell}>
+        <FindingsCell pr={pr} repoId={repoId} />
       </div>
       <div>
         <Badge dot color={st.c} bg="transparent">
