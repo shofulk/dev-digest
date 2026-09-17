@@ -62,6 +62,12 @@ export const RunStats = z.object({
   duration_ms: z.number().int(),
   tokens_in: z.number().int(),
   tokens_out: z.number().int(),
+  /**
+   * Run cost in USD; null when the model is unpriced.
+   * NULLISH, not nullable: a RunTrace is replayed verbatim from the run_traces
+   * jsonb blob, and every trace persisted while cost was absent has no such key.
+   */
+  cost_usd: z.number().nullish(),
   findings: z.number().int(),
   grounding: z.string(),
 });
@@ -102,6 +108,8 @@ export const RunSummary = z.object({
   duration_ms: z.number().int().nullable(),
   tokens_in: z.number().int().nullable(),
   tokens_out: z.number().int().nullable(),
+  /** Run cost in USD; null when the model is unpriced or the run never settled. */
+  cost_usd: z.number().nullable(),
   findings_count: z.number().int().nullable(),
   grounding: z.string().nullable(),
   ran_at: z.string().nullable(),

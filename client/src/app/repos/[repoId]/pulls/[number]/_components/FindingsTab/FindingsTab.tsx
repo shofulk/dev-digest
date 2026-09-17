@@ -41,6 +41,14 @@ export function FindingsTab({
   onDelete,
   onRunDone,
 }: FindingsTabProps) {
+  // Cost lives on the agent RUN, not on the review (reviews has no cost column),
+  // so the accordion header joins to the run the timeline already loaded —
+  // no extra request, and no second denormalization onto ReviewRecord.
+  const costByRunId = React.useMemo(
+    () => new Map((prRuns ?? []).map((r) => [r.run_id, r.cost_usd])),
+    [prRuns],
+  );
+
   const handleCancelAll = useCallback(() => {
     liveRunIds.forEach((id) => cancelMutation.mutate(id));
   }, [liveRunIds, cancelMutation]);
@@ -164,6 +172,7 @@ export function FindingsTab({
             headSha={headSha}
             targetRunId={target?.runId ?? null}
             targetNonce={target?.n ?? 0}
+            costUsd={costByRunId.get(review.run_id ?? "") ?? null}
           />
         ))
       )}
