@@ -8,6 +8,7 @@
 import React from "react";
 import { Icon, Badge } from "@devdigest/ui";
 import type { ReviewRecord, Verdict } from "@devdigest/shared";
+import { formatCost } from "@/lib/format-cost";
 import { FindingsPanel } from "../FindingsPanel";
 import { VerdictBanner } from "../VerdictBanner";
 import { useDeleteReview } from "../../../../../../../lib/hooks/reviews";
@@ -29,6 +30,7 @@ export function ReviewRunAccordion({
   defaultOpen = false,
   repoFullName,
   headSha,
+  costUsd = null,
   targetRunId = null,
   targetNonce = 0,
 }: {
@@ -37,6 +39,8 @@ export function ReviewRunAccordion({
   defaultOpen?: boolean;
   repoFullName?: string | null;
   headSha?: string | null;
+  /** Cost of the agent run behind this review; null when unpriced. */
+  costUsd?: number | null;
   /** When this matches review.run_id, the accordion opens and scrolls into view
    *  (driven from the Timeline: clicking an agent name navigates here). */
   targetRunId?: string | null;
@@ -103,6 +107,9 @@ export function ReviewRunAccordion({
             {review.score}
           </Badge>
         )}
+        <span className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {formatCost(costUsd)}
+        </span>
         <span className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {formatWhen(review.created_at)}
         </span>
