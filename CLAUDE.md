@@ -90,6 +90,10 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 - `.claude/skills/**` — vendored skills, tracked by `skills-lock.json`.
   First-party skills (`engineering-insights`) live there too and are edited here;
   they are **not** added to `skills-lock.json`.
+- `*/pnpm-lock.yaml` — generated, one per package (there is no workspace-root
+  lockfile). Never hand-edit and never hoist: change dependencies with
+  `pnpm --dir <pkg> add|remove` and commit the lockfile that run rewrites.
+  `skills-lock.json` is likewise written by the skills tooling, not by hand.
 
 ## Gotchas
 
