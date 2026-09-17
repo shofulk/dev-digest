@@ -170,6 +170,19 @@ export const PrMeta = z.object({
   updated_at: z.string().nullish(),
   // Latest-review score (list endpoint only; null/absent until reviewed).
   score: z.number().int().nullish(),
+  // Total cost of every agent run on this PR (list endpoint only, same as score:
+  // the GitHub adapters return PrMeta too and know nothing about cost).
+  cost_usd: z.number().nullish(),
+  // Findings per severity across EVERY review of the PR — the same total the PR
+  // header's counters show, so the two surfaces never disagree (list endpoint
+  // only; null/absent when the producer is a GitHub adapter).
+  findings_by_severity: z
+    .object({
+      CRITICAL: z.number().int(),
+      WARNING: z.number().int(),
+      SUGGESTION: z.number().int(),
+    })
+    .nullish(),
 });
 export type PrMeta = z.infer<typeof PrMeta>;
 

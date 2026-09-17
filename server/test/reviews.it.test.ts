@@ -208,6 +208,9 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(run!.status).toBe('done');
     expect(run!.findingsCount).toBe(1);
     expect(run!.grounding).toBe('1/2 passed');
+    // Cost survives the whole path: adapter → ReviewOutcome → agent_runs → trace.
+    expect(run!.costUsd).toBeCloseTo(0.001, 6);
+    expect(trace.stats.cost_usd).toBeCloseTo(0.001, 6);
 
     await app.close();
   });

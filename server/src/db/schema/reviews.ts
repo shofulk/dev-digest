@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, uuid, text, integer, jsonb, timestamp, doublePrecision } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, jsonb, timestamp, doublePrecision, index } from 'drizzle-orm/pg-core';
 import { now } from './_shared';
 import { workspaces } from './core';
 import { pullRequests } from './pulls';
@@ -23,7 +23,11 @@ export const reviews = pgTable('reviews', {
   score: integer('score'),
   model: text('model'),
   createdAt: now(),
-});
+}, (t) => ({
+  // The PR list counts findings per PR by joining through here; Postgres does
+  // not index a FK column on its own.
+  prIdx: index('reviews_pr_idx').on(t.prId),
+}));
 
 export const findings = pgTable('findings', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -43,7 +47,11 @@ export const findings = pgTable('findings', {
   trifectaComponents: jsonb('trifecta_components').$type<string[]>(),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }),
   dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
-});
+}, (t) => ({
+  // Findings are always read per review (the PR list's severity tally, the
+  // detail page's per-run lists); the FK alone gives no index.
+  reviewIdx: index('findings_review_idx').on(t.reviewId),
+}));
 
 export const prIntent = pgTable('pr_intent', {
   prId: uuid('pr_id')
