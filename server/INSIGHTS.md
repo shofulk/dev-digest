@@ -42,6 +42,19 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-20 — a file upload sent as base64 JSON is refused by Fastify's 1 MiB default long before the route's own size cap is reached
+
+`POST /skills/import/preview` takes `{ filename, content_base64 }` and caps a `.zip` at
+5 MiB — but Fastify's global `bodyLimit` is 1 MiB and base64 inflates by 4/3, so a real
+5 MiB archive is ~6.7 MiB on the wire and is rejected by the framework with a generic
+413 that never reaches the module's human-readable "too large" message. The route lifts
+its own limit (`bodyLimit` in the route options, 7 MiB) instead of raising the global one,
+so nothing else on the API accepts a large body. Any future route that carries a file as
+base64 needs the same per-route limit, sized as `cap * 4/3` plus JSON overhead; the
+in-code size check stays the source of the user-facing message.
+
+**Evidence:** `server/src/modules/skills/constants.ts:15`
+
 ### 2026-09-17 — `findings` has no `workspace_id`, so every aggregation over it must join `reviews` — and neither FK column is indexed
 
 `findings` hangs off `reviews` and carries no tenancy column of its own
