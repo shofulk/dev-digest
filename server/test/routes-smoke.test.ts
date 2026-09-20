@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
 import { MockGitHubClient, MockLLMProvider } from '../src/adapters/mocks.js';
@@ -62,6 +62,80 @@ describe('routes (no DB)', () => {
     });
     expect(res.statusCode).toBe(422);
     expect(res.json().error.code).toBe('validation_error');
+    await app.close();
+  });
+});
+
+describe('skills routes (no DB)', () => {
+  it('registers the skills routes: bad input is rejected at the edge, not 404', async () => {
+    const app = await buildApp({ config });
+    const cases: Array<{ method: 'GET' | 'POST' | 'PUT' | 'DELETE'; url: string; payload?: object }> = [
+      { method: 'GET', url: '/skills/not-a-uuid' },
+      { method: 'PUT', url: '/skills/not-a-uuid', payload: {} },
+      { method: 'DELETE', url: '/skills/not-a-uuid' },
+      { method: 'GET', url: '/skills/not-a-uuid/versions' },
+      { method: 'GET', url: '/skills/not-a-uuid/versions/1' },
+      { method: 'GET', url: '/skills/not-a-uuid/stats' },
+      { method: 'POST', url: '/skills/not-a-uuid/versions/1/restore' },
+      { method: 'POST', url: '/skills', payload: {} },
+      { method: 'POST', url: '/skills/import', payload: {} },
+      { method: 'POST', url: '/skills/import/preview', payload: {} },
+    ];
+    for (const c of cases) {
+      const res = await app.inject(c);
+      expect(res.statusCode, `${c.method} ${c.url}`).toBe(422);
+      expect(res.json().error.code).toBe('validation_error');
+    }
+    await app.close();
+  });
+
+  it('POST /skills/tokens counts with the injected tokenizer, and null when it throws', async () => {
+    const counting = await buildApp({ config, overrides: { tokenizer: { count: (t) => t.length } } });
+    const ok = await counting.inject({ method: 'POST', url: '/skills/tokens', payload: { body: 'abcd' } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ tokens: 4 });
+    await counting.close();
+
+    const broken = await buildApp({
+      config,
+      overrides: {
+        tokenizer: {
+          count: () => {
+            throw new Error('bpe unavailable');
+          },
+        },
+      },
+    });
+    const res = await broken.inject({ method: 'POST', url: '/skills/tokens', payload: { body: 'x' } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ tokens: null });
+    await broken.close();
+  });
+
+  it('POST /skills/import/preview turns a refusal into a 400 with a readable message', async () => {
+    const app = await buildApp({ config });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills/import/preview',
+      payload: { filename: 'notes.txt', content_base64: Buffer.from('hi').toString('base64') },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toMatch(/\.md/);
+    await app.close();
+  });
+
+  it('POST /skills/import/preview parses markdown without a database', async () => {
+    const app = await buildApp({ config });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/skills/import/preview',
+      payload: {
+        filename: 'rules.md',
+        content_base64: Buffer.from('# Rules\n\nBe kind.').toString('base64'),
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ name: 'Rules', description: 'Be kind.', source: 'imported_file' });
     await app.close();
   });
 });
