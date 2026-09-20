@@ -101,6 +101,39 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-09-20 — dependency-cruiser rules that look right never fire: pnpm paths and the tsconfig aliases both defeat anchored regexes
+
+Two resolution facts, each of which turns a rule into a silent no-op:
+
+1. pnpm resolves a package to `node_modules/.pnpm/<pkg>@<ver>/node_modules/<pkg>/index.js`,
+   so `to: { path: '^node_modules/zod/' }` matches nothing. Leave npm paths **unanchored**
+   (`'node_modules/zod/'`). A rule that matches nothing reports success, so this reads as
+   "architecture is clean" rather than as a broken rule.
+2. `@devdigest/shared` and `@devdigest/reviewer-core` are tsconfig path aliases, and
+   `tsConfig: { fileName: 'tsconfig.json' }` makes depcruise follow them. Consequence:
+   cruising `server/src` also pulls in `../reviewer-core/src/**` (11 modules), and
+   reviewer-core's own `@devdigest/shared` imports surface as `src/vendor/shared/**`. So any
+   rule phrased "nothing may import `^src/…`" fires on reviewer-core too, and a
+   purity rule for reviewer-core must carve `^src/vendor/shared/` back out via `pathNot`.
+
+**Evidence:** `server/.dependency-cruiser.cjs:128`
+
+### 2026-09-20 — `pnpm arch`: the architecture baseline is 0 errors / 17 warnings, and the warnings are the todo list
+
+`depcruise` is already a runtime dependency (it backs `src/adapters/depgraph`), so the
+layering check needed no install — only `server/.dependency-cruiser.cjs` and a `pnpm arch`
+script. Rule severities encode state, not opinion: `error` = clean today, `warn` = known
+violations, each named in an `OUTSTANDING` comment inside the rule. The 17 today are
+db/schema imported outside the persistence ring (8), cycles (5 — four are the
+`container.ts ↔ modules/repo-intel/service.ts` knot, since the container constructs the
+service while the service takes the container), adapters importing
+`modules/repo-intel/constants.ts` (2), and `modules/repos/service.ts` reaching into
+repo-intel (1). Raising a count is the regression signal; a rule goes to `error` in the
+commit that clears its last violation. Full rules and rationale: the `onion-architecture`
+skill.
+
+**Evidence:** `server/.dependency-cruiser.cjs:12`
+
 ## Recurring Errors & Fixes
 
 Errors seen more than once, each with the signal that identifies it.
