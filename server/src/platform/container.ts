@@ -1,6 +1,7 @@
 import type {
   AuthProvider,
   SecretsProvider,
+  SecretKey,
   GitHubClient,
   GitClient,
   CodeIndex,
@@ -27,6 +28,7 @@ import { AgentsRepository } from '../modules/agents/repository.js';
 import { ReviewRepository } from '../modules/reviews/repository.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
+import { RepoRepository } from '../modules/repos/repository.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 
@@ -53,6 +55,13 @@ export interface ContainerOverrides {
   tokenizer?: Tokenizer;
 }
 
+/** The secret each LLM provider is built from — see `Container.buildLlm`. */
+const LLM_SECRET: Record<'openai' | 'anthropic' | 'openrouter', SecretKey> = {
+  openai: 'OPENAI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
+};
+
 export class Container {
   readonly config: AppConfig;
   readonly db: Db;
@@ -72,6 +81,7 @@ export class Container {
   // `container.agentsRepo` instead of reaching into another module's folder.
   private _agentsRepo?: AgentsRepository;
   private _reviewRepo?: ReviewRepository;
+  private _reposRepo?: RepoRepository;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
@@ -98,6 +108,15 @@ export class Container {
 
   get reviewRepo(): ReviewRepository {
     return (this._reviewRepo ??= new ReviewRepository(this.db));
+  }
+
+  /**
+   * The `repos` table, shared. `modules/repos` owns it, but conventions (and
+   * anything else that needs owner/name to reach the clone) must not import
+   * another module's repository — the composition root hands it over instead.
+   */
+  get reposRepo(): RepoRepository {
+    return (this._reposRepo ??= new RepoRepository(this.db));
   }
 
   get codeIndex(): CodeIndex {
@@ -157,6 +176,23 @@ export class Container {
     if (!token) throw new ConfigError('GITHUB_TOKEN is not configured');
     this._github = new OctokitGitHubClient(token);
     return this._github;
+  }
+
+  /**
+   * Whether `id` can actually be called right now — an INJECTED provider (tests) or a
+   * non-empty key. Availability is the composition root's knowledge: it is the only thing
+   * that knows a mock is wired, and `buildLlm` below treats an empty key as absent, so the
+   * two must agree or a feature picks a provider that then throws.
+   */
+  async canUseLlm(id: 'openai' | 'anthropic' | 'openrouter'): Promise<boolean> {
+    // Injected providers REPLACE the real world rather than extending it. `dotenv/config`
+    // puts the developer's real keys into `process.env` for the test run too, so without
+    // this a feature that picks its provider by availability would skip the injected mock,
+    // build a real client and make a real paid call from the suite.
+    if (this.overrides.llm) return Boolean(this.overrides.llm[id]);
+    if (this.llmCache.has(id)) return true;
+    const key = await this.secrets.get(LLM_SECRET[id]).catch(() => undefined);
+    return Boolean(key);
   }
 
   /** Resolve an LLM provider by id; constructs from the secret key, cached. */
