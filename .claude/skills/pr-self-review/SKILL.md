@@ -23,14 +23,20 @@ step 8) · `--override "<reason>"` (record an exception, step 9) · `--quick` (s
 ```bash
 git fetch origin main --quiet                    # a stale base reviews a diff that no longer exists
 BASE=$(git merge-base HEAD origin/main)          # or the --base ref
-git diff --name-status $BASE                     # committed on the branch
+git diff --name-status $BASE HEAD                # committed on the branch
 git diff --name-status HEAD                      # unstaged
 git diff --name-status --cached                  # staged
 git ls-files --others --exclude-standard         # untracked — new files count
 ```
 
-Union of all four is the **file list**. Review input is `git diff -U15 $BASE` plus the full
-text of every untracked file. If the branch is >20 commits or >7 days behind the base, record
+`$BASE HEAD` is two arguments on purpose: `git diff $BASE` alone compares the base to the
+**working tree**, which on a shared checkout silently sweeps in whatever a concurrent
+session is editing right now (measured once: 83 files instead of 39).
+
+Union of all four is the **file list**. Review input is `git diff -U15 $BASE HEAD` plus the
+unstaged/staged diffs and the full text of every untracked file. **When the branch is
+already pushed and the run is gating a PR, review `$BASE HEAD` only** — the working tree is
+not in the PR, and judging it means judging someone else's unfinished work. If the branch is >20 commits or >7 days behind the base, record
 a **major** `stale-base`.
 
 Empty change set ⇒ stop, say so, write no state file.

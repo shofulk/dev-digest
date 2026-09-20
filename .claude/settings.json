@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/hooks/pr-gate.sh check",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pr-gate.sh check",
             "timeout": 15,
             "statusMessage": "pr-self-review gate"
           }

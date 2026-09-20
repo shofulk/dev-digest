@@ -92,14 +92,16 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
   `server/src/vendor/shared`.
 - `server/src/db/migrations/**` — generated. Change the schema, run `db:generate`.
 - `.claude/skills/**` — vendored skills, tracked by `skills-lock.json`.
-  First-party skills (`engineering-insights`) live there too and are edited here;
-  they are **not** added to `skills-lock.json`.
+  A skill absent from `skills-lock.json` is first-party (`engineering-insights`,
+  `onion-architecture`, `frontend-ui-architecture`, `pr-self-review`) — edit it here, and
+  never add it to the lockfile.
 - `*/pnpm-lock.yaml` — generated, one per package (there is no workspace-root
   lockfile). Never hand-edit and never hoist: change dependencies with
   `pnpm --dir <pkg> add|remove` and commit the lockfile that run rewrites.
   `skills-lock.json` is likewise written by the skills tooling, not by hand.
-- `CLAUDE.md` (root and every package) — a three-line shell whose only content is a
-  `@AGENTS.md` import, kept for Claude Code older than 2.1.277. Instructions live in
+- `CLAUDE.md` (root and every package) — a shell whose only instruction content is the
+  `@AGENTS.md` import, above it nothing but the pointer paragraph saying so; kept for
+  Claude Code older than 2.1.277. Instructions live in
   `AGENTS.md`, one per package plus the root; never duplicate them into `CLAUDE.md`,
   and never delete the shell.
 

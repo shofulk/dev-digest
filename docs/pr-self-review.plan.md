@@ -76,7 +76,7 @@ with the file list, and only spawns the buckets that actually matched.
 | **frontend** | `client/**` | `frontend-ui-architecture`, `react-best-practices`, `next-best-practices`, `vercel-react-best-practices` | `pnpm --dir client typecheck`, `lint`, `test` |
 | **frontend-tests** | `client/**/*.test.tsx?` | `react-testing-library` | — |
 | **backend-arch** | `server/src/**` | `onion-architecture` | `pnpm --dir server arch` (dependency-cruiser) |
-| **backend-http** | `server/src/modules/*/routes.ts`, `server/src/plugins/**`, `server/src/app.ts` | `fastify-best-practices` | — |
+| **backend-http** | `server/src/modules/*/routes.ts`, `server/src/app.ts`, `server/src/platform/sse.ts` | `fastify-best-practices` | — |
 | **backend-data** | `server/src/db/**`, `server/src/modules/*/repository*` | `drizzle-orm-patterns`, `postgresql-table-design` | `pnpm --dir server typecheck` |
 | **contracts** | `server/src/vendor/shared/**`, any `*.schema.ts` | `zod` | vendor-mirror diff (§5) |
 | **engine** | `reviewer-core/**` | `typescript-expert` | `pnpm --dir reviewer-core test` |
@@ -111,13 +111,13 @@ nothing to argue about:
 | `lint` (`pnpm --dir <pkg> lint`, eslint) for each touched package | **major**, **critical** if it fails to run at all |
 | `test` for each touched package (`*.it.test.ts` skipped when Docker is down — recorded, not silent) | **critical** |
 | `pnpm --dir server arch` — dependency-cruiser `error` rules | **critical** (`warn` rules → major) |
-| `server/src/db/migrations/**` edited by hand (no matching `schema.ts` change + `db:generate`) | **critical** |
+| `server/src/db/migrations/**` edited by hand (no matching `db/schema/**` change + `db:generate`) | **critical** |
 | `*/src/vendor/**` edited outside `server/src/vendor/shared` | **critical** |
 | vendor mirrors drifted from `server/src/vendor/shared` after a contracts change | **critical** |
 | `pnpm-lock.yaml` changed with no `package.json` change (hand edit / hoist), or a root lockfile appearing | **critical** |
 | any `CLAUDE.md` containing more than the `@AGENTS.md` shell, or a deleted shell | **critical** |
 | secret-shaped string in the diff (`sk-`, `ghp_`, `gho_`, PEM headers, `.env` values), or a secret written to DB/git | **critical** |
-| new table added to `db/schema.ts` (the schema already has every table) | **major**, critical if it duplicates an existing one |
+| new table added under `db/schema/**` (the schema already has every table) | **major**, critical if it duplicates an existing one |
 | grounding gate weakened in `reviewer-core` / findings path (a finding kept without a real diff line, or a score trusted from the model) | **critical** |
 | a new `src/modules/<name>/` not registered in `modules/index.ts` | **major** |
 | `.spec/<feature>.spec.md` exists for a touched feature and the diff contradicts it | **major** |
@@ -187,8 +187,8 @@ Gate state `.pr-review/<branch>.json`:
   lists the criticals as the fix list. The hook enforces it for `gh pr create|merge|ready`.
 - `verdict: pass` → the hook lets the PR command through.
 - New commit after a pass ⇒ `head` mismatch ⇒ the gate re-arms automatically.
-- **Override**: `/pr-self-review --override "<reason>"` writes `verdict: pass` with
-  `override` + the reason, and the reason is echoed into the PR body. Rare, explicit,
+- **Override**: `/pr-self-review --override "<reason>"` writes `verdict: "override"` with
+  the reason, and the reason is echoed into the PR body. Rare, explicit,
   auditable — a gate with no escape hatch gets deleted instead of used.
 
 ---
@@ -260,7 +260,7 @@ busywork. `/pr-self-review --fix` applies only the deterministic, reversible one
 | vendor mirror drift | copy `server/src/vendor/shared` → the mirrors |
 | migration edited by hand | revert the file, `db:generate` from the schema |
 | lockfile drift | `pnpm --dir <pkg> install --lockfile-only` |
-| `CLAUDE.md` shell broken | restore the three-line `@AGENTS.md` shell |
+| `CLAUDE.md` shell broken | restore the sanctioned shell (title + pointer paragraph + `@AGENTS.md`) |
 
 Never auto-fixes an LLM finding — those are proposals, not facts. After fixing it re-runs the
 pre-pass (§5) only, and prints exactly what it changed.

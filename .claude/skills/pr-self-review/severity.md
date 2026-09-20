@@ -15,14 +15,14 @@ touches. `<pkg>` is any of `server`, `client`, `reviewer-core`, `e2e`.
 | 2 | Lint | `pnpm --dir <pkg> lint` | **major** (**critical** if eslint cannot start) |
 | 3 | Tests | `pnpm --dir <pkg> test` | **critical** |
 | 4 | Backend rings | `pnpm --dir server arch` | **critical** on an `error` rule, **major** on `warn` |
-| 5 | Migrations | `server/src/db/migrations/**` changed without a matching `server/src/db/schema.ts` change | **critical** — migrations are generated; change the schema and run `db:generate` |
+| 5 | Migrations | `server/src/db/migrations/**` changed without a matching `server/src/db/schema/**` change | **critical** — migrations are generated; change the schema and run `db:generate`. Key on `schema/**`, never on `schema.ts`: that file is only the barrel that re-exports the domain files |
 | 6 | Vendor mirrors | any `*/src/vendor/**` changed outside `server/src/vendor/shared/**` | **critical** |
 | 7 | Mirror drift | `server/src/vendor/shared/**` changed but `client/src/vendor/shared/**` (and any other mirror) not updated to match | **critical** |
 | 8 | Lockfiles | a `pnpm-lock.yaml` changed with no `package.json` change in the same package, or a lockfile appearing at the repo root | **critical** |
-| 9 | CLAUDE.md shells | any `CLAUDE.md` with content beyond the `@AGENTS.md` shell, or a deleted shell | **critical** |
+| 9 | CLAUDE.md shells | a `CLAUDE.md` that deviates from the sanctioned shell — an H1 title, the pointer paragraph saying the canonical file is `AGENTS.md`, and the `@AGENTS.md` import, and nothing else — or a deleted shell | **critical**. The five shells in the repo **are** the sanctioned shape; flagging them is the false positive this row exists to avoid |
 | 10 | Secrets | `sk-`, `ghp_`, `gho_`, `github_pat_`, `-----BEGIN * PRIVATE KEY-----`, an assigned `.env` value, or any write of a secret to the DB or to git | **critical** — report `file:line` + pattern name, **never the value** |
 | 11 | Grounding gate | a finding kept without citing a real diff line, or a score taken from the model instead of recomputed from survivors, anywhere in `reviewer-core/` or the findings path | **critical** |
-| 12 | New tables | a table added to `server/src/db/schema.ts` | **major**; **critical** if it duplicates an existing table — the schema already contains every table, fill one |
+| 12 | New tables | a `pgTable(` added under `server/src/db/schema/**` | **major**; **critical** if it duplicates an existing table — the schema already contains every table, fill one |
 | 13 | Module registration | a new `server/src/modules/<name>/` not registered in `modules/index.ts` | **major** |
 | 14 | Direct SDK use | an SDK imported outside `server/src/adapters/**` (octokit, openai, `@anthropic-ai/sdk`, simple-git, `@ast-grep/napi`) | **critical** — everything external goes through an adapter from the DI container |
 | 15 | Spec contradiction | a touched feature's `<pkg>/.spec/<feature>.spec.md` says otherwise | **critical** |

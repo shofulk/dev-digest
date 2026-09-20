@@ -12,7 +12,7 @@ the wrong reason.
 
 | Bucket | Globs | Skills | Deterministic checks |
 |---|---|---|---|
-| **frontend** | `client/src/app/**`, `client/src/components/**`, `client/src/lib/**`, `client/*.config.*` | `frontend-ui-architecture`, `react-best-practices`, `next-best-practices`, `vercel-react-best-practices` | `pnpm --dir client typecheck`, `lint`, `test` |
+| **frontend** | `client/src/app/**`, `client/src/components/**`, `client/src/lib/**`, `client/messages/**`, `client/*.config.*` | `frontend-ui-architecture`, `react-best-practices`, `next-best-practices`, `vercel-react-best-practices` | `pnpm --dir client typecheck`, `lint`, `test` |
 | **frontend-tests** | `client/**/*.test.ts`, `client/**/*.test.tsx`, `client/src/test/**` | `react-testing-library` | — |
 | **backend-arch** | `server/src/**` | `onion-architecture` | `pnpm --dir server arch` |
 | **backend-http** | `server/src/modules/*/routes.ts`, `server/src/app.ts`, `server/src/server.ts`, `server/src/modules/index.ts`, `server/src/modules/_shared/context.ts`, `server/src/platform/sse.ts` | `fastify-best-practices` | — |
@@ -39,6 +39,9 @@ the wrong reason.
   `server/src/vendor/shared/**`, which routes to **contracts**.
 - **A new `src/modules/<name>/`** routes to backend-arch, backend-http and backend-data at
   once, plus the "registered in `modules/index.ts`" tripwire.
+- **`client/messages/<locale>/*.json` is user-facing copy**, not config: it routes to the
+  frontend bucket, which checks it against `client/AGENTS.md` (no literal strings in
+  components; every key present in every locale).
 - **`e2e/` has no skill** — the bucket reads `e2e/AGENTS.md` and `TESTING.md` instead, and
   judges determinism (seeded data, no LLM in the loop) rather than style.
 - **Adding a skill to `.claude/skills/` without adding a row here** is surfaced once per run
