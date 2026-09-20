@@ -165,6 +165,8 @@ export class ReviewRepository {
       blockers?: number | null;
       /** Failure reason (status='failed') / cancellation note. Null clears it. */
       error?: string | null;
+      /** Ordered ids of the skills the prompt included. Omit on failed/cancelled runs (stays NULL). */
+      skillsUsed?: string[];
     },
   ): Promise<void> {
     return runRepo.completeAgentRun(this.db, runId, values);
