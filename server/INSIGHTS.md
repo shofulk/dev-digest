@@ -36,11 +36,71 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-20 — picking an LLM provider "by whichever key is configured" makes the test suite spend real money
+
+`platform/config.ts:1` is `import 'dotenv/config'`, so a test run loads `server/.env` —
+including the developer's real `OPENROUTER_API_KEY` — into `process.env`, and
+`LocalSecretsProvider` falls back to `process.env`. A feature that chose its provider by
+asking "does this key exist?" therefore saw a *real* OpenRouter key inside the suite, skipped
+the `MockLLMProvider` the test had injected for `openai`, built a real client and made real
+paid calls. It surfaced as four assertion failures against live model output plus 10–30s
+durations where a mock should be instant — never as anything that says "network".
+
+The rule that fixes it, in `Container.canUseLlm`: **injected providers replace the real
+world, they do not extend it.** When `overrides.llm` is present at all, only the injected
+ids are available:
+
+```ts
+if (this.overrides.llm) return Boolean(this.overrides.llm[id]);
+```
+
+Anything new that selects a provider dynamically must go through `container.canUseLlm`, never
+`secrets.get` directly — the container is the only thing that knows a mock is wired.
+**Evidence:** `server/src/platform/container.ts`, `server/src/modules/_shared/feature-models.ts`
+
+### 2026-09-20 — the conventions sampler's config wish-list contributes nothing on this repo, and silently
+
+`CONFIG_SAMPLE_PATHS` reads `package.json`, `tsconfig.json`, eslint/prettier/editorconfig,
+`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` — all at the **repo root**. A live scan of
+`shofulk/dev-digest` sampled 12 files and **not one config**, because this repo is four
+standalone packages with no root `package.json` and no root `tsconfig.json`. An unreadable
+path is skipped by design (the list is a wish-list), so the miss leaves no log line and the
+scan just quietly costs the same tokens for less signal.
+
+This matters because config files are the cheapest high-confidence evidence there is — a
+rule stated outright by an eslint config is far harder to hallucinate than one inferred from
+source. For any multi-package repo the sampler should glob one level down
+(`*/package.json`, `*/tsconfig.json`, `*/AGENTS.md`) rather than only the root. Until it
+does, treat a conventions scan of a monorepo as source-only.
+**Evidence:** `server/src/modules/conventions/constants.ts`
+
 ## Codebase Patterns
 
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-09-20 — a long job can stream progress with no `jobs` row and no table: `RunBus` is keyed by an arbitrary string and replays its buffer
+
+`platform/sse.ts` keys everything by a plain string, not by an `agent_runs` id, and
+`subscribe()` replays `buffers` before going live while `complete()` deletes only the
+emitter. So minting `randomUUID()` as a synthetic stream id gives a detached job live
+progress **and** correct behaviour for a client that subscribes late or reconnects — verified
+by curling `/conventions/scans/:id/events` after the scan had already finished and receiving
+the full sequence, then a clean end-of-stream.
+
+Two traps:
+
+- **`runBus.complete(id)` must run in a `finally`.** Without it every subscriber's SSE
+  connection hangs open forever; nothing in the logs says so.
+- Prefer this over `JobRunner` for anything that costs a model call. `JobRunner` is built
+  once in `container.ts` with `timeoutMs: 120_000, retries: 2` and exposes **no per-enqueue
+  override**, so a slow paid call is killed at 120s and then retried twice — up to 3× the
+  spend, all publishing into one stream.
+
+Do **not** reuse `agent_runs` for this even though `agent_id`/`pr_id` are nullable: those
+rows feed the PR cost rollups, the run history list and `/runs/:id/trace`.
+**Evidence:** `server/src/modules/conventions/service.ts`, `server/src/platform/sse.ts:63`
 
 ### 2026-09-20 — a file upload sent as base64 JSON is refused by Fastify's 1 MiB default long before the route's own size cap is reached
 
@@ -113,6 +173,29 @@ rather than parses, so only `test/contracts.test.ts` and future validation actua
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-09-20 — `db:generate` hangs on an interactive "is this a rename?" prompt; splitting the change into two passes avoids it entirely
+
+drizzle-kit asks the rename question only when one diff contains **both** a DROP and an ADD
+on the same table. It reads the tty directly, so the prompt cannot be driven from a script:
+`yes '' |` and `printf '\r' | script` both hang, and the recorded
+`(for i in …; do printf '\r'; done) | script -qec … /dev/null` workaround is a coin flip you
+then have to audit by reading the SQL.
+
+Do not fight the prompt — **never let it fire.** Split the schema edit in two:
+
+```
+# pass 1 — ADD only, leaving the doomed column in place
+pnpm --dir server db:generate && pnpm --dir server db:migrate
+# pass 2 — now remove the column (and any import it was the sole user of)
+pnpm --dir server db:generate && pnpm --dir server db:migrate
+```
+
+Verified on `conventions.accepted boolean` → `status text`: two migrations (`0013`, `0014`),
+zero prompts. Ordering inside pass 1 is also what makes the CHECK constraints safe — drizzle
+emits `ADD COLUMN … NOT NULL DEFAULT` *before* `ADD CONSTRAINT … CHECK`, so existing rows
+already hold a legal value when the constraint validates the table.
+**Evidence:** `server/src/db/migrations/0013_strange_the_liberteens.sql`
 
 ### 2026-09-20 — dependency-cruiser rules that look right never fire: pnpm paths and the tsconfig aliases both defeat anchored regexes
 

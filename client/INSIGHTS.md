@@ -99,6 +99,28 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-20 — an `EventSource` hook that resets its state inside the effect trips `react-hooks/set-state-in-effect`; reset during render instead
+
+The obvious shape for "subscribe to stream X, clear the last stream's state" is
+`setEvents([]); setResult(null); setRunning(true)` at the top of the effect — which is what
+`lib/hooks/reviews.ts:175` does and why it carries a lint warning. Copying that shape into a
+new hook raises the client warning baseline (13) by one per hook.
+
+The fix is the pattern `useBodyTokens` already uses: reset **during render**, keyed on the
+id, and derive anything that can be derived.
+
+```ts
+const [shownId, setShownId] = React.useState(id);
+if (id !== shownId) { setShownId(id); setEvents([]); setResult(null); setEnded(false); }
+const running = Boolean(id && repoId) && !ended && typeof EventSource !== "undefined";
+```
+
+React re-renders immediately without committing, so there is no stale frame under the new
+id — which is also a real bug the effect version has, not just a lint complaint. One trap:
+the effect's **cleanup must not** touch `ended`. Cleanup runs after the render-time reset has
+already cleared it, so setting it there would instantly re-end the stream that is starting.
+**Evidence:** `client/src/lib/hooks/conventions.ts`
+
 ### 2026-09-20 — markdown renders flat everywhere: `<Markdown>` parses correctly, but `.dd-md` is a hook with no CSS behind it
 
 `@devdigest/ui`'s `Markdown` is a real `react-markdown` + `remark-gfm` wrapper, so `#` does
