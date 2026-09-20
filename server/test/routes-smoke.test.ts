@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/platform/config.js';
-import { MockGitHubClient, MockLLMProvider } from '../src/adapters/mocks.js';
+import { MockAuthProvider, MockGitHubClient, MockLLMProvider } from '../src/adapters/mocks.js';
 
 /**
  * No-DB route smoke tests via app.inject(). `/health` and the validation/error
@@ -67,8 +67,16 @@ describe('routes (no DB)', () => {
 });
 
 describe('skills routes (no DB)', () => {
+  /**
+   * Every skills handler opens with `getContext`, and the real AuthProvider reads the
+   * seeded user + workspace from the database — so without this override the handlers
+   * that get past validation throw and the route answers 500. It passes on a dev box
+   * only because Postgres happens to be up; CI has none in the unit job.
+   */
+  const noDb = { auth: new MockAuthProvider() };
+
   it('registers the skills routes: bad input is rejected at the edge, not 404', async () => {
-    const app = await buildApp({ config });
+    const app = await buildApp({ config, overrides: noDb });
     const cases: Array<{ method: 'GET' | 'POST' | 'PUT' | 'DELETE'; url: string; payload?: object }> = [
       { method: 'GET', url: '/skills/not-a-uuid' },
       { method: 'PUT', url: '/skills/not-a-uuid', payload: {} },
@@ -90,7 +98,10 @@ describe('skills routes (no DB)', () => {
   });
 
   it('POST /skills/tokens counts with the injected tokenizer, and null when it throws', async () => {
-    const counting = await buildApp({ config, overrides: { tokenizer: { count: (t) => t.length } } });
+    const counting = await buildApp({
+      config,
+      overrides: { ...noDb, tokenizer: { count: (t) => t.length } },
+    });
     const ok = await counting.inject({ method: 'POST', url: '/skills/tokens', payload: { body: 'abcd' } });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ tokens: 4 });
@@ -99,6 +110,7 @@ describe('skills routes (no DB)', () => {
     const broken = await buildApp({
       config,
       overrides: {
+        ...noDb,
         tokenizer: {
           count: () => {
             throw new Error('bpe unavailable');
@@ -113,7 +125,7 @@ describe('skills routes (no DB)', () => {
   });
 
   it('POST /skills/import/preview turns a refusal into a 400 with a readable message', async () => {
-    const app = await buildApp({ config });
+    const app = await buildApp({ config, overrides: noDb });
     const res = await app.inject({
       method: 'POST',
       url: '/skills/import/preview',
@@ -125,7 +137,7 @@ describe('skills routes (no DB)', () => {
   });
 
   it('POST /skills/import/preview parses markdown without a database', async () => {
-    const app = await buildApp({ config });
+    const app = await buildApp({ config, overrides: noDb });
     const res = await app.inject({
       method: 'POST',
       url: '/skills/import/preview',
