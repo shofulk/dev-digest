@@ -10,9 +10,16 @@ export const MAX_ZIP_ENTRIES = 200;
 
 /**
  * Fastify's global body limit is 1 MiB; a 5 MiB zip is ~6.7 MiB once base64-encoded, so the
- * preview route lifts its own limit. Nothing else on the module needs more than the default.
+ * preview route lifts its own limit.
  */
 export const IMPORT_PREVIEW_BODY_LIMIT = 7 * MIB;
+
+/**
+ * The routes that carry a skill body as JSON. `MAX_MARKDOWN_BYTES` of markdown does not fit
+ * in a 1 MiB request once it is JSON-escaped, so a body the preview accepts would be refused
+ * on the way back with a generic 413 — the in-code cap has to stay the one that speaks.
+ */
+export const SKILL_BODY_BODY_LIMIT = 2 * MIB;
 
 export const MARKDOWN_EXTENSIONS = ['.md', '.markdown'] as const;
 
