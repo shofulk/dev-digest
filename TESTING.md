@@ -32,6 +32,11 @@ If a test wouldn't catch a class of regression we care about, we don't write it.
 | reviewer-core | `reviewer-core/` | unit (engine) | vitest | `reviewer-core.yml` | no |
 | e2e web | `e2e/` | browser e2e (deterministic) | agent-browser + `run.ts` | `e2e-web.yml` | yes (stack) |
 
+`client`, `server-unit`, `reviewer-core` and `e2e web` also run `lint` (ESLint 10,
+flat config) before their tests. `server-integration` does not: `server-unit` already
+lints the same package, and this lane exists to spend its time on Postgres. See
+**Lint** below.
+
 ## What each suite covers
 
 **client** — components render and react to interaction (React Testing Library
@@ -60,8 +65,8 @@ No `chat`, no model key.
 
 ```sh
 # per package
-cd client        && pnpm test           # + pnpm typecheck
-cd reviewer-core && npm test
+cd client        && pnpm test           # + pnpm typecheck, pnpm lint
+cd reviewer-core && npm test            # + npm run lint
 
 # server — the unit/integration split (see note below)
 cd server && pnpm exec vitest run --exclude '**/*.it.test.ts'   # unit, no Docker
@@ -73,6 +78,20 @@ cd server && pnpm test                                          # both
 npm i -g agent-browser && agent-browser install
 cd e2e && npm install && npm test
 ```
+
+## Lint
+
+ESLint 10 (flat config, one `eslint.config.*` per package) runs ahead of the tests in
+every workflow but `server-integration`. Severity encodes **state**, the same convention
+`server/.dependency-cruiser.cjs` uses: `error` means the rule is clean today, `warn`
+means known violations that are named in an `OUTSTANDING` comment on the rule itself.
+
+- A rule is promoted to `error` in the commit that clears its last violation.
+- A rising warning count is the regression signal — `lint` itself fails only on errors.
+- Baseline at introduction (2026-09-20): `client` 0 errors / 13 warnings; `server`,
+  `reviewer-core` and `e2e` 0 / 0.
+- Mirrored and generated code is not linted: `*/src/vendor/**`,
+  `server/src/db/migrations/**`, `server/clones/**`.
 
 ## Conventions
 
