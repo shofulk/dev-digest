@@ -5,13 +5,14 @@ import { Skill, SkillImportPreview, SkillListItem, SkillStats, SkillType, SkillV
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
-import { IMPORT_PREVIEW_BODY_LIMIT } from './constants.js';
+import { IMPORT_PREVIEW_BODY_LIMIT, SKILL_BODY_BODY_LIMIT } from './constants.js';
 import { SkillsService } from './service.js';
 
 /**
  * Skills module (spec: `.spec/skills.spec.md`).
  *   POST   /skills/import/preview   → parse an upload, write nothing
  *   POST   /skills/import           → create from the confirmed preview (disabled)
+ *   POST   /skills/extracted        → create from accepted conventions (enabled)
  *   POST   /skills/tokens           → exact token count of an unsaved body
  *   GET    /skills                  → list (workspace-scoped, ?q= ?type=)
  *   POST   /skills                  → create
@@ -66,6 +67,15 @@ const ConfirmImportBody = z.object({
   body: z.string().min(1),
 });
 
+const CreateExtractedBody = z.object({
+  name: z.string().trim().min(1),
+  description: z.string(),
+  type: SkillType,
+  body: z.string().min(1),
+  evidence_files: z.array(z.string()).default([]),
+  enabled: z.boolean().optional(),
+});
+
 const SkillVersionDetail = SkillVersionEntry.extend({ body: z.string() });
 
 export default async function skillsRoutes(appBase: FastifyInstance) {
@@ -87,10 +97,25 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
 
   app.post(
     '/skills/import',
-    { schema: { body: ConfirmImportBody, response: { 201: Skill } } },
+    { bodyLimit: SKILL_BODY_BODY_LIMIT, schema: { body: ConfirmImportBody, response: { 201: Skill } } },
     async (req, reply) => {
       const { workspaceId } = await getContext(app.container, req);
       const skill = await service.confirmImport(workspaceId, req.body);
+      reply.status(201);
+      return skill;
+    },
+  );
+
+  app.post(
+    '/skills/extracted',
+    { schema: { body: CreateExtractedBody, response: { 201: Skill } } },
+    async (req, reply) => {
+      const { workspaceId } = await getContext(app.container, req);
+      const { evidence_files, ...rest } = req.body;
+      const skill = await service.createExtracted(workspaceId, {
+        ...rest,
+        evidenceFiles: evidence_files,
+      });
       reply.status(201);
       return skill;
     },
@@ -119,7 +144,7 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
 
   app.post(
     '/skills',
-    { schema: { body: CreateSkillBody, response: { 201: Skill } } },
+    { bodyLimit: SKILL_BODY_BODY_LIMIT, schema: { body: CreateSkillBody, response: { 201: Skill } } },
     async (req, reply) => {
       const { workspaceId } = await getContext(app.container, req);
       const skill = await service.create(workspaceId, req.body);
@@ -141,7 +166,10 @@ export default async function skillsRoutes(appBase: FastifyInstance) {
 
   app.put(
     '/skills/:id',
-    { schema: { params: IdParams, body: UpdateSkillBody, response: { 200: Skill } } },
+    {
+      bodyLimit: SKILL_BODY_BODY_LIMIT,
+      schema: { params: IdParams, body: UpdateSkillBody, response: { 200: Skill } },
+    },
     async (req) => {
       const { workspaceId } = await getContext(app.container, req);
       const skill = await service.update(workspaceId, req.params.id, req.body);

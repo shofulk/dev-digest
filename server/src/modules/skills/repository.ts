@@ -26,6 +26,7 @@ export interface InsertSkill {
   source: SkillRow['source'];
   body: string;
   enabled: boolean;
+  evidenceFiles?: string[] | null;
 }
 
 export interface SkillFields {

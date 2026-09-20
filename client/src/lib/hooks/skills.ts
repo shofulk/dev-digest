@@ -236,3 +236,27 @@ export function useImportSkill() {
     },
   });
 }
+
+/* ---- extracted (Conventions Extractor) ---- */
+
+export interface CreateExtractedSkillInput {
+  name: string;
+  description: string;
+  type: SkillType;
+  body: string;
+  /** Paths the rules were evidenced in; stored as the skill's provenance. */
+  evidence_files?: string[];
+  enabled?: boolean;
+}
+
+/** POST /skills/extracted — a skill merged from accepted conventions, tagged `extracted`. */
+export function useCreateExtractedSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateExtractedSkillInput) => api.post<Skill>("/skills/extracted", input),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: skillKeys.all });
+      qc.setQueryData(skillKeys.detail(data.id), data);
+    },
+  });
+}

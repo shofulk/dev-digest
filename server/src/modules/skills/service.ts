@@ -45,6 +45,15 @@ export interface ConfirmImportInput {
   body: string;
 }
 
+export interface CreateExtractedInput {
+  name: string;
+  description: string;
+  type: SkillType;
+  body: string;
+  evidenceFiles: string[];
+  enabled?: boolean;
+}
+
 export interface SkillVersionDetail extends SkillVersionEntry {
   body: string;
 }
@@ -175,6 +184,27 @@ export class SkillsService {
       source: 'imported_file',
       body: input.body,
       enabled: false,
+    });
+    return toSkillDto(row, this.countTokens(row.body));
+  }
+
+  /**
+   * Create from accepted convention candidates. Deliberately the mirror image of
+   * `confirmImport`: an imported file lands DISABLED because nobody has vetted its
+   * contents, while an extracted skill lands ENABLED because the user accepted every
+   * rule inside it one by one. `evidenceFiles` records the repo files the rules were
+   * grounded in.
+   */
+  async createExtracted(workspaceId: string, input: CreateExtractedInput): Promise<Skill> {
+    const row = await this.repo.insert({
+      workspaceId,
+      name: input.name,
+      description: input.description,
+      type: input.type,
+      source: 'extracted',
+      body: input.body,
+      enabled: input.enabled ?? true,
+      evidenceFiles: input.evidenceFiles,
     });
     return toSkillDto(row, this.countTokens(row.body));
   }

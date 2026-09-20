@@ -123,3 +123,21 @@ export function useUpdateAgentSkill(agentId: string) {
     ...useAdoptResponse(agentId),
   });
 }
+
+/**
+ * Link ONE skill to an agent, appended at the end. Additive on purpose: `useSetAgentSkills`
+ * REPLACES the whole ordered set, so using it here would silently unlink everything the
+ * agent already had. The server answers with the full new ordered set.
+ */
+export function useLinkAgentSkill() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ agentId, skillId }: { agentId: string; skillId: string }) =>
+      api.post<AgentLinkedSkill[]>(`/agents/${agentId}/skills`, { skill_id: skillId }),
+    onSuccess: (links, { agentId }) => {
+      qc.setQueryData(agentSkillsKey(agentId), links);
+      // the skill's `agent_count` in the Skills Lab just changed
+      qc.invalidateQueries({ queryKey: ["skills"] });
+    },
+  });
+}
