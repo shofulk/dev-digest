@@ -91,7 +91,28 @@
     "title": "Skills",
     "enabledCount": "{linked} of {total} enabled",
     "filterPlaceholder": "Filter skills…",
-    "orderHint": "Order matters — earlier skills appear earlier in the assembled prompt. Toggle to attach."
+    "orderHint": "Order matters — earlier skills appear earlier in the assembled prompt. Toggle to attach.",
+    "add": "Add skill",
+    "addPlaceholder": "Add skill…",
+    "addSearch": "Search skills…",
+    "allLinked": "Every workspace skill is already linked.",
+    "noMatches": "No linked skill matches your filter.",
+    "reorderPaused": "Clear the filter to reorder.",
+    "dragHandle": "Drag to reorder {name}",
+    "reorderKeys": "Alt+↑ / Alt+↓ moves the focused skill.",
+    "disabledGlobally": "disabled globally",
+    "rowMenu": "Actions for {name}",
+    "unlink": "Unlink from this agent",
+    "loadError": "Could not load this agent's skills.",
+    "emptyTitle": "No skills linked",
+    "emptyBody": "Link skills from the Skills Lab to add rules to this agent's prompt.",
+    "emptyCta": "Open Skills Lab",
+    "types": {
+      "rubric": "rubric",
+      "convention": "convention",
+      "security": "security",
+      "custom": "custom"
+    }
   },
   "mount": {
     "body": "Mount point for {owner}. The Agent Editor shell + tab routing are wired by A2 — {owner} renders this tab."

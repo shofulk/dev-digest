@@ -7,6 +7,7 @@
     "searchPlaceholder": "Search skills…",
     "loadError": "Could not load skills.",
     "menu": {
+      "create": "Create from scratch",
       "fromFile": "Import from file",
       "fromUrl": "Import from URL",
       "community": "Search community skills…"
@@ -14,12 +15,19 @@
     "empty": {
       "title": "No skills yet",
       "body": "Import a skill from a file, a URL, or the community catalog.",
-      "cta": "Import from file"
+      "cta": "Import from file",
+      "bodyCreate": "Create a skill from scratch, or import one from a file.",
+      "ctaCreate": "Create a skill"
     },
     "selectPrompt": {
       "title": "Select a skill",
       "body": "Pick a skill on the left to preview its body."
-    }
+    },
+    "noMatch": {
+      "title": "No matching skills",
+      "body": "Try a different search term."
+    },
+    "searchLabel": "Search skills"
   },
   "detail": {
     "crumbSkill": "Skill",
@@ -38,7 +46,41 @@
       "url": "From URL",
       "community": "Community"
     },
-    "importFailed": "Import failed"
+    "importFailed": "Import failed",
+    "subtitleFile": "Import a skill from a Markdown file or a .zip archive",
+    "fileStep": {
+      "intro": "Choose a .md, .markdown or .zip file. Nothing is saved until you review it and confirm.",
+      "inputLabel": "Skill file",
+      "choose": "Choose file",
+      "reading": "Reading {filename}…",
+      "analysing": "Analysing {filename}…",
+      "limits": "Up to 1 MiB for Markdown and 5 MiB for a .zip archive.",
+      "rejectedTitle": "Could not import that file"
+    },
+    "previewStep": {
+      "fromFile": "From {filename}",
+      "notice": "The body below becomes the agent's instructions. An imported skill arrives disabled until you vet it and turn it on.",
+      "name": "Name",
+      "description": "Description",
+      "type": "Type",
+      "body": "Extracted body (read-only)",
+      "bodyHint": "Read it before you accept — this is exactly what the agent will be told.",
+      "truncated": "The body was truncated — part of the source is not included below.",
+      "back": "Choose a different file",
+      "confirm": "Import skill",
+      "confirming": "Importing…"
+    },
+    "ignored": {
+      "title": "Ignored archive entries ({count})",
+      "hint": "These entries were left out of the skill.",
+      "reason": {
+        "executable": "Executable — not read and not run",
+        "binary": "Binary file — not read",
+        "not-markdown": "Not a Markdown file — not read",
+        "nested-archive": "Nested archive — not opened"
+      }
+    },
+    "cancel": "Cancel"
   },
   "file": {
     "nameLabel": "Skill name",
@@ -84,7 +126,8 @@
       "manual": "Manual",
       "extracted": "Extracted",
       "community": "Community",
-      "imported_url": "Imported"
+      "imported_url": "Imported",
+      "imported_file": "Imported"
     }
   },
   "preview": {
@@ -96,6 +139,162 @@
     "untrustedNotice": "This skill came from an untrusted source. Its body is stored as data (delimiter-wrapped) and must be vetted before it is enabled for an agent.",
     "bodyLabel": "Skill body (Markdown)",
     "bodyHint": "Saving a changed body creates a new immutable version.",
-    "version": "v{version}"
+    "version": "v{version}",
+    "heading": "Preview",
+    "caption": "Rendered as the reviewing agent receives it.",
+    "emptyBody": "This skill has no body yet."
+  },
+  "config": {
+    "heading": "Configuration",
+    "enabledLabel": "Enabled",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "test-coverage-gaps",
+      "description": "Description",
+      "descriptionPlaceholder": "When this skill applies, phrased as an instruction",
+      "descriptionHint": "The description is the skill's interface: it tells the agent when the skill applies. Phrase it as an instruction, for example \"Apply when a change adds or edits tests\".",
+      "type": "Type",
+      "body": "Skill body"
+    },
+    "body": {
+      "fileName": "{name}.md",
+      "unsaved": "unsaved",
+      "tokens": "{count, plural, one {# token} other {# tokens}}",
+      "ariaLabel": "Skill body (Markdown)"
+    },
+    "save": "Save changes",
+    "saving": "Saving…",
+    "saveError": "Could not save the skill.",
+    "note": {
+      "title": "Describe this change",
+      "body": "The note is stored with the new version and shown in the Versions tab.",
+      "label": "Change note",
+      "default": "Updated {name}",
+      "skip": "Skip note",
+      "confirm": "Save version"
+    }
+  },
+  "card": {
+    "footer": "{count, plural, one {# agent} other {# agents}} · {pull}% pull · {accept}% accept",
+    "toggleError": "Could not update the skill."
+  },
+  "editor": {
+    "tabs": {
+      "config": "Config",
+      "preview": "Preview",
+      "stats": "Stats",
+      "versions": "Versions"
+    },
+    "delete": "Delete skill",
+    "deleteDialog": {
+      "title": "Delete skill?",
+      "body": "\"{name}\" will be deleted and unlinked from every agent that uses it. This cannot be undone.",
+      "cancel": "Cancel",
+      "confirm": "Delete",
+      "deleting": "Deleting…",
+      "error": "Could not delete the skill."
+    },
+    "placeholder": "The {tab} tab is not built yet."
+  },
+  "stats": {
+    "loadError": "Could not load this skill's stats.",
+    "tiles": {
+      "usedBy": {
+        "label": "Used by",
+        "value": "{count, plural, one {# agent} other {# agents}}",
+        "caption": "Agents that currently link this skill."
+      },
+      "pull": {
+        "label": "Pull frequency",
+        "caption": "Runs that included it, of runs by its agents. Per run, last 30 days."
+      },
+      "accept": {
+        "label": "Accept rate",
+        "caption": "Accepted of decided findings in those runs. Per run, last 30 days."
+      },
+      "findings": {
+        "label": "Findings (30d)",
+        "caption": "Raised in runs that included it, not caused by it."
+      }
+    },
+    "agents": {
+      "title": "Agents using this skill",
+      "open": "Open",
+      "openLabel": "Open {name}",
+      "empty": {
+        "title": "No agents yet",
+        "body": "No agent links this skill. Link it from an agent's Skills tab."
+      }
+    },
+    "category": {
+      "title": "Findings by category",
+      "other": "Other",
+      "totalLabel": "findings",
+      "chartLabel": "{count, plural, one {# finding} other {# findings}} by category",
+      "legendLabel": "Findings per category",
+      "empty": {
+        "title": "No findings yet",
+        "body": "Findings show up here once an agent that uses this skill has reviewed a pull request."
+      }
+    }
+  },
+  "versions": {
+    "title": "Version history",
+    "count": "{count, plural, one {# version} other {# versions}}",
+    "intro": "Every save snapshots the body, so a past review can be read against the exact text it ran on. Restoring an old version creates a new one; history is never rewritten.",
+    "chip": "v{version}",
+    "current": "Current",
+    "noNote": "No change note",
+    "diff": "Diff",
+    "diffLabel": "Diff v{version} against the current body",
+    "restore": "Restore",
+    "restoreLabel": "Restore v{version}",
+    "loadError": "Could not load the version history.",
+    "empty": {
+      "title": "No versions yet",
+      "body": "A version appears here the first time the skill is saved."
+    },
+    "restoreDialog": {
+      "title": "Restore v{version}?",
+      "body": "The current body is saved as a version, then v{version}'s body becomes current as v{next}. Nothing in the history is deleted.",
+      "cancel": "Cancel",
+      "confirm": "Restore as v{next}",
+      "restoring": "Restoring…",
+      "error": "Could not restore this version."
+    }
+  },
+  "diff": {
+    "title": "v{version} → current (v{current})",
+    "subtitle": "Lines removed since v{version} are marked −, lines added since are marked +.",
+    "close": "Close",
+    "loadError": "Could not load that version.",
+    "identical": "This version is identical to the current body.",
+    "added": "{count, plural, one {+# line added} other {+# lines added}}",
+    "removed": "{count, plural, one {−# line removed} other {−# lines removed}}",
+    "kind": {
+      "add": "added",
+      "del": "removed",
+      "same": "unchanged"
+    }
+  },
+  "create": {
+    "title": "Create skill",
+    "subtitle": "A skill is a rule the reviewing agent follows, stored as versioned Markdown.",
+    "cancel": "Cancel",
+    "submit": "Create skill",
+    "submitting": "Creating…",
+    "error": "Could not create the skill.",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "test-coverage-gaps",
+      "description": "Description",
+      "descriptionPlaceholder": "When this skill applies, phrased as an instruction",
+      "type": "Type",
+      "body": "Skill body (Markdown)",
+      "bodyPlaceholder": "# Rule\nDescribe the rule…"
+    }
+  },
+  "drawerStub": {
+    "placeholder": "Import from file is not built yet."
   }
 }
