@@ -8,3 +8,4 @@ export * from "./trace";
 export * from "./repo-intel";
 export * from "./skills";
 export * from "./agent-skills";
+export * from "./conventions";
