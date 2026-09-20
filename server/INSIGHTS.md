@@ -36,6 +36,41 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-20 — every local gate reads the WORKING TREE, so a file left uncommitted is invisible until CI
+
+`routes.ts` imported `SKILL_BODY_BODY_LIMIT` from a commit that never carried
+`constants.ts` — the export sat unstaged in the working tree. Locally `pnpm typecheck`,
+`pnpm lint` and the whole suite stayed green (they compile the worktree); on the pushed tree
+the same commit failed **three** jobs at once with three different faces: `TS2305: has no
+exported member`, three route smoke tests answering 500, and the e2e job dying at
+`SyntaxError: The requested module './constants.js' does not provide an export named …`
+before the API ever booted. One missing export, three unrelated-looking red jobs.
+
+This repo's commit discipline makes it likely, not rare: commits are made with an explicit
+pathspec (`git commit -- <paths>`) so a sibling session's files cannot be swept in, and a
+pathspec silently omits anything not named. After committing, check `git status` for
+leftovers that the committed code imports — or read `git show --stat HEAD` against the set
+of files the change actually touched.
+**Evidence:** `server/src/modules/skills/routes.ts:8`, `server/src/modules/skills/constants.ts:22`
+
+### 2026-09-20 — a "no DB" test that calls any route handler is DB-backed unless it injects `auth`
+
+`test/routes-smoke.test.ts` builds the app with no `db` and calls itself no-DB, and it is
+green on a dev box — because `docker compose` is up. In CI's unit job (no Postgres) three of
+its cases answered **500**. Every module handler opens with
+`getContext(app.container, req)`, and the default `LocalNoAuthProvider` resolves the system
+user and the default workspace **from the database** on the first request. A route whose
+body never runs (bad input rejected by the Zod schema at the edge → 422) hides this
+completely, so a smoke test that only checks validation stays green and the one that
+exercises the handler does not.
+
+Any non-`*.it.test.ts` test that expects a handler to run must pass
+`overrides: { auth: new MockAuthProvider() }`. "It passes locally" is not evidence of
+hermeticity here; re-run the unit suite with an unreachable `DATABASE_URL`
+(`DATABASE_URL='postgres://x:x@127.0.0.1:1/none' pnpm exec vitest run --exclude '**/*.it.test.ts'`)
+— that is the CI condition, and it takes two seconds.
+**Evidence:** `server/src/adapters/auth/local.ts:20`, `server/src/modules/_shared/context.ts:14`
+
 ### 2026-09-20 — picking an LLM provider "by whichever key is configured" makes the test suite spend real money
 
 `platform/config.ts:1` is `import 'dotenv/config'`, so a test run loads `server/.env` —
@@ -235,6 +270,21 @@ skill.
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-09-20 — `TypeError: Cannot read properties of undefined (reading 'skills')` in `reviews.it.test.ts`, about one full run in two
+
+**Cause:** `run-executor.ts` awaits `completeAgentRun({ status: 'done' })` and only then
+builds and writes the `run_traces` document, while `test/helpers/runs.ts` `waitForPrRuns`
+polled `agent_runs.status` alone. The test is therefore allowed to fetch
+`GET /runs/:id/trace` before the row exists, get the 404 envelope back, and read
+`trace.prompt_assembly` off it as `undefined`.
+**Signal:** a `.it.test.ts` reading a trace fails with `Cannot read properties of undefined`
+on a field of `trace`, fails roughly every other **full** run, and passes 3/3 in isolation —
+the race only opens when the suite is under load.
+**Fix:** `waitForPrRuns` now also waits for one `run_traces` row per terminal run. Anything
+new that is persisted *after* the status flip needs the same treatment; a status of `done`
+is not a promise that the run's side documents are on disk.
+**Evidence:** `server/test/helpers/runs.ts:33`, `server/src/modules/reviews/run-executor.ts:257`
 
 ## Session Notes
 
