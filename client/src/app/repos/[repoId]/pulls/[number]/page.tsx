@@ -21,7 +21,8 @@ import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } 
 import { useActiveRepo, useRepoNotFound } from "../../../../../lib/repo-context";
 import { ApiError } from "../../../../../lib/api";
 import { githubPrUrl } from "../../../../../lib/github-urls";
-import type { FindingRecord } from "@devdigest/shared";
+import { countBySeverity, parseSeverityParam } from "@/components/severity-counters";
+import type { FindingRecord, Severity } from "@devdigest/shared";
 
 export default function PRDetailPage() {
   const params = useParams<{ repoId: string; number: string }>();
@@ -59,13 +60,24 @@ export default function PRDetailPage() {
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
-  const setParam = (key: string, val: string | null) => {
+  // One replace per click, however many params move — so switching tab AND severity
+  // together still leaves a single history entry to go Back through.
+  const setParams = (entries: Record<string, string | null>) => {
     const sp = new URLSearchParams(search.toString());
-    if (val == null) sp.delete(key);
-    else sp.set(key, val);
+    for (const [key, val] of Object.entries(entries)) {
+      if (val == null) sp.delete(key);
+      else sp.set(key, val);
+    }
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
+  const setParam = (key: string, val: string | null) => setParams({ [key]: val });
   const setTab = (t: string) => setParam("tab", t);
+  // An unknown or lowercase ?severity= means "no filter" rather than an error.
+  const severity = parseSeverityParam(search.get("severity"));
+  // Selecting a level implies wanting to see those findings, and they only live on the
+  // agent-runs tab; clearing is a wind-down and leaves the tab alone.
+  const setSeverity = (next: Severity | null) =>
+    setParams(next ? { severity: next, tab: "findings" } : { severity: null });
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
@@ -75,6 +87,9 @@ export default function PRDetailPage() {
   );
   const lethalTrifecta = allFindings.filter((f) => f.kind === "lethal_trifecta");
   const findingsCount = allFindings.length;
+  // Counted here, not fetched: the findings are already in memory. (The PR LIST gets the
+  // same tally from the server, since it has no findings loaded — see PrMeta.)
+  const severityCounts = React.useMemo(() => countBySeverity(allFindings), [allFindings]);
 
   const repoName = activeRepo?.full_name ?? repoId;
   // The real "owner/repo" (null until the repo is loaded) — used to build
@@ -127,8 +142,11 @@ export default function PRDetailPage() {
         prId={prId}
         tab={tab}
         findingsCount={findingsCount}
+        severityCounts={severityCounts}
+        activeSeverity={severity}
         githubUrl={repoFullName ? githubPrUrl(repoFullName, pr.number) : null}
         onSetTab={setTab}
+        onSelectSeverity={setSeverity}
         onRunStart={() => setTab("findings")}
         onRunsStarted={() => invalidateActiveRuns()}
       />
@@ -142,6 +160,7 @@ export default function PRDetailPage() {
             liveRunIds={liveRunIds}
             reviewRunning={reviewRunning}
             lethalTrifecta={lethalTrifecta}
+            severity={severity}
             runs={runs}
             prRuns={prRuns}
             prCommits={pr.commits}

@@ -7,7 +7,8 @@
 
 import React from "react";
 import { Icon, Badge } from "@devdigest/ui";
-import type { ReviewRecord, Verdict } from "@devdigest/shared";
+import type { ReviewRecord, Severity, Verdict } from "@devdigest/shared";
+import { formatCost } from "@/lib/format-cost";
 import { FindingsPanel } from "../FindingsPanel";
 import { VerdictBanner } from "../VerdictBanner";
 import { useDeleteReview } from "../../../../../../../lib/hooks/reviews";
@@ -29,18 +30,25 @@ export function ReviewRunAccordion({
   defaultOpen = false,
   repoFullName,
   headSha,
+  costUsd = null,
   targetRunId = null,
   targetNonce = 0,
+  severity = null,
 }: {
   review: ReviewRecord;
   prId: string;
   defaultOpen?: boolean;
   repoFullName?: string | null;
   headSha?: string | null;
+  /** Cost of the agent run behind this review; null when unpriced. */
+  costUsd?: number | null;
   /** When this matches review.run_id, the accordion opens and scrolls into view
    *  (driven from the Timeline: clicking an agent name navigates here). */
   targetRunId?: string | null;
   targetNonce?: number;
+  /** Severity filter for the body's list. The header counts below stay unfiltered — they
+   *  describe what this run found, not what is currently on screen. */
+  severity?: Severity | null;
 }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -104,6 +112,9 @@ export function ReviewRunAccordion({
           </Badge>
         )}
         <span className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {formatCost(costUsd)}
+        </span>
+        <span className="mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {formatWhen(review.created_at)}
         </span>
         <button
@@ -149,6 +160,7 @@ export function ReviewRunAccordion({
           )}
           <FindingsPanel
             findings={findings}
+            severity={severity}
             prId={prId}
             repoFullName={repoFullName}
             headSha={headSha}

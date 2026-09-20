@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sum } from 'drizzle-orm';
 import type { PrMeta, PrDetail, GitHubClient, PrReviewComment } from '@devdigest/shared';
 import { PrCommentInput } from '@devdigest/shared';
 import * as t from '../../db/schema.js';
@@ -8,6 +8,10 @@ import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { deriveReviewStatus } from './status.js';
+
+/** Per-severity finding tally carried by each PrMeta on the list endpoint. */
+type SeverityTally = NonNullable<PrMeta['findings_by_severity']>;
+const emptyTally = (): SeverityTally => ({ CRITICAL: 0, WARNING: 0, SUGGESTION: 0 });
 
 /**
  * F1 — pulls module. PR import via Octokit (list + per-PR detail).
@@ -113,8 +117,7 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
 
     // Latest-review SCORE per PR for the list's score ring. Computed on read
     // from reviews (no FK denorm); the list is small, so one IN-query + JS
-    // grouping is cheap. (The per-severity FINDINGS breakdown is intentionally
-    // not surfaced on the list — findings live on the PR detail page.)
+    // grouping is cheap.
     const prIds = rows.map((r) => r.id);
     const latestReviewByPr = new Map<string, { score: number | null }>();
     if (prIds.length > 0) {
@@ -126,6 +129,51 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
       // Rows are newest-first → first seen per PR is the latest review.
       for (const rv of reviewRows) {
         if (!latestReviewByPr.has(rv.prId)) latestReviewByPr.set(rv.prId, { score: rv.score });
+      }
+    }
+
+    // Total spend per PR for the list's COST column. Same read-time derivation
+    // as the score above: SUM over EVERY run of the PR, so re-reviews accumulate
+    // ("what has this PR cost me so far"), failed runs included — they cost real
+    // money too. SQL SUM skips NULLs, so a PR mixing priced and unpriced runs
+    // reports the priced part; a partial total beats no total. A PR with no runs
+    // yields no row at all → null → the UI renders an em dash, not $0.00.
+    const costByPr = new Map<string, number | null>();
+    if (prIds.length > 0) {
+      const costRows = await container.db
+        .select({ prId: t.agentRuns.prId, cost: sum(t.agentRuns.costUsd) })
+        .from(t.agentRuns)
+        .where(and(eq(t.agentRuns.workspaceId, workspaceId), inArray(t.agentRuns.prId, prIds)))
+        .groupBy(t.agentRuns.prId);
+      for (const row of costRows) {
+        // drizzle's sum() yields a STRING (postgres numeric) or null.
+        if (row.prId) costByPr.set(row.prId, row.cost == null ? null : Number(row.cost));
+      }
+    }
+
+    // Per-severity FINDINGS counts per PR for the list's findings column. Summed
+    // over EVERY review of the PR — the same rule the PR header's counters use,
+    // so a PR's numbers never differ between the list and its detail page (the
+    // price is that re-reviewing the same problem counts it twice). `findings`
+    // has no workspace_id of its own, so tenancy comes from the join to
+    // `reviews`; and unlike the score above this is NOT filtered by kind,
+    // because /pulls/:id/reviews (what the detail page reads) isn't either.
+    const findingsByPr = new Map<string, SeverityTally>();
+    if (prIds.length > 0) {
+      const findingRows = await container.db
+        .select({ prId: t.reviews.prId, severity: t.findings.severity })
+        .from(t.findings)
+        .innerJoin(t.reviews, eq(t.findings.reviewId, t.reviews.id))
+        .where(and(eq(t.reviews.workspaceId, workspaceId), inArray(t.reviews.prId, prIds)));
+      for (const f of findingRows) {
+        let tally = findingsByPr.get(f.prId);
+        if (!tally) {
+          tally = emptyTally();
+          findingsByPr.set(f.prId, tally);
+        }
+        // `severity` is a plain text column, so a value outside the contract
+        // enum is ignored rather than inventing a fourth bucket.
+        if (f.severity in tally) tally[f.severity as keyof SeverityTally] += 1;
       }
     }
 
@@ -153,6 +201,8 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
         opened_at: r.openedAt?.toISOString() ?? null,
         updated_at: r.updatedAt?.toISOString() ?? null,
         score: review ? review.score : null,
+        cost_usd: costByPr.get(r.id) ?? null,
+        findings_by_severity: findingsByPr.get(r.id) ?? emptyTally(),
       };
     });
   });
