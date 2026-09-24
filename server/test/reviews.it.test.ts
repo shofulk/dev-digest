@@ -7,7 +7,7 @@ import { seed } from '../src/db/seed.js';
 import { MockLLMProvider, MockEmbedder, MockGitClient } from '../src/adapters/mocks.js';
 import * as t from '../src/db/schema.js';
 import { eq } from 'drizzle-orm';
-import type { Review } from '@devdigest/shared';
+import type { Review, RunTrace } from '@devdigest/shared';
 
 const hasDocker = await dockerAvailable();
 const d = hasDocker ? describe : describe.skip;
@@ -213,6 +213,148 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
     expect(trace.stats.cost_usd).toBeCloseTo(0.001, 6);
 
     await app.close();
+  });
+
+  describe('skills in the prompt (spec E, criteria 25-30)', () => {
+    async function insertSkill(name: string, over: Partial<typeof t.skills.$inferInsert> = {}) {
+      const [row] = await pg.handle.db
+        .insert(t.skills)
+        .values({
+          workspaceId,
+          name,
+          description: `${name} description`,
+          type: 'rubric',
+          source: 'manual',
+          body: `BODY-OF-${name}`,
+          ...over,
+        })
+        .returning();
+      return row!;
+    }
+
+    /** Run one agent over a fresh PR with a recording LLM; return everything the assertions need. */
+    async function runAgent(
+      agentName: string,
+      links: { skill: { id: string }; enabled?: boolean }[],
+      overrides: Partial<Parameters<typeof buildApp>[0]['overrides'] & object> = {},
+    ) {
+      const llm = new MockLLMProvider('openai', { structured: REVIEW_FIXTURE });
+      const app = await buildApp({
+        config: config(),
+        db: pg.handle.db,
+        overrides: {
+          embedder: new MockEmbedder(),
+          git: new MockGitClient({ diff: DIFF }),
+          llm: { openai: llm },
+          ...overrides,
+        },
+      });
+      const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId);
+      const agent = (
+        await app.inject({
+          method: 'POST',
+          url: '/agents',
+          payload: { name: agentName, provider: 'openai', model: 'gpt-4.1', system_prompt: 'sys' },
+        })
+      ).json();
+      if (links.length > 0) {
+        const linked = await app.inject({
+          method: 'POST',
+          url: `/agents/${agent.id}/skills`,
+          payload: {
+            items: links.map((l) => ({
+              skill_id: l.skill.id,
+              ...(l.enabled !== undefined ? { enabled: l.enabled } : {}),
+            })),
+          },
+        });
+        expect(linked.statusCode).toBe(200);
+      }
+      const res = await app.inject({
+        method: 'POST',
+        url: `/pulls/${pr.id}/review`,
+        payload: { agentId: agent.id },
+      });
+      const runId = res.json().runs[0].run_id as string;
+      await waitForPrRuns(pg.handle.db, pr.id, { expected: 1 });
+      const trace = (await app.inject({ method: 'GET', url: `/runs/${runId}/trace` })).json() as RunTrace;
+      const [run] = await pg.handle.db.select().from(t.agentRuns).where(eq(t.agentRuns.id, runId));
+      const call = llm.calls.find((c) => c.method === 'completeStructured');
+      const user = (call!.req as { messages: { role: string; content: string }[] }).messages.find(
+        (m) => m.role === 'user',
+      )!.content;
+      await app.close();
+      return { trace, run: run!, user };
+    }
+
+    it('includes exactly the enabled skills, in link order, and records them', async () => {
+      const first = await insertSkill('sk-first', { version: 3 });
+      const linkOff = await insertSkill('sk-link-off');
+      const second = await insertSkill('sk-second');
+      const globalOff = await insertSkill('sk-global-off', { enabled: false });
+
+      // Link order is deliberately not alphabetical: second, first.
+      const { trace, run, user } = await runAgent('Skilled', [
+        { skill: second },
+        { skill: linkOff, enabled: false },
+        { skill: first },
+        { skill: globalOff },
+      ]);
+
+      expect(run.status).toBe('done');
+      expect(run.skillsUsed).toEqual([second.id, first.id]);
+
+      const block = '### sk-second\n\nBODY-OF-sk-second\n\n### sk-first\n\nBODY-OF-sk-first';
+      expect(trace.prompt_assembly.skills).toBe(block);
+      expect(user).toContain(`## Skills / rules\n${block}`);
+      for (const off of ['sk-link-off', 'sk-global-off']) {
+        expect(trace.prompt_assembly.skills).not.toContain(off);
+        expect(user).not.toContain(off);
+      }
+
+      const logs = trace.log.map((l) => l.msg);
+      expect(logs.filter((m) => m.startsWith('skill: '))).toEqual([
+        expect.stringMatching(/^skill: sk-second v1 \(~\d+ tokens\)$/),
+        expect.stringMatching(/^skill: sk-first v3 \(~\d+ tokens\)$/),
+      ]);
+      expect(logs).toContainEqual(expect.stringMatching(/^skills: 2 of 4 linked enabled → ~\d+ tokens$/));
+    });
+
+    it('an agent with no skills writes skills_used [] and leaves the prompt untouched', async () => {
+      const { trace, run, user } = await runAgent('Unskilled', []);
+      expect(run.status).toBe('done');
+      expect(run.skillsUsed).toEqual([]);
+      expect(trace.prompt_assembly.skills).toBeNull();
+      expect(user).not.toContain('## Skills / rules');
+      expect(trace.log.some((l) => l.msg.startsWith('skill'))).toBe(false);
+    });
+
+    it('linked but all disabled: [] / null, and the summary says 0 of m', async () => {
+      const off = await insertSkill('sk-only-off');
+      const { trace, run, user } = await runAgent('AllOff', [{ skill: off, enabled: false }]);
+      expect(run.skillsUsed).toEqual([]);
+      expect(trace.prompt_assembly.skills).toBeNull();
+      expect(user).not.toContain('## Skills / rules');
+      const logs = trace.log.map((l) => l.msg);
+      expect(logs.some((m) => m.startsWith('skill: '))).toBe(false);
+      expect(logs).toContain('skills: 0 of 1 linked enabled → ~0 tokens');
+    });
+
+    it('a failing tokenizer drops the ~n tokens suffix but never fails the run', async () => {
+      const sk = await insertSkill('sk-tokenizer');
+      const { trace, run } = await runAgent('NoTokenizer', [{ skill: sk }], {
+        tokenizer: {
+          count: () => {
+            throw new Error('tokenizer down');
+          },
+        },
+      });
+      expect(run.status).toBe('done');
+      expect(run.skillsUsed).toEqual([sk.id]);
+      const logs = trace.log.map((l) => l.msg);
+      expect(logs).toContain('skill: sk-tokenizer v1');
+      expect(logs).toContain('skills: 1 of 1 linked enabled');
+    });
   });
 
   it('dual-provider structured output: anthropic provider returns the same Review shape', async () => {

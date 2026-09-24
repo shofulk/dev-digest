@@ -1,14 +1,15 @@
 import type { Container } from '../../platform/container.js';
 import type {
   Agent,
-  AgentSkillLink,
+  AgentLinkedSkill,
   AgentVersion,
   CiFailOn,
   ModelInfo,
   Provider,
   ReviewStrategy,
 } from '@devdigest/shared';
-import { AgentsRepository } from './repository.js';
+import { NotFoundError } from '../../platform/errors.js';
+import { AgentsRepository, type SkillLinkInput } from './repository.js';
 import { toAgentDto, toAgentVersionDto } from './helpers.js';
 
 /**
@@ -135,24 +136,37 @@ export class AgentsService {
     return row ? toAgentVersionDto(row) : undefined;
   }
 
-  /** Linked skills for an agent as AgentSkillLink[] (ordered). */
-  async skillLinks(agentId: string): Promise<AgentSkillLink[]> {
+  /** Linked skills for an agent, ordered, with the fields the Skills tab renders. */
+  async skillLinks(agentId: string): Promise<AgentLinkedSkill[]> {
     const links = await this.repo.linkedSkills(agentId);
-    return links.map((l) => ({ agent_id: agentId, skill_id: l.skill.id, order: l.order }));
+    return links.map((l) => ({
+      agent_id: agentId,
+      skill_id: l.skillId,
+      order: l.order,
+      enabled: l.enabled,
+      name: l.name,
+      description: l.description,
+      type: l.type,
+      version: l.version,
+      skill_enabled: l.skillEnabled,
+    }));
   }
 
   /**
-   * Set / reorder the agent's linked skills. If `skillIds` is provided, replaces
-   * the whole set in that order. Returns the resulting ordered links.
+   * Set / reorder the agent's linked skills: replaces the whole set in the given
+   * order (index = order). An item without `enabled` keeps its current value.
+   * Throws NotFoundError when any skill is not in this workspace; returns
+   * undefined when the agent isn't.
    */
   async setSkills(
     workspaceId: string,
     agentId: string,
-    skillIds: string[],
-  ): Promise<AgentSkillLink[] | undefined> {
+    items: SkillLinkInput[],
+  ): Promise<AgentLinkedSkill[] | undefined> {
     const agent = await this.repo.getById(workspaceId, agentId);
     if (!agent) return undefined;
-    await this.repo.setSkills(agentId, skillIds);
+    await this.assertSkillsInWorkspace(workspaceId, items.map((i) => i.skillId));
+    await this.repo.setSkills(agentId, items);
     return this.skillLinks(agentId);
   }
 
@@ -162,13 +176,36 @@ export class AgentsService {
     agentId: string,
     skillId: string,
     order?: number,
-  ): Promise<AgentSkillLink[] | undefined> {
+  ): Promise<AgentLinkedSkill[] | undefined> {
     const agent = await this.repo.getById(workspaceId, agentId);
     if (!agent) return undefined;
+    await this.assertSkillsInWorkspace(workspaceId, [skillId]);
     const existing = await this.repo.linkedSkills(agentId);
     const resolvedOrder = order ?? existing.length;
     await this.repo.linkSkill(agentId, skillId, resolvedOrder);
     return this.skillLinks(agentId);
+  }
+
+  /**
+   * Patch one link (`enabled` / `order`). Returns undefined when the agent isn't in
+   * this workspace or doesn't link that skill (route → 404).
+   */
+  async updateSkillLink(
+    workspaceId: string,
+    agentId: string,
+    skillId: string,
+    patch: { enabled?: boolean; order?: number },
+  ): Promise<AgentLinkedSkill[] | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    const found = await this.repo.updateLink(agentId, skillId, patch);
+    return found ? this.skillLinks(agentId) : undefined;
+  }
+
+  private async assertSkillsInWorkspace(workspaceId: string, skillIds: string[]): Promise<void> {
+    const wanted = [...new Set(skillIds)];
+    const found = await this.repo.skillIdsInWorkspace(workspaceId, wanted);
+    if (wanted.some((id) => !found.has(id))) throw new NotFoundError('Skill not found');
   }
 
   /**

@@ -85,6 +85,27 @@
       "when": 1789673055433,
       "tag": "0011_cultured_doctor_faustus",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1789918482997,
+      "tag": "0012_clear_thaddeus_ross",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789931408621,
+      "tag": "0013_strange_the_liberteens",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789931423552,
+      "tag": "0014_calm_adam_destine",
+      "breakpoints": true
     }
   ]
 }

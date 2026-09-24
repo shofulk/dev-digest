@@ -34,6 +34,8 @@ export const agentRuns = pgTable('agent_runs', {
   score: integer('score'),
   /** Findings that tripped the agent's gate (severity ≥ ciFailOn). */
   blockers: integer('blockers'),
+  /** Ordered ids of the skills this run's prompt actually included; null on failed/cancelled runs. */
+  skillsUsed: jsonb('skills_used').$type<string[]>(),
 }, (t) => ({
   // The PR list sums cost per PR (GROUP BY pr_id); nothing indexed pr_id before.
   prIdx: index('agent_runs_pr_idx').on(t.prId),

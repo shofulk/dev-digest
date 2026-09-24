@@ -15,12 +15,85 @@
       "body": "Scan the repo to surface house-rules — naming, error handling, structure — each backed by evidence you can turn into a Skill.",
       "cta": "Run extraction"
     },
-    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files"
+    "candidateCount": "{count, plural, one {# candidate} other {# candidates}} · grounded against sampled files",
+    "emptyFiltered": {
+      "title": "Nothing in this state",
+      "body": "No candidate matches this filter. Switch the filter, or re-scan the repo."
+    },
+    "filter": {
+      "pending": "Pending",
+      "accepted": "Accepted",
+      "rejected": "Rejected",
+      "all": "All"
+    },
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "selectedCount": "{selected} of {total} accepted selected",
+    "createSkill": "Create skill",
+    "draftFailed": "Could not assemble the skill draft.",
+    "scan": {
+      "liveLabel": "Scan progress",
+      "waiting": "Sampling the repo…",
+      "counters": "{sampled, plural, one {# file} other {# files}} sampled · {proposed} proposed · {droppedUngrounded} dropped without evidence · {droppedDuplicate} already decided",
+      "model": "Model: {model}",
+      "cost": "Cost: ${cost}",
+      "done": "Scan finished."
+    }
   },
   "card": {
     "confidence": "Confidence",
     "accepted": "Accepted",
     "accepting": "Accepting…",
-    "acceptAsSkill": "Accept as Skill"
+    "acceptAsSkill": "Accept as Skill",
+    "accept": "Accept",
+    "rejected": "Rejected",
+    "reject": "Reject",
+    "undoReject": "Move back to pending",
+    "edit": "Edit rule",
+    "delete": "Delete candidate",
+    "includeInSkill": "Include in skill",
+    "openOnGitHub": "Open this line on GitHub",
+    "evidenceLabel": "Evidence",
+    "category": {
+      "naming": "naming",
+      "structure": "structure",
+      "errors": "errors",
+      "testing": "testing",
+      "imports": "imports",
+      "typing": "typing",
+      "api": "api",
+      "general": "general"
+    }
+  },
+  "editor": {
+    "ruleLabel": "Rule",
+    "rulePlaceholder": "One sentence a reviewer can apply",
+    "rationaleLabel": "Why it matters",
+    "rationalePlaceholder": "What this rule protects (optional)",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel"
+  },
+  "modal": {
+    "title": "Create skill from conventions",
+    "mergedFrom": "Merged from {count, plural, one {# accepted convention} other {# accepted conventions}} in {repo}. Everything below is editable before you save.",
+    "loading": "Assembling the draft…",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "enabled": "Enabled",
+    "enabledHint": "Whether this block is added to agents' prompts.",
+    "body": "Skill body",
+    "linkAgent": "Link to agent",
+    "linkAgentNone": "Don't link — just save the skill",
+    "linkAgentHint": "The skill is appended to that agent's skills, enabled. Existing links are kept.",
+    "evidenceFiles": "{count, plural, one {# evidence file} other {# evidence files}}",
+    "footerHint": "Saved as v1 · added to Skills Lab",
+    "cancel": "Cancel",
+    "submit": "Create skill",
+    "submitting": "Creating…",
+    "failed": "Could not create the skill.",
+    "created": "Skill created.",
+    "linkFailed": "The skill was saved, but linking it to the agent failed. Link it from the Skills Lab."
   }
 }

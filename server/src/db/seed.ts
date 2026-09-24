@@ -6,7 +6,9 @@ import {
   GENERAL_REVIEWER_PROMPT,
   SECURITY_REVIEWER_PROMPT,
   PERFORMANCE_REVIEWER_PROMPT,
+  TEST_QUALITY_REVIEWER_PROMPT,
 } from './seed-prompts.js';
+import { SEED_SKILLS } from './seed-skills.js';
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -19,10 +21,12 @@ const DEFAULT_MODEL = 'deepseek/deepseek-v4-flash';
  * Seeds: default workspace + system user + membership, default settings,
  * demo repo (acme/payments-api), PR #482 with files/commits, a sample review
  * with a few findings, and the three built-in agents (General + Security +
- * Performance), all on the default openrouter/deepseek-v4-flash provider+model.
+ * Performance) plus Test Quality Reviewer, all on the default
+ * openrouter/deepseek-v4-flash provider+model, and the four demo skills with their
+ * agent links. No runs, reviews or findings are fabricated for skills.
  *
- * Course lessons populate the other tables (skills, conventions, memory, eval,
- * …) once their features are built — they start empty here.
+ * Course lessons populate the other tables (conventions, memory, eval, …) once
+ * their features are built — they start empty here.
  */
 
 export const DEFAULT_WORKSPACE_NAME = 'default';
@@ -211,6 +215,19 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       version: 1,
       createdBy: userId,
     },
+    {
+      workspaceId,
+      name: 'Test Quality Reviewer',
+      description: 'Checks that a PR\'s tests actually protect the code it changes.',
+      provider: DEFAULT_PROVIDER,
+      model: DEFAULT_MODEL,
+      systemPrompt: TEST_QUALITY_REVIEWER_PROMPT,
+      strategy: 'single-pass',
+      ciFailOn: 'critical',
+      enabled: true,
+      version: 1,
+      createdBy: userId,
+    },
   ];
   for (const a of seedAgents) {
     const [existing] = await db
@@ -219,6 +236,56 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
       .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, a.name)));
     if (!existing) await db.insert(t.agents).values(a);
   }
+
+  // ---- demo skills (Skills Lab) ----
+  // Matched by workspace_id + name, inserted only when absent, so a re-run never
+  // duplicates a skill or overwrites one the user has edited or disabled.
+  const skillIds = new Map<string, string>();
+  for (const sk of SEED_SKILLS) {
+    let [row] = await db
+      .select({ id: t.skills.id })
+      .from(t.skills)
+      .where(and(eq(t.skills.workspaceId, workspaceId), eq(t.skills.name, sk.name)));
+    if (!row) {
+      [row] = await db
+        .insert(t.skills)
+        .values({
+          workspaceId,
+          name: sk.name,
+          description: sk.description,
+          type: sk.type,
+          source: 'manual',
+          body: sk.body,
+          enabled: true,
+          version: 1,
+        })
+        .returning({ id: t.skills.id });
+    }
+    skillIds.set(sk.name, row!.id);
+  }
+
+  // ---- skill -> agent links ----
+  // onConflictDoNothing keeps a link the user reordered, toggled or removed-and-readded as is.
+  const agentId = async (name: string): Promise<string> => {
+    const [a] = await db
+      .select({ id: t.agents.id })
+      .from(t.agents)
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.name, name)));
+    return a!.id;
+  };
+  const testQualityId = await agentId('Test Quality Reviewer');
+  const generalId = await agentId('General Reviewer');
+  const seedLinks: Array<typeof t.agentSkills.$inferInsert> = [
+    ...['test-coverage-gaps', 'test-corner-cases', 'no-over-mocking'].map((name, order) => ({
+      agentId: testQualityId,
+      skillId: skillIds.get(name)!,
+      order,
+      enabled: true,
+    })),
+    // Off by default: the API-contract control experiment is one checkbox away.
+    { agentId: generalId, skillId: skillIds.get('api-contract-gate')!, order: 0, enabled: false },
+  ];
+  await db.insert(t.agentSkills).values(seedLinks).onConflictDoNothing();
 
   return { workspaceId, userId };
 }

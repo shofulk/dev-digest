@@ -99,6 +99,70 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-20 — an `EventSource` hook that resets its state inside the effect trips `react-hooks/set-state-in-effect`; reset during render instead
+
+The obvious shape for "subscribe to stream X, clear the last stream's state" is
+`setEvents([]); setResult(null); setRunning(true)` at the top of the effect — which is what
+`lib/hooks/reviews.ts:175` does and why it carries a lint warning. Copying that shape into a
+new hook raises the client warning baseline (13) by one per hook.
+
+The fix is the pattern `useBodyTokens` already uses: reset **during render**, keyed on the
+id, and derive anything that can be derived.
+
+```ts
+const [shownId, setShownId] = React.useState(id);
+if (id !== shownId) { setShownId(id); setEvents([]); setResult(null); setEnded(false); }
+const running = Boolean(id && repoId) && !ended && typeof EventSource !== "undefined";
+```
+
+React re-renders immediately without committing, so there is no stale frame under the new
+id — which is also a real bug the effect version has, not just a lint complaint. One trap:
+the effect's **cleanup must not** touch `ended`. Cleanup runs after the render-time reset has
+already cleared it, so setting it there would instantly re-end the stream that is starting.
+**Evidence:** `client/src/lib/hooks/conventions.ts`
+
+### 2026-09-20 — markdown renders flat everywhere: `<Markdown>` parses correctly, but `.dd-md` is a hook with no CSS behind it
+
+`@devdigest/ui`'s `Markdown` is a real `react-markdown` + `remark-gfm` wrapper, so `#` does
+become `<h1>` and `-` does become `<ul><li>` — a test asserting `getByRole("heading")`
+passes while the screen shows undifferentiated text. Three CSS facts flatten it: the
+primitive wraps output in `<div className="dd-md">` and **nothing in the repo styles
+`.dd-md`**; Tailwind v4 preflight sets `h1…h6 { font-size: inherit; font-weight: inherit }`
+and `ul, ol { list-style: none }`; and `vendor/ui/styles.css:205` adds
+`h1, h2, h3, h4, p { margin: 0 }`. It went unnoticed because the original call sites
+(`FindingCard` rationale, `CommentCard`) render short heading-free snippets.
+
+Two things worth knowing before touching it:
+
+- The fix does **not** belong in `vendor/ui` (which is "do not touch"): `src/app/globals.css`
+  is app-owned, already imports the design-system sheet and already carries app-level CSS
+  (the `ddToastIn` keyframe). Element-level markdown styling is descendant-selector work, so
+  the co-located inline-`styles.ts` convention cannot express it at all — global CSS is the
+  only correct home.
+- Specificity: preflight sits in `@layer base` and unlayered rules beat any layer, so plain
+  `.dd-md ul` wins; `.dd-md h1` (0-1-1) beats `h1 { margin: 0 }` (0-0-1). But the primitive
+  styles `p` and `code` **inline**, which no stylesheet beats — `li > p`, `pre code` and the
+  `:first-child` / `:last-child` margin reset need `!important`, and only those.
+
+jsdom applies no stylesheet, so none of this is testable: `pnpm test` stays green whether the
+CSS is there or not. Only the DOM contract can be pinned; the render must be checked by eye.
+
+**Evidence:** `client/src/app/globals.css:26`
+
+### 2026-09-20 — a tab body chosen by `TAB_COMPONENTS[tab]` unmounts on every switch, so its unsaved form state is silently lost
+
+The Skills Lab editor lifts only the unsaved **body** into `SkillEditor` (Preview needs it),
+so a `Config → Preview → Config` round trip kept the edited body but reset name,
+description and type to the saved values — no error, no test failing, because each tab was
+tested in isolation. Lifting every field into the parent works but drags the whole form into
+a shell that should not know it; the fix that held is to keep the form tab **mounted** and
+hide it: `<div style={{ display: tab === "config" ? "contents" : "none" }}>`. `contents`
+(not a plain `hidden`) keeps the child's flex/grid layout identical while visible. Apply the
+same to any editor tab that owns a form; read-only tabs (Stats, Versions) can keep
+unmounting so they refetch on entry.
+
+**Evidence:** `client/src/app/skills/_components/SkillsLabView/_components/SkillEditor/SkillEditor.tsx:90`
+
 ### 2026-09-17 — the PR list is a CSS grid whose columns are coupled in three places by convention alone, and the right-align was index-derived
 
 Adding a column to `/repos/:repoId/pulls` means changing three things that nothing checks

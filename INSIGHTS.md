@@ -22,7 +22,7 @@ optional elsewhere; `Evidence` is always required):
 ```
 
 Not for: anything scoped to one package (use that package's `INSIGHTS.md`), stable
-configuration and conventions (that is `CLAUDE.md`), or anything a linter or type-checker
+configuration and conventions (that is `AGENTS.md`), or anything a linter or type-checker
 already catches.
 
 ## What Works
@@ -62,6 +62,116 @@ ports. Verify with `curl -H 'Origin: http://localhost:<port>' http://localhost:3
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-09-20 — lint is a CI gate, not only a local one
+
+**Supersedes:** the closing clause of "there is a linter now…" (2026-09-20) — "The CI
+workflows still run `typecheck` and `vitest` only, so lint is a local-and-`pr-self-review`
+gate until a workflow picks it up." A workflow has picked it up: `client.yml`,
+`server-unit.yml` and `reviewer-core.yml` run `lint` between `typecheck` and the tests, and
+`e2e-web.yml` runs `npm run lint` after its `npm ci`. `server-integration.yml` deliberately
+does not — `server-unit.yml` already lints that package, and the integration lane's time
+belongs to Postgres.
+
+Severity there encodes STATE, the convention `.dependency-cruiser.cjs` already used: `error`
+= clean today, `warn` = known violations named in an `OUTSTANDING` comment on the rule.
+`lint` exits non-zero on errors only, so the baseline (`client` 0/13, the other three 0/0) is
+visible without being a permanent red build; a rising warning count is the regression signal.
+`typescript-eslint` runs **without** type-aware rules, so floating promises and unsafe-`any`
+are still uncaught — enabling `recommended-type-checked` is a separate, noisier step.
+**Evidence:** `.github/workflows/server-unit.yml:68`, `TESTING.md`
+
+### 2026-09-20 — `pnpm add` dies with ERR_PNPM_UNEXPECTED_STORE: the PATH pnpm is older than the one that built `node_modules`
+
+`node_modules` in `client/` and `server/` was installed by **pnpm 12.4.2** (store v11),
+while the pnpm on PATH here is **10.34.5** (store v10), and pnpm refuses to link across
+store majors — the message says "reinstall your dependencies with pnpm install", which is a
+much bigger hammer than the situation needs. The version that built a package is recorded in
+`<pkg>/node_modules/.modules.yaml` under `packageManager` (and `storeDir`); read it and drive
+that exact version instead: `cd <pkg> && npx -y pnpm@12.4.2 add -D …`. `pnpm --dir <pkg>`
+from the repo root is equivalent for scripts but still uses the PATH binary, so it hits the
+same wall.
+
+Two consequences worth knowing before touching dependencies:
+
+- A pnpm-12-written `pnpm-lock.yaml` stays `lockfileVersion: '9.0'` and **CI's pnpm 10
+  (`pnpm/action-setup@v4`, `version: 10`) installs it with `--frozen-lockfile` cleanly** —
+  verified by copying `package.json` + the lockfile into a temp dir and running the real
+  thing, which is the only check that proves it. pnpm 12 does re-resolve peers, so the diff
+  is much larger than the packages added (`simple-git` → `simple-git(supports-color@7.2.0)`
+  and so on); that churn is expected, not a mistake.
+- pnpm 12 writes a `pnpm-workspace.yaml` stub next to the package listing every ignored
+  build script as `<pkg>: set this to true or false`, and exits non-zero with
+  `ERR_PNPM_IGNORED_BUILDS` **after** the packages are already added. The install succeeded;
+  do not re-run it in a loop chasing the exit code.
+
+**Evidence:** `client/node_modules/.modules.yaml:1208`
+
+### 2026-09-20 — there is no linter in this repo, so every `eslint-disable` comment in the source is decorative
+
+No ESLint, Biome or Prettier exists in any of the four packages — no config file, no
+dependency, no `lint` script — and the five CI workflows run only `typecheck` and `vitest`.
+Three files nevertheless carry `eslint-disable … react-hooks/exhaustive-deps`
+(`client/src/lib/hooks/reviews.ts:212`, `ReviewRunAccordion.tsx:60`,
+`ConfigTab.tsx:39`), which reads as "this rule was considered and waived" when in fact the
+rule has never run against this code. Two consequences: the whole `react-hooks` class of bug
+(stale closures, missing deps, conditional hooks) is caught by nothing, and the boilerplate
+line in every `INSIGHTS.md` — "not anything a linter or type-checker already catches" — today
+means the type-checker alone. Before trusting a suppression comment here, check whether the
+tool that would honour it is installed; `find . -name 'eslint*' | grep -v node_modules`
+returns nothing.
+**Evidence:** `client/src/lib/hooks/reviews.ts:212`
+
+### 2026-09-20 — there is a linter now: eslint in all four packages, `pnpm --dir <pkg> lint`
+
+**Supersedes:** "there is no linter in this repo, so every `eslint-disable` comment in the
+source is decorative" (2026-09-20, above). Each package now carries an `eslint.config.*`
+(`.mjs` in `client/`, `.js` in the other three) and a `lint` script; `pnpm --dir server lint`
+and `pnpm --dir client lint` both exit 0 on the current tree. The `eslint-disable
+react-hooks/exhaustive-deps` comments in `client/` are therefore load-bearing from now on —
+removing one is a real rule, not decoration. The CI workflows still run `typecheck` and
+`vitest` only, so lint is a local-and-`pr-self-review` gate until a workflow picks it up.
+**Evidence:** `server/eslint.config.js`, `client/eslint.config.mjs`
+
+### 2026-09-20 — a `PreToolUse` hook on `Bash` runs on *every* Bash call, and a gate hook must fail open
+
+`.claude/hooks/pr-gate.sh` (the `pr-self-review` gate) is registered as `PreToolUse` /
+matcher `Bash`, and Claude Code has no finer matcher than the tool name — the script is
+spawned before every single Bash command, not just the `gh pr create` it cares about. So the
+first thing it does after reading stdin is a `grep -Eq 'gh[^"]*pr[^"]*(create|merge|ready)'`
+on the raw JSON and exits 0 on a miss; the `node` JSON parse only happens on a hit. Without
+that bail-out every `ls` in the session pays two node starts.
+
+Second, and more important: the script exits 0 (allow) on *any* internal error — not a repo,
+unreadable state file, unknown verdict, garbage stdin. Only a known-bad verdict exits 2. A
+gate hook that blocks every `gh` command when it breaks does not get debugged, it gets
+deleted, and then there is no gate at all. Verdicts are `pass` / `blocked` / `inconclusive`,
+and `inconclusive` (a check could not run) is kept separate from `blocked` (your code is
+wrong) for the same reason.
+
+Caveat when editing the hook: Claude Code only watches directories that already had a
+settings file when the session started, so creating `.claude/settings.json` mid-session does
+not arm the hook until `/hooks` is opened once or the session restarts.
+**Evidence:** `.claude/hooks/pr-gate.sh:96`, `.claude/settings.json`
+
+### 2026-09-20 — `AGENTS.md` alone does not feed Claude Code; the three-line `CLAUDE.md` next to it is load-bearing
+
+Claude Code reads `AGENTS.md` natively only from **2.1.277** (2.1.272 was installed here when
+the repo was migrated), and even after that the default `claude-md-or-agents-md` mode makes a
+`CLAUDE.md` anywhere in the working directory or above **suppress** `AGENTS.md` entirely, while
+a nested `AGENTS.md` loads only if that directory has no `CLAUDE.md` of its own. The setting
+that reads both, `pluginConfigs["agents-md@builtin"].options.instructionFiles`, is honoured
+only in user, policy and `--settings` files — it cannot be committed, so it can never be relied
+on for anyone but the person who set it. Hence the shape here: `AGENTS.md` is the single source
+of truth and each one has a `CLAUDE.md` beside it whose whole body is a bare `@AGENTS.md`
+import (inlined at launch, path resolved relative to the importing file, works in nested files
+too). The import must sit on its own line and outside backticks — inside a code span it stays
+literal and the instructions silently vanish. A symlink is the wrong tool for this: Edit/Write
+refuse to write through one, and git checks it out as a text file on Windows without
+`core.symlinks`. Verify a change to this wiring headlessly rather than by reasoning about it —
+`claude -p` from inside a package, asking for a rule that exists only in that package's
+`AGENTS.md`, proves the import actually expanded.
+**Evidence:** `CLAUDE.md:6`
 
 ### 2026-09-16 — changing the compose port mapping does not move an already-created container
 

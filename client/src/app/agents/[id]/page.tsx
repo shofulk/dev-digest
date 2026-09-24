@@ -7,12 +7,13 @@ import React from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Button, Dropdown, ErrorState, Skeleton, Icon, Badge } from "@devdigest/ui";
 import { AppShell } from "../../../components/app-shell";
-import { AgentCard } from "../_components/AgentCard";
+import { LinkedAgentCard } from "../_components/LinkedAgentCard";
 import { AgentEditor } from "./_components/AgentEditor";
+import { TABS } from "./_components/AgentEditor/constants";
 import { useAgents, useAgent, useUpdateAgent } from "../../../lib/hooks/agents";
 import { ApiError } from "../../../lib/api";
 
-const VALID_TABS = ["config"];
+const VALID_TABS = TABS.map((tb) => tb.key);
 
 export default function AgentEditorPage() {
   const params = useParams<{ id: string }>();
@@ -81,7 +82,7 @@ export default function AgentEditorPage() {
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "0 12px 12px" }}>
             {(agents ?? []).map((a) => (
-              <AgentCard
+              <LinkedAgentCard
                 key={a.id}
                 ag={a}
                 active={a.id === id}

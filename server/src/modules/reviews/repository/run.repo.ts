@@ -157,6 +157,8 @@ export async function completeAgentRun(
     blockers?: number | null;
     /** Failure reason (status='failed') / cancellation note. Null clears it. */
     error?: string | null;
+    /** Ordered ids of the skills the prompt included. Omit on failed/cancelled runs (stays NULL). */
+    skillsUsed?: string[];
   },
 ): Promise<void> {
   await db
@@ -172,6 +174,7 @@ export async function completeAgentRun(
       score: values.score ?? null,
       blockers: values.blockers ?? null,
       error: values.error ?? null,
+      ...(values.skillsUsed !== undefined ? { skillsUsed: values.skillsUsed } : {}),
     })
     .where(eq(t.agentRuns.id, runId));
 }

@@ -8,6 +8,12 @@ import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './reposit
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
+import {
+  formatSkillBlock,
+  resolveAgentSkillSet,
+  skillsForPrompt,
+  type ResolvedSkill,
+} from '../_shared/agent-skills.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -184,6 +190,12 @@ export class ReviewRunExecutor {
 
       const task = taskLine(pull) + rankNote;
 
+      // Skills: resolved bodies go in as instructions (see _shared/agent-skills.ts).
+      // With none included `skills` is omitted, so the prompt is byte-identical to
+      // a skill-less run and `assembly.skills` stays null.
+      const includedSkills = await this.resolveSkills(agent.id, runLog);
+      const skills = skillsForPrompt(includedSkills);
+
       // ---- Engine: assemble → single-pass → grounding -----------------------
       // The pure review pipeline lives in @devdigest/reviewer-core (shared with
       // the CI runner). The service owns only I/O: repo-intel context resolution
@@ -201,6 +213,7 @@ export class ReviewRunExecutor {
         ...(callersDigest ? { callers: callersDigest } : {}),
         // T3 — repo skeleton, same omit-when-empty contract.
         ...(repoMap ? { repoMap } : {}),
+        ...(skills ? { skills } : {}),
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
@@ -252,6 +265,7 @@ export class ReviewRunExecutor {
         score: outcome.review.score,
         blockers,
         error: null,
+        skillsUsed: includedSkills.map((s) => s.id),
       });
 
       const trace: RunTrace = {
@@ -314,6 +328,35 @@ export class ReviewRunExecutor {
         .catch(() => undefined);
       this.container.runBus.complete(runId);
       throw err;
+    }
+  }
+
+  /**
+   * Resolve the agent's included skills and log them: one `info` line per skill and
+   * one summary line. A tokenizer failure only drops the `~n tokens` suffix. The
+   * summary is skipped for an agent that links nothing (no noise on every run).
+   */
+  private async resolveSkills(agentId: string, runLog: RunLogger): Promise<ResolvedSkill[]> {
+    const { skills, linkedCount } = await resolveAgentSkillSet(this.container.db, agentId);
+    if (linkedCount === 0) return skills;
+
+    let total: number | null = 0;
+    for (const skill of skills) {
+      const tokens = this.countTokens(formatSkillBlock(skill));
+      total = tokens === null || total === null ? null : total + tokens;
+      runLog.info(`skill: ${skill.name} v${skill.version}${tokens === null ? '' : ` (~${tokens} tokens)`}`);
+    }
+    runLog.info(
+      `skills: ${skills.length} of ${linkedCount} linked enabled${total === null ? '' : ` → ~${total} tokens`}`,
+    );
+    return skills;
+  }
+
+  private countTokens(text: string): number | null {
+    try {
+      return this.container.tokenizer.count(text);
+    } catch {
+      return null;
     }
   }
 
