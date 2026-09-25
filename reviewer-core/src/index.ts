@@ -17,10 +17,14 @@ export {
   wrapUntrusted,
   type PromptParts,
   type AssembledPrompt,
+  type ReviewIntent,
 } from './prompt.js';
 
 // Citation grounding — the mandatory mechanical gate for diff findings.
 export { groundFindings, groundingSummary, type GroundingResult } from './grounding.js';
+
+// Out-of-scope filter (AC9) — mechanical, runs after grounding.
+export { applyScopeFilter, type ScopeFilterResult } from './review/scope.js';
 
 // Structured-output helpers (Zod → JSON Schema + parse-with-repair).
 export {

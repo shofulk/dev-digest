@@ -13,6 +13,61 @@ export const Intent = z.object({
 });
 export type Intent = z.infer<typeof Intent>;
 
+/** How confident the classifier is in the derived intent. Gates the reviewer-core
+ *  scope filter (only medium/high filter) and caps when a source is missing (AC5). */
+export const IntentConfidence = z.enum(['low', 'medium', 'high']);
+export type IntentConfidence = z.infer<typeof IntentConfidence>;
+
+/** Kind of reference the classifier resolved from the PR body / changed files. */
+export const IntentSourceKind = z.enum([
+  'pr_title',
+  'pr_body',
+  'file_list',
+  'linked_issue',
+  'doc_link',
+  'repo_doc',
+  'changed_spec',
+  'ticket',
+]);
+export type IntentSourceKind = z.infer<typeof IntentSourceKind>;
+
+/** Whether a reference's content actually reached the classifier prompt. */
+export const IntentSourceStatus = z.enum(['used', 'missing', 'not_fetched']);
+export type IntentSourceStatus = z.infer<typeof IntentSourceStatus>;
+
+/** Every reason a `missing`/`not_fetched` source can carry (D1). `IntentSource.reason`
+ *  itself stays `z.string().nullish()` so rows written before this enum existed still
+ *  parse — this is the runtime list the UI translates against (`reasonKey`). */
+export const IntentSourceReason = z.enum([
+  'not_found',
+  'timeout',
+  'phase_timeout',
+  'no_token',
+  'cross_org',
+  'host_not_allowed',
+  'unsupported',
+  'too_large',
+  'no_adapter',
+  'cap_reached',
+  'fetch_failed',
+]);
+export type IntentSourceReason = z.infer<typeof IntentSourceReason>;
+
+/**
+ * One resolved reference. `ref` is the normalised, loggable identifier
+ * (`owner/repo#N`, `owner/repo:path@sha7`, `jira:KEY-12`, `host:<hostname>`) — the
+ * only thing ever logged or shown, never the raw URL/query (AC6, AC12).
+ */
+export const IntentSource = z.object({
+  kind: IntentSourceKind,
+  ref: z.string(),
+  status: IntentSourceStatus,
+  reason: z.string().nullish(),
+  chars: z.number().int().nullish(),
+  truncated: z.boolean().nullish(),
+});
+export type IntentSource = z.infer<typeof IntentSource>;
+
 // ---- Blast radius ----
 export const ChangedSymbol = z.object({
   name: z.string(),

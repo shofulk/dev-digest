@@ -1,16 +1,18 @@
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
-import type { Finding, Intent, RunSummary, RunTrace } from '@devdigest/shared';
+import type { Finding, RunSummary, RunTrace } from '@devdigest/shared';
 
 /**
  * A2 — review data-access. The ONLY layer touching the DB for the review
- * domain. Owns `reviews`, `findings`, `pr_intent`, and persists the
- * observability rows `agent_runs` + `run_traces` (one trace doc per run).
- * Workspace scoping is enforced via the PR (which carries workspace_id).
+ * domain. Owns `reviews`, `findings`, and persists the observability rows
+ * `agent_runs` + `run_traces` (one trace doc per run). Workspace scoping is
+ * enforced via the PR (which carries workspace_id). The `pr_intent` table's
+ * persistence lives under `_shared/repository/` (D2/C1) — read it through the
+ * shared `IntentDeriver`'s `read`/`derive` methods, never through this class.
  *
  * The query implementations are colocated, split by aggregate, under
- * `./repository/` (review+findings, agent runs, pull/intent). This class
- * composes them so its public API stays identical.
+ * `./repository/` (review+findings, agent runs, pull). This class composes
+ * them so its public API stays identical.
  */
 
 import type { FindingRow, PullRow } from '../../db/rows.js';
@@ -125,16 +127,6 @@ export class ReviewRepository {
     return reviewRepo.setFindingDismissed(this.db, findingId, at);
   }
 
-  // ---- intent -------------------------------------------------------------
-
-  upsertIntent(prId: string, intent: Intent): Promise<void> {
-    return pullRepo.upsertIntent(this.db, prId, intent);
-  }
-
-  getIntent(prId: string): Promise<Intent | undefined> {
-    return pullRepo.getIntent(this.db, prId);
-  }
-
   // ---- observability: agent_runs + run_traces ----------------------------
 
   /** Create an agent_runs row in `running` state; returns its id (= the runId). */
@@ -175,6 +167,11 @@ export class ReviewRepository {
   /** Record the head SHA a review ran against (PR-list freshness derivation). */
   markReviewed(prId: string, sha: string): Promise<void> {
     return pullRepo.markReviewed(this.db, prId, sha);
+  }
+
+  /** Persist a refreshed `head_sha` from `GET /pulls/:id` (AC7/S11). */
+  updateHeadSha(prId: string, sha: string): Promise<void> {
+    return pullRepo.updateHeadSha(this.db, prId, sha);
   }
 
   /** Persist the WHOLE run log as ONE document. PK = runId → agent_runs. */

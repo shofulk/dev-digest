@@ -369,4 +369,89 @@ export class OctokitGitHubClient implements GitHubClient {
     );
     return res.data.login;
   }
+
+  /**
+   * Fetch a text file at `ref` via the Contents API. Size is checked from the
+   * metadata BEFORE decoding (never decode-then-check) so an oversized file
+   * never touches memory as a giant string. Only a `type: 'file'` entry is
+   * accepted — a directory/symlink/submodule throws, mapped by the caller to
+   * `not_fetched: unsupported`.
+   */
+  async getFileContent(
+    repo: RepoRef,
+    path: string,
+    ref: string,
+    opts: { maxBytes?: number; timeoutMs?: number } = {},
+  ): Promise<{ path: string; ref: string; content: string; size: number; truncated: boolean }> {
+    return withRetry(() =>
+      withTimeout(
+        (async () => {
+          const res = await this.octokit.rest.repos.getContent({
+            owner: repo.owner,
+            repo: repo.name,
+            path,
+            ref,
+          });
+          const data = res.data;
+          if (Array.isArray(data) || data.type !== 'file') {
+            throw new Error(`'${path}' is not a file at ${ref}`);
+          }
+          const maxBytes = opts.maxBytes ?? Infinity;
+          if (data.size > maxBytes) {
+            throw new Error(`'${path}' is ${data.size} bytes, over the ${maxBytes}-byte cap`);
+          }
+          const content = data.content
+            ? Buffer.from(data.content, 'base64').toString('utf-8')
+            : '';
+          return { path, ref, content, size: data.size, truncated: false };
+        })(),
+        opts.timeoutMs ?? TIMEOUT,
+      ),
+    );
+  }
+
+  /**
+   * Issues this PR would close (GraphQL `closingIssuesReferences`) — unioned
+   * upstream with a body-regex scan, since GitHub only recognises closing
+   * keywords for issues in the SAME repo.
+   */
+  async listClosingIssueRefs(
+    repo: RepoRef,
+    n: number,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<{ owner: string; name: string; number: number }[]> {
+    return withRetry(() =>
+      withTimeout(
+        (async () => {
+          const res = await this.octokit.graphql<{
+            repository: {
+              pullRequest: {
+                closingIssuesReferences: {
+                  nodes: { number: number; repository: { owner: { login: string }; name: string } }[];
+                };
+              } | null;
+            } | null;
+          }>(
+            `query($owner: String!, $name: String!, $n: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $n) {
+                  closingIssuesReferences(first: 10) {
+                    nodes { number repository { owner { login } name } }
+                  }
+                }
+              }
+            }`,
+            { owner: repo.owner, name: repo.name, n },
+          );
+          const nodes = res.repository?.pullRequest?.closingIssuesReferences.nodes ?? [];
+          return nodes.map((node) => ({
+            owner: node.repository.owner.login,
+            name: node.repository.name,
+            number: node.number,
+          }));
+        })(),
+        opts.timeoutMs ?? TIMEOUT,
+      ),
+    );
+  }
 }

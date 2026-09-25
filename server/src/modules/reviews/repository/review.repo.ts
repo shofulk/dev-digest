@@ -48,6 +48,7 @@ export async function insertFindings(
         confidence: f.confidence,
         kind: f.kind ?? 'finding',
         trifectaComponents: f.trifecta_components ?? null,
+        scope: f.scope ?? null,
       })),
     )
     .returning();
