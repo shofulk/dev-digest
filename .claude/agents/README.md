@@ -94,16 +94,54 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
   is a `PreToolUse(Write|Edit|NotebookEdit)` allow/deny glob check on the resolved path,
   checked on both the logical path and its symlink-resolved form; `bash readonly`/`bash
   checks` is a `PreToolUse(Bash)` allowlist per shell segment (`checks` = `readonly` +
-  package-script commands such as `typecheck`/`lint`/`test`/`arch`), where a `pnpm`/`npm`
-  invocation is only allowed with `--dir`/`-C` before the script — a bare `pnpm <script>`
-  is rejected — and only a `CI=` leading environment assignment is accepted (any other
-  `VAR=value` prefix is rejected). `docs/skills/**` is denied to `write docs` until its
-  case-collision with the tracked `docs/skills/readme.md` is resolved (O6). Failure policy
-  matches `pr-gate.sh`: an internal error (unreadable stdin, unparsable JSON) fails open
-  (exit 0 + warning); a parsed command or path outside the allow set exits 2 and blocks.
-  **Bash enforcement is best-effort** — an allowlisted program can still write files the
-  allowlist never sees (e.g. a test writing a snapshot); the prompt rule in each agent's
-  *Hard rules* remains the primary control, the hook is a backstop.
+  package-script commands such as `typecheck`/`lint`/`test`/`arch`). **Every `checks`
+  command runs from the repo root:** `pnpm` is only allowed with `--dir`/`-C` before the
+  script, given as its **own token and a bare package name** — `server`, not an absolute
+  path, `./server` or `--dir=server` (the attached/`=`/`--prefix*` spellings are rejected
+  outright, since they slip a second, unvalidated directory value past the check) — every
+  `--dir`/`-C` value is exactly one of `server`, `client`, `reviewer-core`, `e2e`, and
+  `--dir e2e` allows only `typecheck`/`lint` (its `test` runs the browser flows). `npm` is
+  not allowed at all (it has no `--dir`, only `-C`, which means `--prefix`). `cd`/`pushd`/
+  `popd`/`builtin`/`command` are unknown heads in both profiles — a `cd` anywhere in a
+  segment, including inside `bash -c`/`( … )`, blocks the whole command — and `git`
+  rejects `-C`/`--git-dir*`/`--work-tree*` for pointing at another tree. A shell invoker
+  (`bash`/`sh`/…) needs a `-c` command, which is checked like any other segment — piping or
+  redirecting a program into it (`… | bash`, `bash < f`) is blocked, and so are `sed -I`/
+  clustered `-ni`, attached `sort -oFILE`, and `uniq <in> <out>`. Beyond that,
+  **when the Bash call's own working directory is not the project root, every `pnpm`
+  segment and the four hook self-check commands below are blocked** ("run from the repo root
+  (cwd: …)"), even with no `cd` in the command line itself — the hook compares the
+  hook JSON's `cwd` field (fallback: its own process cwd) against `$CLAUDE_PROJECT_DIR`
+  (fallback: its own repo). Script forms (`typecheck`/`lint`/`arch`) take **no trailing
+  argument**; `test` and `exec vitest run` take only the vitest argument allowlist
+  (positional filters, `--exclude`, `-t`/`--testNamePattern`, `--reporter` with a built-in
+  name, `--passWithNoTests`, `--silent`); `exec tsc` takes `--noEmit` (required) and
+  `-p`/`--project`; `exec depcruise` takes a path under `src`, `--config`/`-c` pinned to
+  `.dependency-cruiser.cjs`, `-T err|err-long|text`, `--include-only` — the
+  architecture-reviewer uses `-T` for `depcruise`'s output-type flag, since the long form
+  is rejected as `--output*` in every segment; `exec eslint` takes a path,
+  `--max-warnings <n>`, `-f`/`--format stylish|json`. A positional path argument is
+  rejected if absolute, if any segment is `..`, or if any segment is `clones`. Only a
+  `CI=` leading environment assignment is accepted (any other `VAR=value` prefix is
+  rejected). A backtick or `$(` outside single quotes is rejected as command substitution,
+  including in the body of a heredoc whose delimiter is unquoted (a quoted delimiter,
+  `<<'EOF'`, keeps the body inert data). Four exact commands are allowed in `checks` only,
+  ahead of the normal recursion (and subject to the same repo-root cwd check):
+  `bash -n .claude/hooks/scope-guard.sh`, `bash -n .claude/hooks/implementer-guard.sh`,
+  `.claude/hooks/scope-guard.sh self-test`, `.claude/hooks/implementer-guard.sh
+  self-test` — so a reviewer can run the hooks' own tests. `docs/skills/**`
+  is denied to `write docs` until its case-collision with the tracked
+  `docs/skills/readme.md` is resolved (O6). Failure policy: an internal runtime error
+  (unreadable stdin, unparsable JSON, an unresolvable project root) fails open (exit 0 +
+  warning); a parsed command or path outside the allow set — including a cwd mismatch —
+  exits 2 and blocks; **an unknown mode or profile argument also exits 2** ("misconfigured
+  scope-guard") rather than failing open — it comes from the calling agent's own
+  frontmatter, so a typo there should be loud and local, not a silently disarmed guard.
+  `pr-gate.sh`/`implementer-guard.sh` keep failing open on an unknown mode and never apply
+  the cwd/`cd`/`git -C` rules. **Bash enforcement is best-effort** — an allowlisted
+  program can still write files the allowlist never sees (e.g. a test writing a
+  snapshot); the prompt rule in each agent's *Hard rules* remains the primary control,
+  the hook is a backstop.
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
 
@@ -234,6 +272,19 @@ file handoff is a project decision (visible to people and reviewers).
   ```bash
   .claude/hooks/scope-guard.sh self-test
   ```
+
+- **An agent is blocked on every single Write/Edit or Bash call, saying "misconfigured
+  scope-guard".** Its frontmatter names a `write`/`bash` profile the hook does not
+  recognise (a typo, e.g. `write test` instead of `write tests`) — this fails closed on
+  purpose (S15(e)) rather than silently allowing everything, so it shows up on the agent's
+  very first call. Fix the profile name in the agent's `hooks:` block; the message names
+  the mode and sub-profile it received.
+
+- **A `checks`-profile agent is blocked on `pnpm`/a hook self-check, saying "run from the repo
+  root".** The Bash call's own working directory is not the project root (S19) — the
+  agent cannot `cd` back (rejected in every profile), so it reports *cannot verify* /
+  *Limits* naming the command, never a retry with a different spelling; the main session
+  re-invokes it once the cwd is right.
 
 - **The planner returns *Clarification needed*.** Answer the questions (the main session
   passes the JSON to `AskUserQuestion`) and re-invoke it with the answers, or write the

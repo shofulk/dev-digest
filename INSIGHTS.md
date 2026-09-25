@@ -63,6 +63,74 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-09-25 — a Bash allowlist that recurses into `bash -c` still passed `cat x.sh | bash`: a bare shell reads its program from stdin
+Three plan revisions hardened `scope-guard.sh` flag by flag while `cat server/clones/x/y.sh | bash`
+passed both profiles: the shell-invoker branch only recursed into *non-flag arguments*, and a
+bare `bash`/`sh`/`bash -s`/`bash < f` has none, so it returned "allowed" with the real program
+invisible. The same shape hides in per-flag checks: `sed -I` (BSD in-place on macOS),
+clustered `-ni`, attached `sort -oFILE`, and `uniq <in> <out>` all write files past a check
+that only matched the exact token. For any allowlisting guard: a shell head with no command
+argument is a reject, short flags are checked as clusters, and every new rule gets a
+bypass probe through the full JSON dispatch, not only a positive `self-test` row.
+**Evidence:** `.claude/hooks/scope-guard.sh:547`
+
+### 2026-09-25 — an exact-command allowlist entry in `scope-guard.sh` must sit *before* the shell-invoker recursion, or `bash -n <path>`/`<path> self-test` blocks itself
+
+Adding `bash -n .claude/hooks/scope-guard.sh` and `.claude/hooks/scope-guard.sh self-test`
+to the `checks` profile (S15(f)) is not just a matter of listing the string somewhere in
+`segVerdict`: the shell-invoker branch (`if (["bash","sh","zsh","dash","eval"].includes(head))`)
+recurses into every non-flag argument of `bash`/`sh`/`eval` and evaluates it *as its own
+command* — so `bash -n .claude/hooks/scope-guard.sh` recurses into the path
+`.claude/hooks/scope-guard.sh`, whose basename is not `docker`/`pnpm`/`npm` nor in
+`READONLY_CMDS`, and gets rejected as "not in the allow-list" even though the intent was
+just to syntax-check a file. Likewise `<hook> self-test` has no shell-invoker head at all,
+so it falls straight to the same final rejection. The fix is a small `CHECKS_EXACT` set of
+full reconstructed-canonical commands, checked at the top of `segVerdict` — before
+`preReject` and before the shell-invoker branch — so these four fixed strings never enter
+the general-purpose parsing that treats path arguments as commands. Since S19, the same
+early check also requires the Bash call's cwd to resolve to the project root — a
+`CHECKS_EXACT` hit with a mismatched or unresolvable cwd is rejected with "run from the
+repo root" before it ever reaches the shell-invoker branch either.
+**Evidence:** `.claude/hooks/scope-guard.sh:527` (`CHECKS_EXACT` check, ahead of the `bash|sh|zsh|dash|eval` recursion)
+
+### 2026-09-25 — `bash -n scope-guard.sh` fails several functions away from the real mistake: an apostrophe in a comment ends the outer `node -e '…'` string early
+
+`bash_eval`/`write_eval` (and, since S19, `self_test`'s `runj` helper) in
+`.claude/hooks/scope-guard.sh` each wrap a `node -e '…'` call in **single** quotes, so any
+literal `'` inside — including an English contraction in a `//` comment, e.g. "this
+policy's business" — closes the bash string right there. Bash then tries to parse the rest
+of the JS as shell and dies with a syntax error pointing at whatever token happens to
+follow, which is nowhere near the apostrophe that caused it (here: a `function` declaration
+two lines later). `bash -n` catches it, but only `grep -n "'" .claude/hooks/scope-guard.sh`
+next to each `node -e '` block start finds the actual offending line quickly. Fix: no `'`
+anywhere inside any `node -e '…'` block, not even in comments — write around contractions
+or use `--` instead.
+**Evidence:** `.claude/hooks/scope-guard.sh:116` (block start), `.claude/hooks/scope-guard.sh:647` (block start), `.claude/hooks/scope-guard.sh:827` (block start)
+
+### 2026-09-24 — a hand-probed guard hook "allows everything": the probe, not the hook, is broken
+
+Every guard in `.claude/hooks/` fails open, so a malformed probe returns exit 0 and looks
+exactly like a hole in the allowlist. Two ways this happened in one session:
+- The session shell is **zsh**, which does not word-split an unquoted `$1`. So
+  `p(){ … | scope-guard.sh $1; }; p "write tests"` passes one argument, the hook sees an
+  unknown mode and allows the call. Probe from `bash -c '…'` and pass modes as separate
+  quoted arguments: `"$1" "$2"`. As of the S15 hardening, `scope-guard.sh` no longer
+  allows this by accident: an unknown mode or profile argument now blocks with
+  "misconfigured scope-guard" instead of failing open, so the same zsh-quoting mistake now
+  surfaces as a loud block on the agent's first call rather than a silent hole —
+  `implementer-guard.sh`/`pr-gate.sh` still allow it (they stay fail-open on an unknown
+  mode by design, C4/O8).
+- Hand-built JSON with a nested `"` (for example `bash -c "git push"`) does not parse, and
+  the hook allows it. Build the payload with
+  `node -e 'process.stdout.write(JSON.stringify({tool_input:{command:…}}))'`.
+
+Also, the shared tokenizer (`segments()`, the same in all three hooks) splits on every `&`.
+That is harmless in the denylist hooks (`pr-gate.sh`, `implementer-guard.sh`), but it broke
+`2>&1` in the allowlist hook `scope-guard.sh`, which now keeps a `&` that comes right after
+`>` as part of the redirect. Port that fix if either of the other two hooks ever becomes an
+allowlist.
+**Evidence:** `.claude/hooks/scope-guard.sh:210`
+
 ### 2026-09-20 — lint is a CI gate, not only a local one
 
 **Supersedes:** the closing clause of "there is a linter now…" (2026-09-20) — "The CI

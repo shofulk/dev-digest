@@ -38,10 +38,31 @@ under `client/src`). You have no `Skill` tool — read anything else as a file.
 ## Hard rules
 
 - **Read-only.** No `Write`, `Edit`, `NotebookEdit`, no subagents. Bash is for the
-  `checks` profile only: `typecheck`, `lint` (no `--fix`), `test`/`vitest run`, `arch`,
-  package-scoped `exec vitest run …` / `exec depcruise …` / `exec eslint …`, `docker
-  info`. Nothing that writes, migrates, installs, boots a server or fetches — the guard
-  hook enforces this, but do not attempt it either.
+  `checks` profile only, and the exact list below is the same one `plan-verifier.md`
+  carries — not "the same as the other agent":
+  - Allowed: `pnpm --dir <server|client|reviewer-core> typecheck|lint|test|arch`; `pnpm
+    --dir e2e typecheck|lint`; `CI=1` before `test`/`exec vitest run`; `pnpm --dir <pkg>
+    exec vitest run …`, `exec tsc --noEmit`, `exec depcruise …`, `exec eslint …` within the
+    S20 argument allowlists; `docker info`; the read-only heads of `readonly`; and exactly
+    these four commands: `bash -n .claude/hooks/scope-guard.sh`,
+    `bash -n .claude/hooks/implementer-guard.sh`,
+    `.claude/hooks/scope-guard.sh self-test`,
+    `.claude/hooks/implementer-guard.sh self-test`.
+  - Run every command from the repo root. No `cd`/`pushd`, no `git -C`/`--git-dir`/
+    `--work-tree`.
+  - `--dir` takes a bare package name (`server`, not an absolute path, `./server` or
+    `--dir=server`) as its own token.
+  - No command substitution (backtick or `$(`). Run `git merge-base HEAD origin/main` as
+    its own call and paste the sha into the next command.
+  - `-T err-long`, never `--output-type`.
+  - `sort | uniq`, never `sort -u`.
+  - Only a `CI=` env prefix; no redirection except to `/dev/null` or `2>&1`.
+  - Script forms take no trailing argument except `test`, which takes the vitest argument
+    allowlist (S20).
+  - A block from the hook is a *cannot verify* / *Limits* line naming the command, never a
+    retry with a different spelling.
+  Nothing that writes, migrates, installs, boots a server or fetches — the guard hook
+  enforces this, but do not attempt it either.
 - **Findings only on change-set lines.** A pre-existing issue you notice outside the diff
   goes under *Context (pre-existing)*, never *Findings* — this is the same grounding rule
   `pr-self-review` step 4 and 6 use. A finding with no citeable `file:line` in the change
@@ -63,9 +84,11 @@ under `client/src`). You have no `Skill` tool — read anything else as a file.
 
 You need a change set. Accept, in this order of preference: (1) an explicit file list,
 (2) the implementer's *Hand-off to reviewers → Architecture* line, (3) a base ref
-(default `git merge-base HEAD origin/main`, **never** `git fetch`). Compute the change
-set as `pr-self-review` step 1 does: committed on the branch + staged + unstaged +
-untracked, excluding `server/clones/**`.
+(default `git merge-base HEAD origin/main`, run as its own call from the repo root —
+**never** `git fetch`, never `git -C`, never a command substitution around it — with the
+sha pasted into the next command). Compute the change set as `pr-self-review` step 1
+does: committed on the branch + staged + unstaged + untracked, excluding
+`server/clones/**`.
 
 If none of the three is available and you cannot infer a change set with high confidence
 (e.g. `git status --short` is empty and no base ref resolves), **do not review**. Return
@@ -104,9 +127,10 @@ this reviewer to check.
    - `pnpm --dir server arch` — compare the summary line to the baseline **0 errors, 17
      warnings** (`onion-architecture/SKILL.md` § Enforcement). A change that raises either
      count is a regression; report it even if the raised rule is only `warn`.
-   - `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs --output-type
-     err-long` for the edges and rule comments behind each violation (the `err` output
-     from `arch` only counts them).
+   - `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs -T err-long`
+     for the edges and rule comments behind each violation (the `err` output from `arch`
+     only counts them; `scope-guard.sh` rejects `depcruise`'s long-flag spelling of the
+     same option, `-T` is the short form it accepts).
    - **Vendor tripwire:** any `*/src/vendor/**` path in the change set outside
      `server/src/vendor/shared/**` is a **critical** finding on its own (severity.md §1
      row 6).
@@ -157,7 +181,7 @@ finding.
 | Check | Command | Result | Baseline delta |
 |-------|---------|--------|-----------------|
 | Backend rings | `pnpm --dir server arch` | pass / fail | 0 errors, 17 warnings → <new counts> |
-| Rule detail | `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs --output-type err-long` | | |
+| Rule detail | `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs -T err-long` | | |
 | Vendor mirrors | `diff -rq server/src/vendor/shared client/src/vendor/shared` | | |
 
 ## Findings

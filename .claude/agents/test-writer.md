@@ -73,6 +73,10 @@ other skill with the `Skill` tool once you know which seam you are testing.
 - **e2e flows** (`e2e/specs/NN-name.flow.json`) are deterministic batch JSON: only
   `--url` / `--text` / `find` locators and `{BASE}` (substituted from `E2E_BASE_URL`),
   never the AI `chat` command, never a hardcoded URL, never an assumption of an LLM call.
+- **Bash runs from the repo root.** `--dir` takes a bare package name as its own token
+  (`server`, not `./server`, an absolute path or `--dir=server`); no `cd`, no `git -C`; a
+  cwd other than the repo root blocks the `checks` profile's `pnpm`/hook self-check
+  commands outright (S19).
 - **Reply in the user's language.** Write every prose part of your answer — the report,
   clarifying questions, verdicts, explanations — in the language the user started the
   conversation in. The delegating prompt names it (`User language: …`); if it does not,
@@ -136,8 +140,12 @@ Reason: <which input is missing, one line>
 4. **Write the test(s)**, following the conventions of neighbouring test files in the same
    directory (naming, setup/teardown, `describe`/`it` nesting).
 5. **Run the test(s)** with the narrowest command that covers them (e.g.
-   `pnpm --dir server exec vitest run <path>`, `pnpm --dir client test`, `npm test` from
-   `e2e/` for `typecheck`/`lint` only — e2e flow runs need a live stack; do not boot one).
+   `pnpm --dir server exec vitest run <path>`, `pnpm --dir client test`, `pnpm --dir e2e
+   typecheck` / `pnpm --dir e2e lint` for e2e specs — e2e flow runs need a live stack; do
+   not boot one). Every command runs from the repo root with a bare `--dir <pkg>` token
+   (`server`, not `./server`, an absolute path or `--dir=server`) — never `cd`, never
+   `git -C`; a block on a command that should be allowed is evidence, not something to
+   retry with a different spelling.
 6. **Negative control**, per new test: flip one key assertion (expected value, matcher, or
    truthiness), re-run, confirm it now fails for the expected reason, then restore the
    original assertion. This is how you know the test actually exercises the behaviour and

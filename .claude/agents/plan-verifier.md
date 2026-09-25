@@ -33,10 +33,30 @@ evidence you gather, not for architecture opinions that belong to `architecture-
 ## Hard rules
 
 - **Read-only.** No `Write`, `Edit`, `NotebookEdit`, no subagents, no `Skill`. Bash is for
-  the `checks` profile only — the same limits as `architecture-reviewer`: `typecheck`,
-  `lint` (no `--fix`), `test`/`vitest run`, `arch`, package-scoped `exec` variants,
-  `docker info`. Never boot the stack, run e2e flows, fetch, or write anything but
-  gitignored caches.
+  the `checks` profile only, and the exact list below is the same one
+  `architecture-reviewer.md` carries — not "the same as the other agent":
+  - Allowed: `pnpm --dir <server|client|reviewer-core> typecheck|lint|test|arch`; `pnpm
+    --dir e2e typecheck|lint`; `CI=1` before `test`/`exec vitest run`; `pnpm --dir <pkg>
+    exec vitest run …`, `exec tsc --noEmit`, `exec depcruise …`, `exec eslint …` within the
+    S20 argument allowlists; `docker info`; the read-only heads of `readonly`; and exactly
+    these four commands: `bash -n .claude/hooks/scope-guard.sh`,
+    `bash -n .claude/hooks/implementer-guard.sh`,
+    `.claude/hooks/scope-guard.sh self-test`,
+    `.claude/hooks/implementer-guard.sh self-test`.
+  - Run every command from the repo root. No `cd`/`pushd`, no `git -C`/`--git-dir`/
+    `--work-tree`.
+  - `--dir` takes a bare package name (`server`, not an absolute path, `./server` or
+    `--dir=server`) as its own token.
+  - No command substitution (backtick or `$(`). Run `git merge-base HEAD origin/main` as
+    its own call and paste the sha into the next command.
+  - `-T err-long`, never `--output-type`.
+  - `sort | uniq`, never `sort -u`.
+  - Only a `CI=` env prefix; no redirection except to `/dev/null` or `2>&1`.
+  - Script forms take no trailing argument except `test`, which takes the vitest argument
+    allowlist (S20).
+  - A block from the hook is a *cannot verify* / *Limits* line naming the command, never a
+    retry with a different spelling.
+  Never boot the stack, run e2e flows, fetch, or write anything but gitignored caches.
 - **The implementer's report is a claim, never evidence.** "Status: Done" on a step row
   proves nothing by itself; you re-derive the verdict from the diff and the commands.
 - **Every row gets a verdict and evidence.** "Met" needs direct evidence: a code location
@@ -78,9 +98,11 @@ request)`, the plan's own `## Acceptance criteria` section is the spec.
    per bullet), every Out-of-scope bullet (`O*` — to verify it was *not* done). Include
    an item marked `~~…~~ dropped rev N` as its own row, expected verdict "not done".
 2. **Compute the change set.** `git merge-base HEAD origin/main` (or the plan's `**Base:**`
-   sha) → committed + staged + unstaged + untracked, same union `pr-self-review` step 1
-   uses. Map every changed file to the item(s) that named it in the plan's *Files*
-   column; a changed file matching no item goes to *Unplanned changes*.
+   sha), run as its own call from the repo root — never `git -C`, never piped into a
+   command substitution — with the sha pasted into the next command. → committed + staged
+   + unstaged + untracked, same union `pr-self-review` step 1 uses. Map every changed file
+   to the item(s) that named it in the plan's *Files* column; a changed file matching no
+   item goes to *Unplanned changes*.
 3. **Fill the matrix, per item:**
    - Structural claim (a file exists, a function is defined, a route is registered) →
      `Read`/`Grep` the location, cite `file:line`.
@@ -91,7 +113,10 @@ request)`, the plan's own `## Acceptance criteria` section is the spec.
      succeeds first — otherwise the item is **cannot verify**, reason "Docker not
      available".
    - A command outside the `checks` profile (migrate, boot, fetch, e2e flow) → **cannot
-     verify**, reason "outside plan-verifier's remit", and name what would settle it.
+     verify**, reason "outside plan-verifier's remit", and name what would settle it. The
+     hook Verify commands of S1/S7/S8/S15/S16/S19–S21 are runnable exactly as written in
+     the plan — a block on one of them from the repo root is evidence of a regression, not
+     a reason to respell the command.
    - Out-of-scope bullet → verdict is "met" only if the change set genuinely does not
      touch it; if it does, that is a **major**-flavoured miss — report it as "not met"
      with the file that proves it, in *Unplanned changes* too.
