@@ -53,8 +53,10 @@ step you plan must satisfy them.
 `docs/plans/<feature>.plan.md`, this is **Update mode** (see below), whether or not it also
 carries a change request, an Implementation Report or a Plan Verification — any of those
 three is what tells you *what* to change; their absence just means "re-check the plan
-against the current code and INSIGHTS, mark nothing changed unless it is." Go to
-**Update mode** instead of the create-mode gate below.
+against the current code and INSIGHTS, mark nothing changed unless it is." The input may
+also carry a `Retro:` feed-forward line and a `Sign-off:` line (see *Update mode* step 1a);
+neither changes which mode applies. Go to **Update mode** instead of the create-mode gate
+below.
 
 Otherwise this is a **create**. You need: (1) a goal with a checkable outcome, (2) the
 package(s) in scope, (3) a spec — `<pkg>/.spec/<feature>.spec.md`. Root `AGENTS.md` says
@@ -99,6 +101,13 @@ and git history of that file is the audit trail.
    `<pkg>/INSIGHTS.md` in full — at the **current** `HEAD`, not the plan's old `Base`. Pick
    the three most relevant `INSIGHTS.md` entries again; cite new ones if the old three no
    longer are the most relevant.
+1a. **Retro signal.** Take the `Retro:` line from the input. If there is none and
+    `docs/plans/<feature>.retro.md` exists, read only the newest entry's heading,
+    `**Decision for next revision:**`, `**Recurrence:**` and `**Converging:**` lines with
+    `rg -m1` — never read or quote the rest of the retro file. If the entry's reviewed
+    revision is not the plan's current `**Revision:**`, treat it as stale and ignore it. If
+    `Converging: no` and the input carries no `Sign-off:` line, stop per step 7. Otherwise
+    treat the decision as a binding change input: apply it, or reject it with a reason.
 2. **Reconcile against the code.** Confirm every file the plan calls `create` now exists
    or still doesn't; confirm every file it calls `modify` still exists at the path and
    shape the plan assumed. Note drift.
@@ -116,14 +125,17 @@ and git history of that file is the audit trail.
 4. **Bump the header.** Increase `**Revision:**` by 1 and refresh `**Base:**` to the
    current `git rev-parse --short HEAD`.
 5. **Append to `## Revisions`.** Add one line, after the existing ones, never editing
-   them: `- rev N · YYYY-MM-DD · <what changed> · <why>`. Use today's date.
+   them: `- rev N · YYYY-MM-DD · <what changed> · <why>`. Use today's date. When step 1a
+   used a retro signal, the *why* part ends with `retro it<N>: applied` or `retro it<N>:
+   rejected (<reason>)`.
 6. **Output the entire plan**, top to bottom, in the same Output Format as create mode,
    with the revision markers from step 3 in place. Do not emit a diff or a partial
    section — the file this produces fully replaces the one you read.
-7. If the plan you were given is not `Plan status: Ready`, or the path does not exist,
-   stop and report that instead of revising (same reporting channel as *Clarification
-   needed*, but state the blocking reason in prose — this is not a missing-input
-   question the user picks an option for).
+7. If the plan you were given is not `Plan status: Ready`, or the path does not exist, or
+   the retro signal says `Converging: no` without a user `Sign-off:`, stop and report that
+   instead of revising (same reporting channel as *Clarification needed*, but state the
+   blocking reason in prose — this is not a missing-input question the user picks an option
+   for).
 
 ## Procedure (create mode)
 

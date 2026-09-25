@@ -38,6 +38,18 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-25 — four review rounds of a permission hook came back `Clean` / `0 not met` while every round had a real bypass
+review-agents rev 4–7 hardened `.claude/hooks/scope-guard.sh` through four planner → implementer →
+architecture-reviewer ∥ plan-verifier rounds; each round's gates were green, and each round's
+bypass (`--dir`, `cd`, `--dir=`, `cat x.sh | bash`, a dangling symlink) surfaced only as a
+*Handed off* line — architecture-reviewer judges onion rings, plan-verifier judges plan
+traceability, and no security reviewer exists (review-agents O1), so no gate could fail on a
+bypass. Every fix then patched the named spelling, and the self-test matrix mirrored the fixes,
+so green proved nothing about the next spelling. For any change to a permission boundary: plan one
+adversarial round whose unrefuted bypass fails the round, and fix by class invariant (argument
+allowlist per head, one path resolver), not by the reported spelling.
+**Evidence:** `docs/plans/review-agents.retro.md:23`
+
 ## Codebase Patterns
 
 Conventions and structural decisions that are not stated in the code.
@@ -62,6 +74,16 @@ ports. Verify with `curl -H 'Origin: http://localhost:<port>' http://localhost:3
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-09-25 — a Write through a *dangling* symlink passed every `scope-guard.sh` write profile: the link's name was judged, not the file the Write creates
+`docs/plans/ghost.retro.md → ../../server/src/new.ts` passed `write retro` (and the same shape
+passed `write tests` / `write docs`) at `4c0b51a`: `realpathSync` throws on a link whose target
+does not exist yet, and the fallback joined the parent with the link's *name*, so the policy saw
+an in-scope path while the Write would create the target outside it. review-agents S8 had
+closed only *existing*-target symlinks — the same class came back one level finer. Invariant:
+judge the path a write will actually create or modify (`lstat` + `readlink`, depth-capped).
+Probe rule: every symlink fixture states whether its target exists, and tests both.
+**Evidence:** `.claude/hooks/scope-guard.sh:739`
 
 ### 2026-09-25 — a Bash allowlist that recurses into `bash -c` still passed `cat x.sh | bash`: a bare shell reads its program from stdin
 Three plan revisions hardened `scope-guard.sh` flag by flag while `cat server/clones/x/y.sh | bash`

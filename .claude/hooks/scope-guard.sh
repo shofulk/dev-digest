@@ -1,15 +1,27 @@
 #!/usr/bin/env bash
 # scope-guard.sh — shared PreToolUse hook, parametrized by profile, wired from the
-# `hooks:` block of four subagent files: test-writer.md, architecture-reviewer.md,
-# plan-verifier.md, doc-writer.md (.claude/agents/*.md), per docs/plans/review-agents.plan.md.
+# `hooks:` block of five subagent files: test-writer.md, architecture-reviewer.md,
+# plan-verifier.md, doc-writer.md, retro-writer.md (.claude/agents/*.md), per
+# docs/plans/review-agents.plan.md and docs/plans/retro-agent.plan.md.
 #
-# Two axes, four call shapes:
+# Two axes, five call shapes:
 #   scope-guard.sh write tests   — PreToolUse(Write|Edit|NotebookEdit) for test-writer
 #   scope-guard.sh write docs    — PreToolUse(Write|Edit|NotebookEdit) for doc-writer
-#   scope-guard.sh bash readonly — PreToolUse(Bash) for doc-writer
+#   scope-guard.sh write retro   — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
+#   scope-guard.sh bash readonly — PreToolUse(Bash) for doc-writer, retro-writer
 #   scope-guard.sh bash checks   — PreToolUse(Bash) for test-writer, architecture-reviewer,
 #                                   plan-verifier
 #   scope-guard.sh self-test     — path matrix + command matrix, exit 0 iff every case is right
+#
+# RETRO (write retro): scope is exactly docs/plans/<feature>.retro.md, one allow glob with
+# no nesting (docs/plans/*.retro.md, not **/*.retro.md), plus named denies for
+# docs/plans/*.plan.md and **/INSIGHTS.md so a block explains itself. Append-only is
+# mechanical, not a list of forbidden edits: `Write` only when the target does not exist
+# yet, `Edit` only when `old_string` is exactly one of the two marker lines, `new_string`
+# starts with that marker followed by a newline and contains it exactly once, and
+# `replace_all` is not `true` — see retroPolicy below. `write docs` is untouched: it still
+# denies all of docs/plans/** (retro files included), so the two profiles cannot both claim
+# the same path.
 #
 # write modes resolve tool_input.file_path (or .notebook_path) against $CLAUDE_PROJECT_DIR
 # (fallback: the hook JSON's own `cwd`, then `pwd`), collapse `..`, resolve symlinks on the
@@ -701,20 +713,42 @@ write_eval() {
       let relReal = path.relative(baseReal, real).split(path.sep).join("/");
       if (relReal === "" || /^(\.\.)(\/|$)/.test(relReal)) relReal = null;
 
-      const policy = PROFILE === "tests" ? testsPolicy : docsPolicy;
-      const verdict = policy(rel) || (relReal !== null ? policy(relReal) : null);
+      // Explicit table (S1/C7): an unknown PROFILE throws, which the outer try/catch turns
+      // into an internal-error fail-open — never a silent fall-through into another
+      // profile policy, which a two-way ternary would do for any third value.
+      const POLICIES = { tests: testsPolicy, docs: docsPolicy, retro: retroPolicy };
+      const policy = POLICIES[PROFILE];
+      if (!policy) throw new Error("unknown write profile `" + PROFILE + "`");
+      const ctx = {
+        toolName: j.tool_name,
+        oldString: j?.tool_input?.old_string,
+        newString: j?.tool_input?.new_string,
+        replaceAll: j?.tool_input?.replace_all,
+        exists: fs.existsSync(logical),
+      };
+      const verdict = policy(rel, ctx) || (relReal !== null ? policy(relReal, ctx) : null);
       if (verdict) { process.stdout.write(verdict); process.exit(0); }
       process.exit(1);
     }
 
     // Resolve symlinks on the nearest existing ancestor — the target file itself usually
     // does not exist yet (Write is about to create it).
-    function realpathNearest(p) {
+    // A dangling symlink makes realpathSync throw, and joining the parent with the link
+    // NAME would hide where a Write actually lands (it creates the link TARGET) — so a
+    // symlink is followed by readlink even when its target does not exist yet.
+    function realpathNearest(p, depth) {
+      depth = depth || 0;
+      if (depth > 40) throw new Error("symlink loop");
       try { return fs.realpathSync(p); }
       catch {
+        let st = null;
+        try { st = fs.lstatSync(p); } catch {}
+        if (st && st.isSymbolicLink()) {
+          return realpathNearest(path.resolve(path.dirname(p), fs.readlinkSync(p)), depth + 1);
+        }
         const parent = path.dirname(p);
         if (parent === p) return p;
-        return path.join(realpathNearest(parent), path.basename(p));
+        return path.join(realpathNearest(parent, depth + 1), path.basename(p));
       }
     }
 
@@ -800,6 +834,58 @@ write_eval() {
       if (matchAny(rel, DOCS_ALLOW)) return null;
       return "`" + rel + "` is outside the doc-writer scope (root/<pkg> README.md, <pkg>/.doc/**/*.md, docs/**/*.md)";
     }
+
+    // RETRO (S1, C7): one allow glob plus a default deny, not a list of denied spellings.
+    // docs/plans/*.plan.md and **/INSIGHTS.md get their own named messages so a block
+    // explains itself instead of falling into the generic "outside scope" text.
+    const RETRO_ALLOW = ["docs/plans/*.retro.md"];
+    function retroPathPolicy(rel) {
+      if (matchAny(rel, ["docs/plans/*.plan.md"])) {
+        return "`" + rel + "` — plans are written by the main session from the planner output";
+      }
+      if (matchAny(rel, ["**/INSIGHTS.md"])) {
+        return "`" + rel + "` — graduate via engineering-insights in the main session";
+      }
+      if (matchAny(rel, RETRO_ALLOW)) return null;
+      return "`" + rel + "` is outside the retro-writer scope (docs/plans/<feature>.retro.md only)";
+    }
+
+    // Append-only mechanics (Decisions -> Append-only mechanics): Write only on create,
+    // Edit only when old_string is exactly one marker line and new_string starts with that
+    // same marker followed by a newline and contains it exactly once, replace_all not true.
+    // old_string covers only the marker line, so no existing entry line can ever be changed
+    // or removed by a passing Edit.
+    const RETRO_MARKERS = [
+      "<!-- newest first: class-labels -->",
+      "<!-- newest first: retro-entries -->",
+    ];
+    function retroAppendOnlyPolicy(ctx) {
+      const toolName = ctx.toolName;
+      if (toolName === "Write") {
+        if (ctx.exists) return "`Write` is blocked — the retro file already exists; use `Edit` on one of the marker lines instead";
+        return null;
+      }
+      if (toolName === "Edit") {
+        if (ctx.replaceAll === true) return "`Edit` with `replace_all: true` is blocked — append-only edits target exactly one marker line";
+        const oldStr = ctx.oldString;
+        if (typeof oldStr !== "string" || RETRO_MARKERS.indexOf(oldStr) === -1) {
+          return "`old_string` must be exactly one of the two marker lines (`<!-- newest first: class-labels -->` or `<!-- newest first: retro-entries -->`)";
+        }
+        const newStr = ctx.newString;
+        if (typeof newStr !== "string" || newStr.indexOf(oldStr + "\n") !== 0) {
+          return "`new_string` must start with the marker line (`" + oldStr + "`) followed by a newline";
+        }
+        if (newStr.split(oldStr).length - 1 !== 1) {
+          return "`new_string` must contain the marker line exactly once";
+        }
+        return null;
+      }
+      return "`" + (toolName || "(missing tool_name)") + "` is not allowed on the retro file — only `Write` (create) and a marker-line `Edit` are";
+    }
+
+    function retroPolicy(rel, ctx) {
+      return retroPathPolicy(rel) || retroAppendOnlyPolicy(ctx);
+    }
   ' "$1"
 }
 
@@ -878,6 +964,61 @@ self_test() {
       printf 'ok    %s\n' "$1"
     else
       printf 'FAIL  %s (want=%s got=%s out=%s)\n' "$1" "$4" "$got" "$out"; fails=$((fails + 1))
+    fi
+  }
+
+  # name, profile, tool_name, file_path, old_string, new_string, replace_all
+  # ("true"/"false"/"none"), expected (0 = blocked, 1 = allowed), [project root, default
+  # $ROOT] — S1(f). The JSON is built by node/JSON.stringify from positional arguments, so
+  # old_string/new_string may contain quotes or newlines with no hand-built JSON (C5,
+  # INSIGHTS 2026-09-24: hand-built JSON with a nested quote silently fails open). "none"
+  # omits the key entirely (missing tool_name / no old_string / no new_string / no
+  # replace_all), distinct from an empty string.
+  runr() {
+    local got body root
+    root="${9:-$ROOT}"
+    body=$(node -e '
+      const [toolName, filePath, oldString, newString, replaceAll] = process.argv.slice(1, 6);
+      const ti = { file_path: filePath };
+      if (oldString !== "none") ti.old_string = oldString;
+      if (newString !== "none") ti.new_string = newString;
+      if (replaceAll === "true") ti.replace_all = true;
+      else if (replaceAll === "false") ti.replace_all = false;
+      const obj = { tool_input: ti };
+      if (toolName !== "none") obj.tool_name = toolName;
+      process.stdout.write(JSON.stringify(obj));
+    ' "$3" "$4" "$5" "$6" "$7")
+    printf '%s' "$body" | CLAUDE_PROJECT_DIR="$root" write_eval "$2" >/dev/null
+    got=$?
+    if [ "$got" = "$8" ]; then printf 'ok    %s\n' "$1"
+    else printf 'FAIL  %s (want=%s got=%s)\n' "$1" "$8" "$got"; fails=$((fails + 1)); fi
+  }
+
+  # name, profile, tool_name, file_path, old_string, new_string, replace_all
+  # ("true"/"false"/"none"), expected exit code (0 = allowed, 2 = blocked) — S1(g). Full JSON
+  # dispatch through "$SELF write <profile>", not write_eval directly (C5, INSIGHTS
+  # 2026-09-25: every new rule gets a bypass probe through the full dispatch, not only a
+  # positive self-test row). A blocked row must also match the exact "BLOCKED by
+  # scope-guard (write retro)" stderr text, not merely exit 2.
+  runrd() {
+    local got out body
+    body=$(node -e '
+      const [toolName, filePath, oldString, newString, replaceAll] = process.argv.slice(1, 6);
+      const ti = { file_path: filePath };
+      if (oldString !== "none") ti.old_string = oldString;
+      if (newString !== "none") ti.new_string = newString;
+      if (replaceAll === "true") ti.replace_all = true;
+      else if (replaceAll === "false") ti.replace_all = false;
+      const obj = { tool_input: ti };
+      if (toolName !== "none") obj.tool_name = toolName;
+      process.stdout.write(JSON.stringify(obj));
+    ' "$3" "$4" "$5" "$6" "$7")
+    out=$(printf '%s' "$body" | "$SELF" write "$2" 2>&1)
+    got=$?
+    if [ "$got" = "$8" ] && { [ "$got" != "2" ] || printf '%s' "$out" | grep -q "BLOCKED by scope-guard (write $2)"; }; then
+      printf 'ok    %s\n' "$1"
+    else
+      printf 'FAIL  %s (want=%s got=%s out=%s)\n' "$1" "$8" "$got" "$out"; fails=$((fails + 1))
     fi
   }
 
@@ -1180,10 +1321,110 @@ EOF"                                                                            
     ln -s ../src "$FAKE_ROOT/server/test/link"
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T10 symlink escapes to src" tests "server/test/link/app.ts" 0
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T10 symlink positive control" tests "server/test/x.test.ts" 1
+    # -- T18: a DANGLING symlink — Write creates its target, so the target is what is judged --
+    mkdir -p "$FAKE_ROOT/docs/plans"
+    ln -s ../src/new.ts "$FAKE_ROOT/server/test/ghost.test.ts"
+    ln -s ../server/src/new.md "$FAKE_ROOT/docs/ghost.md"
+    ln -s ../server/test/fine.md "$FAKE_ROOT/docs/fine-link.md"
+    ln -s ../../server/src/new.ts "$FAKE_ROOT/docs/plans/ghost.retro.md"
+    ln -s ../../docs/plans/fine.retro.md "$FAKE_ROOT/docs/plans/ok.retro.md"
+    CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 dangling symlink tests"   tests "server/test/ghost.test.ts"  0
+    CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 dangling symlink docs"    docs  "docs/ghost.md"              0
+    CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 docs control (plain doc)" docs  "docs/plain.md"              1
+    runr "T18 dangling symlink retro"    retro Write "docs/plans/ghost.retro.md" none "x" none 0 "$FAKE_ROOT"
+    runr "T18 dangling symlink in-scope" retro Write "docs/plans/ok.retro.md"    none "x" none 1 "$FAKE_ROOT"
     rm -rf "$FAKE_ROOT"
     trap - RETURN
   else
     printf 'FAIL  %s (could not create the fake project root)\n' "T10 symlink escapes to src"
+    fails=$((fails + 1))
+  fi
+
+  # -- S1 (retro-agent.plan.md): `write retro` profile. R1-R5 below are this plan's own
+  # T1-T5, prefixed R so they do not collide with this file's own T-numbering (S1 Files
+  # column). Fixtures (an existing retro file, a symlink onto a plan) live in their own
+  # throwaway fake root (S1(h)), never under the real repo tree.
+  RETRO_FAKE_ROOT=$(mktemp -d) || RETRO_FAKE_ROOT=""
+  if [ -n "$RETRO_FAKE_ROOT" ]; then
+    trap 'rm -rf "$RETRO_FAKE_ROOT"' RETURN
+    mkdir -p "$RETRO_FAKE_ROOT/docs/plans"
+    printf '# Retro: old\n' > "$RETRO_FAKE_ROOT/docs/plans/old.retro.md"
+    printf '# Plan\n' > "$RETRO_FAKE_ROOT/docs/plans/x.plan.md"
+    ln -s x.plan.md "$RETRO_FAKE_ROOT/docs/plans/link.retro.md"
+    RETRO_STATUS_BEFORE=$(git -C "$ROOT" status --short)
+
+    # -- R1: write retro, allowed (plan T1) --
+    runr "R1 write new retro"              retro Write "docs/plans/newfeature.retro.md" none "# Retro: newfeature" none 1
+    runr "R1 edit entries marker"          retro Edit  "docs/plans/newfeature.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+### Iteration 1" none 1
+    runr "R1 edit class-labels marker"     retro Edit  "docs/plans/newfeature.retro.md" "<!-- newest first: class-labels -->" "<!-- newest first: class-labels -->
+- \`new-label\` — def · first seen: iteration 1" none 1
+    runrd "R1 full dispatch write allowed" retro Write "docs/plans/newfeature-rd.retro.md" none "# Retro: newfeature-rd" none 0
+
+    # -- R2: write retro, blocked (plan T2: wrong paths, symlink, existing file, bad
+    # edits, bad tool input, full dispatch) --
+    runr "R2 plan path"                    retro Write "docs/plans/x.plan.md"           none "x" none 0
+    runr "R2 nested retro"                 retro Write "docs/plans/sub/x.retro.md"      none "x" none 0
+    runr "R2 wrong dir retro"              retro Write "docs/x.retro.md"                none "x" none 0
+    runr "R2 root INSIGHTS"                retro Write "INSIGHTS.md"                    none "x" none 0
+    runr "R2 server INSIGHTS"              retro Write "server/INSIGHTS.md"             none "x" none 0
+    runr "R2 agent file"                   retro Write ".claude/agents/retro-writer.md" none "x" none 0
+    runr "R2 traversal"                    retro Write "docs/plans/../plans/x.plan.md"  none "x" none 0
+    runr "R2 outside repo"                 retro Write "/etc/hosts"                     none "x" none 0
+    runr "R2 edit on plan path"            retro Edit  "docs/plans/x.plan.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+more" none 0
+    runr "R2 symlink to plan"              retro Edit "docs/plans/link.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+more" none 0 "$RETRO_FAKE_ROOT"
+    runr "R2 write over existing"          retro Write "docs/plans/old.retro.md"  none "x" none 0 "$RETRO_FAKE_ROOT"
+    runr "R2 old_string not a marker"      retro Edit "docs/plans/x.retro.md" "### Iteration 1" "### Iteration 1
+more" none 0
+    runr "R2 old_string marker plus text"  retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->
+extra" "<!-- newest first: retro-entries -->
+extra
+more" none 0
+    runr "R2 new_string no marker"         retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "not the marker" none 0
+    runr "R2 marker twice"                 retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+foo
+<!-- newest first: retro-entries -->" none 0
+    runr "R2 replace_all true"             retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+more" true 0
+    runr "R2 NotebookEdit"                 retro NotebookEdit "docs/plans/x.retro.md" none "x" none 0
+    runr "R2 missing tool_name"            retro none "docs/plans/x.retro.md" none "x" none 0
+    runw_json "R2 no file_path"            retro '{"tool_name":"Write","tool_input":{}}' 0
+    runrd "R2 full dispatch plan write"    retro Write "docs/plans/x.plan.md" none "x" none 2
+    runrd "R2 full dispatch insights write" retro Write "INSIGHTS.md" none "x" none 2
+    runrd "R2 full dispatch non-marker edit" retro Edit "docs/plans/x.retro.md" "### Iteration 1" "### Iteration 1
+more" none 2
+
+    RETRO_STATUS_AFTER=$(git -C "$ROOT" status --short)
+    if [ "$RETRO_STATUS_BEFORE" = "$RETRO_STATUS_AFTER" ]; then
+      printf 'ok    %s\n' "R5 write retro self-test leaves the repo working tree unchanged"
+    else
+      printf 'FAIL  %s (before=%s after=%s)\n' "R5 write retro self-test leaves the repo working tree unchanged" "$RETRO_STATUS_BEFORE" "$RETRO_STATUS_AFTER"
+      fails=$((fails + 1))
+    fi
+
+    rm -rf "$RETRO_FAKE_ROOT"
+    trap - RETURN
+  else
+    printf 'FAIL  %s (could not create the retro fake root)\n' "R1 write retro fixtures"
+    fails=$((fails + 1))
+  fi
+
+  # -- R3: write docs is not loosened — still denies docs/plans/** including *.retro.md
+  # (plan T3) --
+  runw "R3 write docs still blocks retro" docs "docs/plans/x.retro.md" 0
+  runw "R3 write docs still blocks plan"  docs "docs/plans/x.plan.md" 0
+  runw "R3 write docs still allows topic" docs "docs/some-topic.md"   1
+
+  # -- R4: dispatch (plan T4) --
+  rund "R4 write retros typo (misconfigured)" write retros 2
+  RETRO_GARBAGE_OUT=$(printf 'garbage' | "$SELF" write retro 2>&1)
+  RETRO_GARBAGE_RC=$?
+  if [ "$RETRO_GARBAGE_RC" = 0 ] && [ -n "$RETRO_GARBAGE_OUT" ]; then
+    printf 'ok    %s\n' "R4 write retro garbage stdin fail-open (full dispatch)"
+  else
+    printf 'FAIL  %s (rc=%s out=%s)\n' "R4 write retro garbage stdin fail-open (full dispatch)" "$RETRO_GARBAGE_RC" "$RETRO_GARBAGE_OUT"
     fails=$((fails + 1))
   fi
 
@@ -1196,8 +1437,8 @@ case "${1:-}" in
   write)
     SUB="${2:-}"
     case "$SUB" in
-      tests|docs) ;;
-      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
+      tests|docs|retro) ;;
+      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs|retro) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
     esac
     RAW=$(cat) || allow
     REASON=$(printf '%s' "$RAW" | write_eval "$SUB"); RC=$?

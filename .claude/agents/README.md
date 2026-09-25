@@ -16,6 +16,7 @@ the matching row here.
 | [architecture-reviewer](architecture-reviewer.md) | Checks a change set against onion rings, frontend-ui-architecture, reviewer-core purity, vendor mirrors, the DI-container rule and package independence; reuses `pnpm --dir server arch` | `opus` | no | `onion-architecture`, `frontend-ui-architecture` |
 | [plan-verifier](plan-verifier.md) | Builds a per-item traceability matrix over every plan item and spec AC — verdict + evidence, never generic advice | `opus` | no | — |
 | [doc-writer](doc-writer.md) | Documents a shipped feature — turns a plan or code into README/`.doc`/root-README material, with Mermaid diagrams checked against the code | `sonnet` | docs only | `mermaid-diagram` |
+| [retro-writer](retro-writer.md) | After a non-clean reviewer round, records why the loop has not converged — findings by class label, one root cause each, point-fix/class-fix, one Decision sentence, a hard non-convergence gate | `opus` | retro file only | — |
 
 Security review is **not** in this set yet — it belongs to a future reviewer agent. The
 pre-PR gate stays the [`pr-self-review`](../skills/pr-self-review/SKILL.md) skill.
@@ -36,11 +37,16 @@ request / .spec ─► planner ─► Development Plan ─► user approves ─�
      │                                                             │
      │                    clean / all items met ◄──────────────────┴──────────► critical finding / item not met
      │                                   │                                                    │
-     │                                   ▼                                (fix loop, max 2 rounds, then ask user)
-     │                            doc-writer ─► /pr-self-review ─► PR                          │
-     │                                                                    implementer (code) · test-writer (tests)
-     └── plan itself needs to change ── planner, Update mode ◄── change request / Implementation Report /
-                                                                  Plan Verification
+     │                                   ▼                                                    ▼
+     │                            doc-writer ─► /pr-self-review ─► PR                   retro-writer ─► docs/plans/<feature>.retro.md
+     │                                                                                         │
+     │                                                              converging ◄────────────────────────────► not converging
+     │                                                                   │                                            │
+     │                                                                   ▼                                            ▼
+     │                                                   (fix loop, max 2 rounds, then ask user)      ask user (sign-off with changed approach)
+     │                                                   implementer (code) · test-writer (tests)                     │
+     └── plan itself needs to change ── planner, Update mode ◄── change request / Implementation Report /   Sign-off: <option> · date
+                                                                  Plan Verification / Retro (Retro: line + Sign-off:)
 
 researcher — called on demand by any step that needs evidence before a decision.
 ```
@@ -69,6 +75,26 @@ approved plan needs to change, the main session hands the planner that plan's pa
 the change (a request in words, an Implementation Report, or a Plan Verification), and
 gets back the whole revised plan to save over the same file.
 
+**The retro step.** The main session runs retro-writer after every non-clean reviewer
+round and before the fix round starts — this is an explicit main-session step, not a hook
+trigger. When a class label recurs across two consecutive entries, retro-writer reports
+`Converging: no` and a sign-off proposal; the main session then starts **no further fix
+round of any kind** — planner Update mode, an implementer or test-writer fix, or an
+in-place main-session fix — until the user signs off, because an earlier in-place fix once
+bypassed both the planner and the reviewers entirely and a narrower gate would leave that
+path open. This complements, not replaces, the 2-round rule above: the 2-round rule is a
+*budget* that catches whack-a-mole across different classes, while the retro's class gate
+is a *diagnosis* that can fire as early as round 2, on a single repeated class. Only the
+retro's `Retro:` feed-forward line, plus `Sign-off:` when there is one, goes to the
+planner — never the whole retro file.
+
+**Gate enforcement.** The convergence gate is a main-session process rule, not a hook
+rule: the main session has no agent frontmatter for `.claude/settings.json` to bind, so no
+`PreToolUse` hook can hold it directly. Its one mechanical backstop is the planner's own
+refusal to apply a change while the retro signal says `Converging: no` and the input
+carries no `Sign-off:` (Update mode step 1a/7) — an in-place main-session fix that skips
+the planner is held by the process rule alone.
+
 ## Permissions
 
 | Agent | Allowed tools | Denied tools | Mode | Extra guard |
@@ -80,6 +106,7 @@ gets back the whole revised plan to save over the same file.
 | architecture-reviewer | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash checks` (no write tool at all) |
 | plan-verifier | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash checks` (no write tool at all) |
 | doc-writer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write docs` + `bash readonly` |
+| retro-writer | Read, Grep, Glob, Edit, Write, Bash | Agent, NotebookEdit, Skill, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write retro` + `bash readonly` |
 
 "Read-only commands" is a prompt rule, not a tool restriction: the allowed list lives in
 each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
@@ -89,12 +116,21 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
   `gh pr …`, `db:migrate` (script or `tsx src/db/migrate.ts`) and `drizzle-kit
   migrate|push`. Fail-open on internal errors, like `pr-gate.sh`.
 - **[`scope-guard.sh`](../hooks/scope-guard.sh)** — one shared, parametrized hook behind
-  four profiles (`write tests`, `write docs`, `bash readonly`, `bash checks`), each agent's
-  own frontmatter wiring only the profiles in the table above. `write tests`/`write docs`
-  is a `PreToolUse(Write|Edit|NotebookEdit)` allow/deny glob check on the resolved path,
-  checked on both the logical path and its symlink-resolved form; `bash readonly`/`bash
-  checks` is a `PreToolUse(Bash)` allowlist per shell segment (`checks` = `readonly` +
-  package-script commands such as `typecheck`/`lint`/`test`/`arch`). **Every `checks`
+  five profiles (`write tests`, `write docs`, `write retro`, `bash readonly`, `bash
+  checks`), each agent's own frontmatter wiring only the profiles in the table above.
+  `write tests`/`write docs`/`write retro` is a `PreToolUse(Write|Edit|NotebookEdit)`
+  allow/deny glob check on the resolved path, checked on both the logical path and its
+  symlink-resolved form; `bash readonly`/`bash checks` is a `PreToolUse(Bash)` allowlist
+  per shell segment (`checks` = `readonly` + package-script commands such as
+  `typecheck`/`lint`/`test`/`arch`). `write retro` is one allow glob
+  (`docs/plans/*.retro.md`, no nesting) plus a default deny, with `docs/plans/*.plan.md`
+  and `**/INSIGHTS.md` each getting their own named block message; append-only is
+  mechanical, not a list of forbidden edits — `Write` only when the target does not exist
+  yet, `Edit` only when `old_string` is exactly one of the two marker lines and
+  `new_string` starts with that same marker (followed by a newline) exactly once, with
+  `replace_all` not `true`. `write docs` is unchanged: it still denies all of
+  `docs/plans/**`, retro files included, so the two write profiles never both claim the
+  same path. **Every `checks`
   command runs from the repo root:** `pnpm` is only allowed with `--dir`/`-C` before the
   script, given as its **own token and a bare package name** — `server`, not an absolute
   path, `./server` or `--dir=server` (the attached/`=`/`--prefix*` spellings are rejected
@@ -145,7 +181,7 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
 
-No agent here may spawn subagents (`Agent` is denied on all seven), so review never
+No agent here may spawn subagents (`Agent` is denied on all eight), so review never
 happens inside implementation.
 
 ## Artifacts
@@ -153,12 +189,13 @@ happens inside implementation.
 | Agent | Input | Output |
 |-------|-------|--------|
 | researcher | A question with type, scope and a done criterion | *Repo Research Report* and/or *External Research Report* — findings with confidence, evidence (`path:line`, sha, URL), *Not found* table, **Answer status** line |
-| planner | Feature request + `<pkg>/.spec/<feature>.spec.md` (or numbered acceptance criteria) — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification | *Development Plan* — Goal, AC, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills per step, Test plan, Review hand-off, `**Revision:**` + `## Revisions`, **Plan status** — or *Clarification needed*. Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
+| planner | Feature request + `<pkg>/.spec/<feature>.spec.md` (or numbered acceptance criteria) — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification, plus the `Retro:` line and `Sign-off:` when there is one | *Development Plan* — Goal, AC, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills per step, Test plan, Review hand-off, `**Revision:**` + `## Revisions`, **Plan status** — or *Clarification needed*. Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
 | implementer | Path to an approved `docs/plans/<feature>.plan.md` (`Plan status: Ready`) | Working-tree changes (uncommitted), appended `INSIGHTS.md` entries, *Implementation Report* — steps, deviations, verification table, skipped checks, self-check, reviewer hand-off, open issues |
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
 | plan-verifier | A plan path (`Plan status: Ready`) | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
 | doc-writer | Source material (plan path, spec, files or feature name) + audience/doc kind | Doc files per the Diátaxis home table, *Documentation Report* — files written, diagrams, claims checked against code, proposed edits outside scope, conventions notes, `**Docs status:**` |
+| retro-writer | Plan path + inline reviewer report(s) + `HEAD` sha + clean-round flag, or a backfill instruction — plus the retro file's existing labels and newest entries, when one exists | `docs/plans/<feature>.retro.md` entry (via marker-line `Edit`, `Write` only on first create), *Retro Report* — entry table, why the loop is (not) converging, feed-forward line, sign-off JSON when not converging, graduation candidates, `**Retro status:**` |
 
 The link between planner and implementer is the **Skills** column of the plan: the
 planner routes every step's files through
@@ -173,15 +210,17 @@ The planner and implementer rules were derived from a `researcher` report (2026-
 over these sources, plus the repo's own conventions. The test-writer, architecture-reviewer,
 plan-verifier and doc-writer rules (and the planner's Update mode) were derived from three
 further `researcher` reports plus the planner itself (2026-09-24), covering the sources
+below. The retro-writer rules (and the planner's `Retro:`/`Sign-off:` handling) were
+derived from a further `researcher` report (2026-09-25), covering the additional sources
 below.
 
 ### External
 
 | Practice | Where it shows up | Source |
 |----------|-------------------|--------|
-| `description` drives automatic delegation; state scope and what the agent does *not* do | all seven descriptions | [Subagents][s1] |
+| `description` drives automatic delegation; state scope and what the agent does *not* do | all eight descriptions | [Subagents][s1] |
 | Least privilege via `tools` allowlist + `disallowedTools` denylist | Permissions table | [Subagents][s1] |
-| Subagents can nest by default — deny `Agent` to keep review out of implementation | all seven | [Subagents][s1] |
+| Subagents can nest by default — deny `Agent` to keep review out of implementation | all eight | [Subagents][s1] |
 | Fresh context per subagent — the plan must be self-contained | planner output, plan file handoff | [Subagents][s1] |
 | Return a concise structured summary, not raw logs | all output formats | [Subagents][s1] |
 | Agent-scoped `hooks`, `permissionMode`, `model`, `skills` frontmatter; `disallowedTools` with a specifier still removes the whole tool | implementer/scope-guard hooks, modes | [Subagents][s1] |
@@ -195,6 +234,14 @@ below.
 | Requirements traceability (matrix of item → evidence) | plan-verifier's traceability matrix | [ISO/IEC/IEEE 29148][s8] |
 | Verification vs validation terminology | plan-verifier verdicts (met / partial / not met) | [ISTQB glossary][s9] |
 | Evaluator-optimizer pattern — a judge agent scores another agent's output | architecture-reviewer / plan-verifier as evaluators of the implementer | [Building effective agents][s10] |
+| Evaluator-optimizer pattern, applied to the loop itself — a separate evaluator judges *why* the implementer/reviewer pair did not converge | retro-writer as a second-order evaluator over a whole review round, not one output | [Building effective agents][s10] |
+| A short verbal evaluator signal fed into the next attempt, instead of the whole trace | retro-writer's one-line `Retro:` feed-forward, read by the planner via `rg -m1` only | [Reflexion][s24] |
+| Iterative feedback and refinement, with explicit stopping criteria | retro-writer's clean-round stop, and the hard convergence gate as a stronger stop that needs a changed approach, not another attempt | [Self-Refine][s25] |
+| Blameless, evidence-based postmortems; action items over narrative | retro-writer's "no blame" rule and its one-sentence Decision requirement | [Postmortem Culture][s26] |
+| A single causal chain hides independent causes | retro-writer's "≥ 2 independent causes → ≥ 2 finding rows" rule | 5 Whys limitations (title only, as cited in the 2026-09-25 researcher report — no URL given there) |
+| What was planned, what happened, why, and what to change; no blame | the retro entry's field shape (Inputs / Findings / root cause / Decision) | US Army, *A Leader's Guide to After-Action Reviews* (TC 25-20) (title only) |
+| Per-session retrospective of agent runs | retro-writer's per-iteration `docs/plans/<feature>.retro.md` | Cognition, *Devin Session Insights* (title only) |
+| Fix the class with an invariant, not by enumerating cases | the point-fix/class-fix column, and C7's rule for the `write retro` profile itself | "Whack-a-mole is losing" invariants essay (title only) |
 | LLM-as-judge needs a fixed rubric and cited evidence, not free-form opinion | plan-verifier's "forbidden: generic advice" rule | [LLM-as-judge rubric practice][s11] |
 | Testing Library guiding principles and query priority (`getByRole` → … → `getByTestId`) | test-writer RTL rules | [Testing Library][s12], [Query priority][s13] |
 | Fastify `app.inject()` for route tests | test-writer server rules | [Fastify testing][s14] |
@@ -231,9 +278,13 @@ below.
 [s21]: https://c4model.com/
 [s22]: https://mermaid.js.org/syntax/c4.html
 [s23]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams
+[s24]: https://arxiv.org/abs/2303.11366
+[s25]: https://arxiv.org/abs/2303.17651
+[s26]: https://sre.google/sre-book/postmortem-culture/
 
-All accessed 2026-09-24. The docs do not prescribe plan-on-disk over plan-as-text; the
-file handoff is a project decision (visible to people and reviewers).
+s1–s23 accessed 2026-09-24; s24–s26 accessed 2026-09-25. The docs do not prescribe
+plan-on-disk over plan-as-text; the file handoff is a project decision (visible to people
+and reviewers).
 
 ### In-repo
 
@@ -250,6 +301,7 @@ file handoff is a project decision (visible to people and reviewers).
 | Tokenizer and fail-open pattern reused by `scope-guard.sh` | [`implementer-guard.sh`](../hooks/implementer-guard.sh) |
 | Severity mapping (`error` → critical, `warn` → major) reused by architecture-reviewer | [`pr-self-review/severity.md`](../skills/pr-self-review/severity.md) |
 | Mermaid diagram rules (allowed types, node cap, no `AGENTS.md` diagrams) | [`mermaid-diagram`](../skills/mermaid-diagram/SKILL.md) |
+| "Marker line alone in `old_string`" as the mechanical form of append-only | [`engineering-insights`](../skills/engineering-insights/SKILL.md) *Never overwrite*, reused by `scope-guard.sh`'s `write retro` profile |
 
 ## Troubleshooting
 
@@ -262,12 +314,14 @@ file handoff is a project decision (visible to people and reviewers).
   .claude/hooks/implementer-guard.sh self-test
   ```
 
-- **test-writer / architecture-reviewer / plan-verifier / doc-writer is blocked on a Write,
-  Edit or Bash command.** Expected outside their profile's allow-list — production code for
-  test-writer, anything but a doc path for doc-writer, any write tool at all for the two
-  review agents, and any command outside `readonly`/`checks` for Bash. The report's *not
-  made* / *cannot verify* sections say what to do in the main session instead. Check the
-  matcher, and every path/command case in the plan's Test plan, with:
+- **test-writer / architecture-reviewer / plan-verifier / doc-writer / retro-writer is
+  blocked on a Write, Edit or Bash command.** Expected outside their profile's allow-list —
+  production code for test-writer, anything but a doc path for doc-writer, anything but
+  `docs/plans/<feature>.retro.md` (and only through the marker lines) for retro-writer, any
+  write tool at all for the two review agents, and any command outside `readonly`/`checks`
+  for Bash. The report's *not made* / *cannot verify* sections say what to do in the main
+  session instead. Check the matcher, and every path/command case in the plan's Test plan,
+  with:
 
   ```bash
   .claude/hooks/scope-guard.sh self-test
@@ -293,3 +347,10 @@ file handoff is a project decision (visible to people and reviewers).
   existing plan's path plus the change (a request in words, an Implementation Report, or a
   Plan Verification) — Update mode returns the whole revised plan, IDs unchanged, save it
   over the same `docs/plans/<feature>.plan.md`.
+- **retro-writer is blocked on a Write.** The retro file already exists — use `Edit` on one
+  of the two marker lines (`<!-- newest first: class-labels -->` or `<!-- newest first:
+  retro-entries -->`) instead of `Write`.
+- **The planner returns Blocked: not converging.** Get the user's sign-off on the
+  retro-writer's proposed changed approach, then pass `Sign-off: <option> · YYYY-MM-DD` in
+  the next planner or implementer prompt — the planner refuses to apply a change while the
+  retro signal says `Converging: no` and no `Sign-off:` is present (Update mode step 7).
