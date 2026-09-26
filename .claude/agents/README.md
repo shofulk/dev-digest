@@ -164,6 +164,7 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
   frontmatter, so it applies to that agent only. Blocks `git commit`, `git push`,
   `gh pr …`, `db:migrate` (script or `tsx src/db/migrate.ts`) and `drizzle-kit
   migrate|push`. Fail-open on internal errors, like `pr-gate.sh`.
+<!-- scope-guard canonical: begin -->
 - **[`scope-guard.sh`](../hooks/scope-guard.sh)** — one shared, parametrized hook behind
   six profiles (`write tests`, `write docs`, `write retro`, `write analysis`, `bash
   readonly`, `bash checks`), each agent's own frontmatter wiring only the profiles in the
@@ -188,54 +189,44 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
   such rule, since they write tracked, PR-reviewed paths. `write docs` is unchanged: it
   still denies all of `docs/plans/**`, retro files included, and neither `write docs` nor
   `write tests` allows anything under `.harness/**` — no path in either allow list starts
-  with `.harness/` — so the four write profiles never both claim the same path. **Every `checks`
-  command runs from the repo root:** `pnpm` is only allowed with `--dir`/`-C` before the
-  script, given as its **own token and a bare package name** — `server`, not an absolute
-  path, `./server` or `--dir=server` (the attached/`=`/`--prefix*` spellings are rejected
-  outright, since they slip a second, unvalidated directory value past the check) — every
-  `--dir`/`-C` value is exactly one of `server`, `client`, `reviewer-core`, `e2e`, and
-  `--dir e2e` allows only `typecheck`/`lint` (its `test` runs the browser flows). `npm` is
-  not allowed at all (it has no `--dir`, only `-C`, which means `--prefix`). `cd`/`pushd`/
-  `popd`/`builtin`/`command` are unknown heads in both profiles — a `cd` anywhere in a
-  segment, including inside `bash -c`/`( … )`, blocks the whole command — and `git`
-  rejects `-C`/`--git-dir*`/`--work-tree*` for pointing at another tree. A shell invoker
-  (`bash`/`sh`/…) needs a `-c` command, which is checked like any other segment — piping or
-  redirecting a program into it (`… | bash`, `bash < f`) is blocked, and so are `sed -I`/
-  clustered `-ni`, attached `sort -oFILE`, and `uniq <in> <out>`. Beyond that,
-  **when the Bash call's own working directory is not the project root, every `pnpm`
-  segment and the four hook self-check commands below are blocked** ("run from the repo root
-  (cwd: …)"), even with no `cd` in the command line itself — the hook compares the
-  hook JSON's `cwd` field (fallback: its own process cwd) against `$CLAUDE_PROJECT_DIR`
-  (fallback: its own repo). Script forms (`typecheck`/`lint`/`arch`) take **no trailing
-  argument**; `test` and `exec vitest run` take only the vitest argument allowlist
-  (positional filters, `--exclude`, `-t`/`--testNamePattern`, `--reporter` with a built-in
-  name, `--passWithNoTests`, `--silent`); `exec tsc` takes `--noEmit` (required) and
-  `-p`/`--project`; `exec depcruise` takes a path under `src`, `--config`/`-c` pinned to
-  `.dependency-cruiser.cjs`, `-T err|err-long|text`, `--include-only` — the
-  architecture-reviewer uses `-T` for `depcruise`'s output-type flag, since the long form
-  is rejected as `--output*` in every segment; `exec eslint` takes a path,
-  `--max-warnings <n>`, `-f`/`--format stylish|json`. A positional path argument is
-  rejected if absolute, if any segment is `..`, or if any segment is `clones`. Only a
-  `CI=` leading environment assignment is accepted (any other `VAR=value` prefix is
-  rejected). A backtick or `$(` outside single quotes is rejected as command substitution,
-  including in the body of a heredoc whose delimiter is unquoted (a quoted delimiter,
-  `<<'EOF'`, keeps the body inert data). Four exact commands are allowed in `checks` only,
-  ahead of the normal recursion (and subject to the same repo-root cwd check):
-  `bash -n .claude/hooks/scope-guard.sh`, `bash -n .claude/hooks/implementer-guard.sh`,
-  `.claude/hooks/scope-guard.sh self-test`, `.claude/hooks/implementer-guard.sh
-  self-test` — so a reviewer can run the hooks' own tests. `docs/skills/**`
-  is denied to `write docs` until its case-collision with the tracked
-  `docs/skills/readme.md` is resolved (O6). Failure policy: an internal runtime error
-  (unreadable stdin, unparsable JSON, an unresolvable project root) fails open (exit 0 +
-  warning); a parsed command or path outside the allow set — including a cwd mismatch —
-  exits 2 and blocks; **an unknown mode or profile argument also exits 2** ("misconfigured
-  scope-guard") rather than failing open — it comes from the calling agent's own
-  frontmatter, so a typo there should be loud and local, not a silently disarmed guard.
-  `pr-gate.sh`/`implementer-guard.sh` keep failing open on an unknown mode and never apply
-  the cwd/`cd`/`git -C` rules. **Bash enforcement is best-effort** — an allowlisted
-  program can still write files the allowlist never sees (e.g. a test writing a
+  with `.harness/` — so the four write profiles never both claim the same path.
+
+  Every write profile also judges the symlink-resolved path, not only the logical one: a path the resolver cannot resolve is denied.
+
+  **Bash (`readonly`/`checks`) grammar — five invariants.** (1) Every admitted head is
+  judged against its own argument grammar — boolean short clusters, value flags (attached
+  or as the next token), exact long flags only, and an operand policy — defined once in
+  `HEAD_ARGS` (the readonly heads) and `GIT_ARGS` (one row per git subcommand). (2) A head
+  must be a bare command name with no `/`, except the literal `CHECKS_EXACT` strings, and a
+  shell invoker (`bash`/`sh`/`zsh`/`dash`) is admitted only as `-c <program>` with no other
+  operand and no input redirection; `eval` evaluates its operands joined by one space.
+  (3) Every judged path — `pnpm` positional arguments and `-p`/`--project`, `--dir`/`-C`
+  values, and the path inside a `CHECKS_EXACT` command — goes through one symlink-following
+  resolver and is judged on the resolved path; a value starting with `~` or containing `$`,
+  `*`, `?` or `[` is rejected outright. (4) The tokenizer only understands single/double
+  quoting: a word the tokenizer does not model is rejected — a `\`/`$` outside single
+  quotes, an assignment-only segment (only the exact `CI=1` prefix is admitted), an unquoted glob character at any position (`*`, `?`, `[`, whatever precedes it — a literal, an empty quote pair, or another quoted part), or an unquoted `>`/`<` glued to the middle of a word outside the leading digit*+operator prefix a redirection check already models — checked before every other rule, at every recursion
+  depth. (5) **Every `checks` command runs from the repo root** — when the Bash call's own working directory is not `$CLAUDE_PROJECT_DIR`
+  (fallback: its own repo), every `pnpm` segment and every `CHECKS_EXACT` command is
+  blocked ("run from the repo root (cwd: …)"), even with no `cd` in the command line
+  itself. The canonical, exhaustive allow-lists are `HEAD_ARGS`, `GIT_ARGS`, the `pnpm`
+  argument allowlist and `CHECKS_EXACT`, all defined once in
+  [`scope-guard.sh`](../hooks/scope-guard.sh) — this bullet names the invariants, not every
+  flag; widening the grammar is one table edit plus a matched allowed/blocked pair of
+  self-test rows. `docs/skills/**` is denied to `write docs` until its case-collision with
+  the tracked `docs/skills/readme.md` is resolved (O6). Failure policy: an internal runtime
+  error (unreadable stdin, unparsable JSON, an unresolvable project root) fails open (exit 0
+  + warning); a resolver failure and any exception thrown while evaluating a parsed command
+  are a POLICY-DENY, never fail-open; a parsed command or path outside the allow set —
+  including a cwd mismatch — exits 2 and blocks; **an unknown mode or profile argument also
+  exits 2** ("misconfigured scope-guard") rather than failing open — it comes from the
+  calling agent's own frontmatter, so a typo there should be loud and local, not a silently
+  disarmed guard. Both evaluators allow on exactly one exit code, `SG_ALLOW_RC`; any other evaluator exit is denied, not allowed — a crash, a kill or a missing `node` all block loudly instead of failing open. `pr-gate.sh`/`implementer-guard.sh` keep failing open on an unknown mode
+  and never apply the cwd/`cd`/`git -C` rules. **Bash enforcement is best-effort** — an
+  allowlisted program can still write files the allowlist never sees (e.g. a test writing a
   snapshot); the prompt rule in each agent's *Hard rules* remains the primary control,
   the hook is a backstop.
+<!-- scope-guard canonical: end -->
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
 
@@ -380,8 +371,10 @@ and reviewers).
   marker lines) for retro-writer, anything but `.harness/analysis/<date>.md` (and only
   `Write`, once) for harness-analyst, any write tool at all for the two review agents, and
   any command outside `readonly`/`checks` for Bash. The report's *not made* / *cannot
-  verify* sections say what to do in the main session instead. Check the matcher, and
-  every path/command case in the plan's Test plan, with:
+  verify* sections say what to do in the main session instead. Check the matcher, the
+  canonical tables (`HEAD_ARGS`, `GIT_ARGS`, the `pnpm` allowlist, `CHECKS_EXACT`) in
+  [`scope-guard.sh`](../hooks/scope-guard.sh), and every path/command case in the plan's
+  Test plan, with:
 
   ```bash
   .claude/hooks/scope-guard.sh self-test

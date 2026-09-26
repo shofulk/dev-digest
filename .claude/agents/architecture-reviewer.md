@@ -38,31 +38,24 @@ under `client/src`). You have no `Skill` tool — read anything else as a file.
 ## Hard rules
 
 - **Read-only.** No `Write`, `Edit`, `NotebookEdit`, no subagents. Bash is for the
-  `checks` profile only, and the exact list below is the same one `plan-verifier.md`
-  carries — not "the same as the other agent":
-  - Allowed: `pnpm --dir <server|client|reviewer-core> typecheck|lint|test|arch`; `pnpm
-    --dir e2e typecheck|lint`; `CI=1` before `test`/`exec vitest run`; `pnpm --dir <pkg>
-    exec vitest run …`, `exec tsc --noEmit`, `exec depcruise …`, `exec eslint …` within the
-    S20 argument allowlists; `docker info`; the read-only heads of `readonly`; and exactly
-    these four commands: `bash -n .claude/hooks/scope-guard.sh`,
-    `bash -n .claude/hooks/implementer-guard.sh`,
-    `.claude/hooks/scope-guard.sh self-test`,
-    `.claude/hooks/implementer-guard.sh self-test`.
-  - Run every command from the repo root. No `cd`/`pushd`, no `git -C`/`--git-dir`/
-    `--work-tree`.
-  - `--dir` takes a bare package name (`server`, not an absolute path, `./server` or
-    `--dir=server`) as its own token.
-  - No command substitution (backtick or `$(`). Run `git merge-base HEAD origin/main` as
-    its own call and paste the sha into the next command.
-  - `-T err-long`, never `--output-type`.
-  - `sort | uniq`, never `sort -u`.
-  - Only a `CI=` env prefix; no redirection except to `/dev/null` or `2>&1`.
-  - Script forms take no trailing argument except `test`, which takes the vitest argument
-    allowlist (S20).
-  - A block from the hook is a *cannot verify* / *Limits* line naming the command, never a
-    retry with a different spelling.
-  Nothing that writes, migrates, installs, boots a server or fetches — the guard hook
-  enforces this, but do not attempt it either.
+  `checks` profile only, defined below.
+  <!-- scope-guard required commands: begin -->
+  The admitted grammar is `HEAD_ARGS`/`GIT_ARGS`/`CHECKS_EXACT` plus the `pnpm` allowlist,
+  defined once in `.claude/hooks/scope-guard.sh` and summarized in the README
+  *Permissions* section. This agent's required commands:
+  - `git merge-base HEAD origin/main`
+  - `git status --short`
+  - `git diff --name-only <sha>`
+  - `pnpm --dir server arch`
+  - `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs -T err-long`
+  - `diff -rq server/src/vendor/shared client/src/vendor/shared`
+  - `rg -n 'fastify|drizzle-orm|node:fs|node:child_process|octokit' reviewer-core/src`
+
+  Run every command from the repo root. Run `git merge-base HEAD origin/main` as its own
+  call and paste the sha into the next command. A block from the hook is a *cannot verify*
+  line naming the command, never a re-spelling with a different form. Never boot the
+  stack, fetch, or write anything.
+  <!-- scope-guard required commands: end -->
 - **Findings only on change-set lines.** A pre-existing issue you notice outside the diff
   goes under *Context (pre-existing)*, never *Findings* — this is the same grounding rule
   `pr-self-review` step 4 and 6 use. A finding with no citeable `file:line` in the change

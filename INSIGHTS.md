@@ -38,6 +38,32 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-26 — a Bash allowlist over a hand-written tokenizer passed escaped, quoted, globbed and glued shell syntax the tokenizer never modelled
+Four review rounds of `scope-guard.sh` each reproduced a new bypass one level finer: `find . \-delete` and `sort $'-o'out f` (escape/ANSI-C), `CI=-oout; sort $CI f` (expansion), `find . ''*` (an empty quote pair reset a "first character is a glob" check), and `echo x>server/src/a.ts` (a redirection glued mid-word never matched a `^\d*>` token regex) — every one also passed the committed hook. A per-head argument grammar only judges the words the hook's tokenizer produced, not the argv bash executes. What held: a per-word invariant "reject any word containing a character the tokenizer does not model" (unquoted `\`, `$`, `*`/`?`/`[` at any position, `>`/`<` after the operator prefix, assignment-only segments), computed on the finished word, never on streaming state. Any new rule in that hook must be a per-word flag in `tokens()` plus a full-dispatch blocked row.
+**Evidence:** `.claude/hooks/scope-guard.sh` (`tokens()`, `lexerReject`), `docs/plans/harness-guard-classfix.plan.md` (Revisions rev 2 – rev 4 addendum)
+
+### 2026-09-26 — the hook's exit protocol made every evaluator crash an "allow"
+`bash_eval` used exit 1 for allowed — the same code node uses for an uncaught exception — and the dispatcher's `*)` branch plus the write path's outer `catch` (exit 3) also allowed. A >40-component non-existent path (resolver threw "symlink loop") and a non-string `file_path` (TypeError) both wrote through fail-open. Fixed with one explicit allow code `SG_ALLOW_RC=42`; any other exit, including a killed node, denies. Never reuse a runtime's default error code as a success code in a permission hook.
+**Evidence:** `.claude/hooks/scope-guard.sh` (`SG_ALLOW_RC`, dispatcher), `docs/plans/harness-guard-classfix.plan.md` (C4, S12, S13)
+
+### 2026-09-26 — a `scope-guard.sh` positional-argument helper that "skips any `-flag` token" silently defeated an exact-match allowlist (`docker info --format x` passed as `docker info`)
+Migrating `bash_eval`'s per-head checks from a denylist to the `HEAD_ARGS`/`GIT_ARGS`
+grammar table (P4) fixed every named bypass except one: `docker info --format x` still
+passed. Cause: the pre-existing `positional(rawArgs, tool)` helper (built for `git`/`pnpm`
+to skip *known* value flags) treats *any* token starting with `-` as skippable, known or
+not, then returns the remaining bare words — so `["info", "--format", "x"]` still reduced
+to `rest[0] === "info"` and matched. A helper meant to strip flags before checking a
+positional argument is not the same thing as validating the whole argument list; the
+`docker` grammar needed an exact `body.length === 2 && body[1].v === "info"` check instead
+of `positional(...)[0] === "info"`. The self-test only caught this because a new P4 row
+probed the argument specifically — a `docker info` row alone (no extra flag) would have
+stayed green. Same class of gap: `checkRedirection` only recognised `>`/`&>` output
+redirection; `cat < /dev/tcp/h/80` (an input redirect to a non-`/dev/null` device) needed a
+separate `checkInputRedirection` check — an allow-list guard needs its own probe for every
+operator direction (`>` and `<`), not just the one that was reported first.
+**Evidence:** `.claude/hooks/scope-guard.sh:937` (`docker` exact-length check),
+`.claude/hooks/scope-guard.sh:359` (`checkInputRedirection`)
+
 ### 2026-09-26 — a staged `git rm --cached` done in an implementer step was silently gone two agent rounds later
 The deletion was verified staged (`D `) after rev 1, then showed unstaged (` D`) after the
 rev-2 implementer run, with reflog `reset: moving to HEAD` and nothing in any report.

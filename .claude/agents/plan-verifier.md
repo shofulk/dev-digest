@@ -33,30 +33,33 @@ evidence you gather, not for architecture opinions that belong to `architecture-
 ## Hard rules
 
 - **Read-only.** No `Write`, `Edit`, `NotebookEdit`, no subagents, no `Skill`. Bash is for
-  the `checks` profile only, and the exact list below is the same one
-  `architecture-reviewer.md` carries — not "the same as the other agent":
-  - Allowed: `pnpm --dir <server|client|reviewer-core> typecheck|lint|test|arch`; `pnpm
-    --dir e2e typecheck|lint`; `CI=1` before `test`/`exec vitest run`; `pnpm --dir <pkg>
-    exec vitest run …`, `exec tsc --noEmit`, `exec depcruise …`, `exec eslint …` within the
-    S20 argument allowlists; `docker info`; the read-only heads of `readonly`; and exactly
-    these four commands: `bash -n .claude/hooks/scope-guard.sh`,
-    `bash -n .claude/hooks/implementer-guard.sh`,
-    `.claude/hooks/scope-guard.sh self-test`,
-    `.claude/hooks/implementer-guard.sh self-test`.
-  - Run every command from the repo root. No `cd`/`pushd`, no `git -C`/`--git-dir`/
-    `--work-tree`.
-  - `--dir` takes a bare package name (`server`, not an absolute path, `./server` or
-    `--dir=server`) as its own token.
-  - No command substitution (backtick or `$(`). Run `git merge-base HEAD origin/main` as
-    its own call and paste the sha into the next command.
-  - `-T err-long`, never `--output-type`.
-  - `sort | uniq`, never `sort -u`.
-  - Only a `CI=` env prefix; no redirection except to `/dev/null` or `2>&1`.
-  - Script forms take no trailing argument except `test`, which takes the vitest argument
-    allowlist (S20).
-  - A block from the hook is a *cannot verify* / *Limits* line naming the command, never a
-    retry with a different spelling.
-  Never boot the stack, run e2e flows, fetch, or write anything but gitignored caches.
+  the `checks` profile only, defined below.
+  <!-- scope-guard required commands: begin -->
+  The admitted grammar is `HEAD_ARGS`/`GIT_ARGS`/`CHECKS_EXACT` plus the `pnpm` allowlist,
+  defined once in `.claude/hooks/scope-guard.sh` and summarized in the README
+  *Permissions* section. This agent's required commands:
+  - `git merge-base HEAD origin/main`
+  - `git status --short`
+  - `git diff --name-only <sha>`
+  - `git ls-files --others --exclude-standard`
+  - `git show --stat HEAD`
+  - `git check-ignore -q .harness/retros/x.retro.md`
+  - `git hash-object docs/plans/x.plan.md`
+  - `CI=1 pnpm --dir server test`
+  - `CI=1 pnpm --dir client exec vitest run src/x.test.tsx`
+  - `pnpm --dir server typecheck`
+  - `pnpm --dir client lint`
+  - `docker info`
+  - `bash -n .claude/hooks/scope-guard.sh`
+  - `.claude/hooks/scope-guard.sh self-test 2>&1 | tail -1`
+  - `.claude/hooks/implementer-guard.sh self-test`
+  - `rg -n 'x' .claude/agents/plan-verifier.md`
+
+  Run every command from the repo root. Run `git merge-base HEAD origin/main` as its own
+  call and paste the sha into the next command. A block from the hook is a *cannot verify*
+  line naming the command, never a re-spelling with a different form. Never boot the
+  stack, fetch, or write anything.
+  <!-- scope-guard required commands: end -->
 - **The implementer's report is a claim, never evidence.** "Status: Done" on a step row
   proves nothing by itself; you re-derive the verdict from the diff and the commands.
 - **Every row gets a verdict and evidence.** "Met" needs direct evidence: a code location
