@@ -14,6 +14,15 @@ import { lineKey } from "./comments";
 export interface DiffFindingApi {
   findings: FindingRecord[];
   renderFinding: (f: FindingRecord) => ReactNode;
+  /** `false` hides the finding cards (inline and unanchored) — driven by the
+   *  same toggle as GitHub comments. The line's severity bar + badge, file dots
+   *  and group counters stay. Omitted = visible. */
+  visible?: boolean;
+}
+
+/** Whether the viewer should render finding cards at all. */
+export function findingCardsVisible(api: DiffFindingApi | undefined): api is DiffFindingApi {
+  return !!api && api.visible !== false;
 }
 
 /** D4 — "open" means not dismissed. Accepted findings still count. */

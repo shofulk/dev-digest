@@ -170,6 +170,22 @@ describe("DiffTab", () => {
     expect(callsAfter).toBeGreaterThan(callsBefore);
   });
 
+  it("the comments toggle also hides finding cards, keeping the dot, the counter and the line badge", async () => {
+    renderTab();
+    await screen.findByText("Hardcoded key");
+
+    // One finding, no GitHub comments — the toggle still appears and counts it.
+    fireEvent.click(screen.getByRole("button", { name: "Hide comments (1)" }));
+    expect(screen.queryByText("Hardcoded key")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("This file has open findings")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 files with findings")).toBeInTheDocument();
+    expect(screen.getByText("Critical")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show comments (1)" }));
+    expect(screen.getByText("Hardcoded key")).toBeInTheDocument();
+  });
+
   it("dismissing the finding clears the dot and the group's open-findings counter", async () => {
     renderTab();
     await screen.findByText("Core");

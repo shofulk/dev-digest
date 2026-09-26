@@ -18,6 +18,7 @@ import {
   type DiffCommentApi,
 } from "../comments";
 import {
+  findingCardsVisible,
   findingsForFile,
   isOpenFinding,
   partitionFindings,
@@ -114,7 +115,7 @@ export function FileCard({
       </div>
       {open && (
         <div style={s.fileBody}>
-          {findings && <UnanchoredFindings findings={unanchored} api={findings} />}
+          {findingCardsVisible(findings) && <UnanchoredFindings findings={unanchored} api={findings} />}
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (

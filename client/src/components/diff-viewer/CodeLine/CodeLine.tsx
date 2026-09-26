@@ -8,7 +8,7 @@ import React from "react";
 import { SeverityBadge, SEV, type Severity } from "@devdigest/ui";
 import type { FindingRecord } from "@devdigest/shared";
 import { commentTargetFor, type CommentThread, type DiffCommentApi, cs } from "../comments";
-import { type DiffFindingApi, maxSeverity } from "../findings";
+import { type DiffFindingApi, findingCardsVisible, maxSeverity } from "../findings";
 import { type Line } from "../helpers";
 import { s, lineRowFor, lineSignFor } from "../styles";
 import { CommentThreadView } from "../CommentThreadView";
@@ -88,7 +88,7 @@ export function CodeLine({
           <CommentThreadView key={th.rootId} thread={th} commenting={commenting} path={path} />
         ))}
 
-      {findingApi && lineFindings.map((f) => <React.Fragment key={f.id}>{findingApi.renderFinding(f)}</React.Fragment>)}
+      {findingCardsVisible(findingApi) && lineFindings.map((f) => <React.Fragment key={f.id}>{findingApi.renderFinding(f)}</React.Fragment>)}
 
       {commenting && composing && target && (
         <InlineComposer

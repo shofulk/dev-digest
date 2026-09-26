@@ -52,8 +52,11 @@ export function DiffTab({
   } = useSmartDiff(prId);
 
   const [order, setOrder] = React.useState<Order>("smart");
-  // Comments start hidden so the diff is clean by default — toggle to reveal.
-  const [showComments, setShowComments] = React.useState(false);
+  // One toggle for GitHub comments AND agent finding cards, so the diff can be
+  // made clean in one click. Starts visible: a finished review's findings are
+  // the point of this tab. Line severity bars, file dots and group counters
+  // stay visible either way.
+  const [showComments, setShowComments] = React.useState(true);
 
   const commentCount = comments?.length ?? 0;
 
@@ -78,8 +81,11 @@ export function DiffTab({
   // dots/counters here always agree with the header (no extra round-trip).
   const allFindings = React.useMemo(() => (reviews ?? []).flatMap((r) => r.findings), [reviews]);
 
+  const toggleableCount = commentCount + allFindings.length;
+
   const findingApi: DiffFindingApi = {
     findings: allFindings,
+    visible: showComments,
     renderFinding: (f) => (
       <FindingCard
         key={f.id}
@@ -125,14 +131,14 @@ export function DiffTab({
                 {t("smartDiff.originalOrder")}
               </Button>
             </div>
-            {commentCount > 0 && (
+            {toggleableCount > 0 && (
               <Button
                 kind="ghost"
                 size="sm"
                 icon={showComments ? "EyeOff" : "Eye"}
                 onClick={() => setShowComments((v) => !v)}
               >
-                {showComments ? t("smartDiff.hideComments") : t("smartDiff.showComments")} ({commentCount})
+                {showComments ? t("smartDiff.hideComments") : t("smartDiff.showComments")} ({toggleableCount})
               </Button>
             )}
           </div>
