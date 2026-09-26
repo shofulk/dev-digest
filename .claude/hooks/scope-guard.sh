@@ -1,27 +1,42 @@
 #!/usr/bin/env bash
 # scope-guard.sh — shared PreToolUse hook, parametrized by profile, wired from the
-# `hooks:` block of five subagent files: test-writer.md, architecture-reviewer.md,
-# plan-verifier.md, doc-writer.md, retro-writer.md (.claude/agents/*.md), per
-# docs/plans/review-agents.plan.md and docs/plans/retro-agent.plan.md.
+# `hooks:` block of six subagent files: test-writer.md, architecture-reviewer.md,
+# plan-verifier.md, doc-writer.md, retro-writer.md, harness-analyst.md
+# (.claude/agents/*.md), per docs/plans/review-agents.plan.md,
+# docs/plans/retro-agent.plan.md and docs/plans/harness-retros.plan.md.
 #
-# Two axes, five call shapes:
-#   scope-guard.sh write tests   — PreToolUse(Write|Edit|NotebookEdit) for test-writer
-#   scope-guard.sh write docs    — PreToolUse(Write|Edit|NotebookEdit) for doc-writer
-#   scope-guard.sh write retro   — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
-#   scope-guard.sh bash readonly — PreToolUse(Bash) for doc-writer, retro-writer
-#   scope-guard.sh bash checks   — PreToolUse(Bash) for test-writer, architecture-reviewer,
-#                                   plan-verifier
-#   scope-guard.sh self-test     — path matrix + command matrix, exit 0 iff every case is right
+# Two axes, six call shapes:
+#   scope-guard.sh write tests    — PreToolUse(Write|Edit|NotebookEdit) for test-writer
+#   scope-guard.sh write docs     — PreToolUse(Write|Edit|NotebookEdit) for doc-writer
+#   scope-guard.sh write retro    — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
+#   scope-guard.sh write analysis — PreToolUse(Write|Edit|NotebookEdit) for harness-analyst
+#   scope-guard.sh bash readonly  — PreToolUse(Bash) for doc-writer, retro-writer,
+#                                    harness-analyst
+#   scope-guard.sh bash checks    — PreToolUse(Bash) for test-writer, architecture-reviewer,
+#                                    plan-verifier
+#   scope-guard.sh self-test      — path matrix + command matrix, exit 0 iff every case is right
 #
-# RETRO (write retro): scope is exactly docs/plans/<feature>.retro.md, one allow glob with
-# no nesting (docs/plans/*.retro.md, not **/*.retro.md), plus named denies for
-# docs/plans/*.plan.md and **/INSIGHTS.md so a block explains itself. Append-only is
-# mechanical, not a list of forbidden edits: `Write` only when the target does not exist
-# yet, `Edit` only when `old_string` is exactly one of the two marker lines, `new_string`
-# starts with that marker followed by a newline and contains it exactly once, and
-# `replace_all` is not `true` — see retroPolicy below. `write docs` is untouched: it still
-# denies all of docs/plans/** (retro files included), so the two profiles cannot both claim
-# the same path.
+# RETRO (write retro): scope is exactly .harness/retros/<feature>.retro.md, one allow glob
+# with no nesting (.harness/retros/*.retro.md, not **/*.retro.md), plus named denies for
+# the old location docs/plans/*.retro.md, docs/plans/*.plan.md and **/INSIGHTS.md so a
+# block explains itself. Append-only is mechanical, not a list of forbidden edits: `Write`
+# only when the target does not exist yet, `Edit` only when `old_string` is exactly one of
+# the two marker lines, `new_string` starts with that marker followed by a newline and
+# contains it exactly once, and `replace_all` is not `true` — see retroPolicy below.
+# `write docs` is untouched: it still denies all of docs/plans/** (retro files included),
+# so the two profiles cannot both claim the same path. The file name must not start with a
+# dot (no empty or hidden name) — retro and analysis only, one shared predicate below.
+#
+# ANALYSIS (write analysis): scope is exactly .harness/analysis/<date>.md, one allow glob
+# with no nesting, plus named denies for .harness/retros/**, .claude/**, AGENTS.md,
+# CLAUDE.md and INSIGHTS.md (harness files change only through the main session after the
+# user's decision). Write-once, not append-only: `Write` only when the target does not
+# exist yet; every other tool (`Edit`, `NotebookEdit`, a missing `tool_name`) is blocked, so
+# a written analysis file never drifts. Neither `write docs` nor `write tests` allows
+# anything under `.harness/**` (both deny it by default — no path in either allow list
+# starts with `.harness/`), so the four write profiles never claim the same path. The file
+# name must not start with a dot (no empty or hidden name) — same shared predicate as
+# retro, above.
 #
 # write modes resolve tool_input.file_path (or .notebook_path) against $CLAUDE_PROJECT_DIR
 # (fallback: the hook JSON's own `cwd`, then `pwd`), collapse `..`, resolve symlinks on the
@@ -716,7 +731,7 @@ write_eval() {
       // Explicit table (S1/C7): an unknown PROFILE throws, which the outer try/catch turns
       // into an internal-error fail-open — never a silent fall-through into another
       // profile policy, which a two-way ternary would do for any third value.
-      const POLICIES = { tests: testsPolicy, docs: docsPolicy, retro: retroPolicy };
+      const POLICIES = { tests: testsPolicy, docs: docsPolicy, retro: retroPolicy, analysis: analysisPolicy };
       const policy = POLICIES[PROFILE];
       if (!policy) throw new Error("unknown write profile `" + PROFILE + "`");
       const ctx = {
@@ -835,11 +850,15 @@ write_eval() {
       return "`" + rel + "` is outside the doc-writer scope (root/<pkg> README.md, <pkg>/.doc/**/*.md, docs/**/*.md)";
     }
 
-    // RETRO (S1, C7): one allow glob plus a default deny, not a list of denied spellings.
-    // docs/plans/*.plan.md and **/INSIGHTS.md get their own named messages so a block
-    // explains itself instead of falling into the generic "outside scope" text.
-    const RETRO_ALLOW = ["docs/plans/*.retro.md"];
+    // RETRO (S1, C7; re-pathed under harness-retros S2): one allow glob plus a default deny,
+    // not a list of denied spellings. The old location, docs/plans/*.plan.md and
+    // **/INSIGHTS.md get their own named messages so a block explains itself instead of
+    // falling into the generic "outside scope" text.
+    const RETRO_ALLOW = [".harness/retros/*.retro.md"];
     function retroPathPolicy(rel) {
+      if (matchAny(rel, ["docs/plans/*.retro.md"])) {
+        return "`" + rel + "` — retro files moved to .harness/retros/";
+      }
       if (matchAny(rel, ["docs/plans/*.plan.md"])) {
         return "`" + rel + "` — plans are written by the main session from the planner output";
       }
@@ -847,7 +866,7 @@ write_eval() {
         return "`" + rel + "` — graduate via engineering-insights in the main session";
       }
       if (matchAny(rel, RETRO_ALLOW)) return null;
-      return "`" + rel + "` is outside the retro-writer scope (docs/plans/<feature>.retro.md only)";
+      return "`" + rel + "` is outside the retro-writer scope (.harness/retros/<feature>.retro.md only)";
     }
 
     // Append-only mechanics (Decisions -> Append-only mechanics): Write only on create,
@@ -883,8 +902,54 @@ write_eval() {
       return "`" + (toolName || "(missing tool_name)") + "` is not allowed on the retro file — only `Write` (create) and a marker-line `Edit` are";
     }
 
+    // Visible-name invariant (harness-retros rev 2): the basename of rel must not start
+    // with a dot. Covers both the empty stem (.harness/retros/.retro.md) and the hidden
+    // stem (.harness/retros/.x.retro.md) with one predicate, so ls (no -a) never hides a
+    // file from harness-analyst. Composed after the named denies, before the tool
+    // invariant, into both retroPolicy and analysisPolicy. The glob compiler, RETRO_ALLOW,
+    // ANALYSIS_ALLOW, TESTS_*, DOCS_* stay untouched (retro/analysis only, C6/O8).
+    function visibleNamePolicy(rel) {
+      const base = rel.slice(rel.lastIndexOf("/") + 1);
+      if (base.indexOf(".") === 0) {
+        return "`" + rel + "` — the file name must not start with a dot (empty or hidden name)";
+      }
+      return null;
+    }
+
     function retroPolicy(rel, ctx) {
-      return retroPathPolicy(rel) || retroAppendOnlyPolicy(ctx);
+      return retroPathPolicy(rel) || visibleNamePolicy(rel) || retroAppendOnlyPolicy(ctx);
+    }
+
+    // ANALYSIS (harness-retros S2, C6): one allow glob plus a default deny, not a list of
+    // denied spellings. Named denies for the retro dir, the harness config/prompt files and
+    // the AGENTS.md/CLAUDE.md/INSIGHTS.md family explain the boundary instead of falling
+    // into the generic "outside scope" text.
+    const ANALYSIS_ALLOW = [".harness/analysis/*.md"];
+    function analysisPathPolicy(rel) {
+      if (matchAny(rel, [".harness/retros/**"])) {
+        return "`" + rel + "` — retro files are written only by retro-writer; the main session deletes consumed ones";
+      }
+      if (matchAny(rel, [".claude/**", "**/AGENTS.md", "**/CLAUDE.md", "**/INSIGHTS.md"])) {
+        return "`" + rel + "` — harness files are changed by the main session after the user decision";
+      }
+      if (matchAny(rel, ANALYSIS_ALLOW)) return null;
+      return "`" + rel + "` is outside the harness-analyst scope (.harness/analysis/<date>.md only)";
+    }
+
+    // Write-once, not append-only: `Write` only when the target does not exist yet; every
+    // other tool (`Edit`, `NotebookEdit`, a missing tool_name) is blocked outright, so a
+    // written analysis file never drifts. Reuses ctx.exists/ctx.toolName — no new ctx field.
+    function analysisWriteOncePolicy(ctx) {
+      const toolName = ctx.toolName;
+      if (toolName === "Write") {
+        if (ctx.exists) return "`Write` is blocked — the analysis file already exists; analysis files are write-once";
+        return null;
+      }
+      return "`" + (toolName || "(missing tool_name)") + "` is not allowed on the analysis file — only `Write` (create) is";
+    }
+
+    function analysisPolicy(rel, ctx) {
+      return analysisPathPolicy(rel) || visibleNamePolicy(rel) || analysisWriteOncePolicy(ctx);
     }
   ' "$1"
 }
@@ -1322,17 +1387,17 @@ EOF"                                                                            
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T10 symlink escapes to src" tests "server/test/link/app.ts" 0
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T10 symlink positive control" tests "server/test/x.test.ts" 1
     # -- T18: a DANGLING symlink — Write creates its target, so the target is what is judged --
-    mkdir -p "$FAKE_ROOT/docs/plans"
+    mkdir -p "$FAKE_ROOT/docs" "$FAKE_ROOT/.harness/retros"
     ln -s ../src/new.ts "$FAKE_ROOT/server/test/ghost.test.ts"
     ln -s ../server/src/new.md "$FAKE_ROOT/docs/ghost.md"
     ln -s ../server/test/fine.md "$FAKE_ROOT/docs/fine-link.md"
-    ln -s ../../server/src/new.ts "$FAKE_ROOT/docs/plans/ghost.retro.md"
-    ln -s ../../docs/plans/fine.retro.md "$FAKE_ROOT/docs/plans/ok.retro.md"
+    ln -s ../../server/src/new.ts "$FAKE_ROOT/.harness/retros/ghost.retro.md"
+    ln -s ../../.harness/retros/fine.retro.md "$FAKE_ROOT/.harness/retros/ok.retro.md"
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 dangling symlink tests"   tests "server/test/ghost.test.ts"  0
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 dangling symlink docs"    docs  "docs/ghost.md"              0
     CLAUDE_PROJECT_DIR="$FAKE_ROOT" runw "T18 docs control (plain doc)" docs  "docs/plain.md"              1
-    runr "T18 dangling symlink retro"    retro Write "docs/plans/ghost.retro.md" none "x" none 0 "$FAKE_ROOT"
-    runr "T18 dangling symlink in-scope" retro Write "docs/plans/ok.retro.md"    none "x" none 1 "$FAKE_ROOT"
+    runr "T18 dangling symlink retro"    retro Write ".harness/retros/ghost.retro.md" none "x" none 0 "$FAKE_ROOT"
+    runr "T18 dangling symlink in-scope" retro Write ".harness/retros/ok.retro.md"    none "x" none 1 "$FAKE_ROOT"
     rm -rf "$FAKE_ROOT"
     trap - RETURN
   else
@@ -1340,67 +1405,79 @@ EOF"                                                                            
     fails=$((fails + 1))
   fi
 
-  # -- S1 (retro-agent.plan.md): `write retro` profile. R1-R5 below are this plan's own
-  # T1-T5, prefixed R so they do not collide with this file's own T-numbering (S1 Files
-  # column). Fixtures (an existing retro file, a symlink onto a plan) live in their own
-  # throwaway fake root (S1(h)), never under the real repo tree.
+  # -- S1 (retro-agent.plan.md), re-pathed by harness-retros S2: `write retro` profile.
+  # R1-R5 below are this plan's own T1-T5, prefixed R so they do not collide with this
+  # file's own T-numbering (S1 Files column). Fixtures (an existing retro file, a symlink
+  # onto a plan) live in their own throwaway fake root (S1(h)/harness-retros C3), never
+  # under the real repo tree, because the real .harness/retros/ now holds local files.
   RETRO_FAKE_ROOT=$(mktemp -d) || RETRO_FAKE_ROOT=""
   if [ -n "$RETRO_FAKE_ROOT" ]; then
     trap 'rm -rf "$RETRO_FAKE_ROOT"' RETURN
-    mkdir -p "$RETRO_FAKE_ROOT/docs/plans"
-    printf '# Retro: old\n' > "$RETRO_FAKE_ROOT/docs/plans/old.retro.md"
+    mkdir -p "$RETRO_FAKE_ROOT/.harness/retros" "$RETRO_FAKE_ROOT/docs/plans"
+    printf '# Retro: old\n' > "$RETRO_FAKE_ROOT/.harness/retros/old.retro.md"
     printf '# Plan\n' > "$RETRO_FAKE_ROOT/docs/plans/x.plan.md"
-    ln -s x.plan.md "$RETRO_FAKE_ROOT/docs/plans/link.retro.md"
+    ln -s ../../docs/plans/x.plan.md "$RETRO_FAKE_ROOT/.harness/retros/link.retro.md"
     RETRO_STATUS_BEFORE=$(git -C "$ROOT" status --short)
+    RETRO_STATUS_IGNORED_BEFORE=$(git -C "$ROOT" status --short --ignored -- .harness)
 
-    # -- R1: write retro, allowed (plan T1) --
-    runr "R1 write new retro"              retro Write "docs/plans/newfeature.retro.md" none "# Retro: newfeature" none 1
-    runr "R1 edit entries marker"          retro Edit  "docs/plans/newfeature.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
-### Iteration 1" none 1
-    runr "R1 edit class-labels marker"     retro Edit  "docs/plans/newfeature.retro.md" "<!-- newest first: class-labels -->" "<!-- newest first: class-labels -->
-- \`new-label\` — def · first seen: iteration 1" none 1
-    runrd "R1 full dispatch write allowed" retro Write "docs/plans/newfeature-rd.retro.md" none "# Retro: newfeature-rd" none 0
+    # -- R1: write retro, allowed (plan T1) -- moved into the fake root (harness-retros
+    # C3/S2(f)): the real repo root's .harness/retros/ holds real local files, so a
+    # Write-dependent row must not run against it.
+    runr "R1 write new retro"              retro Write ".harness/retros/newfeature.retro.md" none "# Retro: newfeature" none 1 "$RETRO_FAKE_ROOT"
+    runr "R1 edit entries marker"          retro Edit  ".harness/retros/newfeature.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+### Iteration 1" none 1 "$RETRO_FAKE_ROOT"
+    runr "R1 edit class-labels marker"     retro Edit  ".harness/retros/newfeature.retro.md" "<!-- newest first: class-labels -->" "<!-- newest first: class-labels -->
+- \`new-label\` — def · first seen: iteration 1" none 1 "$RETRO_FAKE_ROOT"
+    CLAUDE_PROJECT_DIR="$RETRO_FAKE_ROOT" runrd "R1 full dispatch write allowed" retro Write ".harness/retros/newfeature-rd.retro.md" none "# Retro: newfeature-rd" none 0
+    runr "R1 dotted name allowed"          retro Write ".harness/retros/v1.2.retro.md" none "# Retro: v1.2" none 1 "$RETRO_FAKE_ROOT"
 
-    # -- R2: write retro, blocked (plan T2: wrong paths, symlink, existing file, bad
-    # edits, bad tool input, full dispatch) --
+    # -- R2: write retro, blocked (plan T2: old location, wrong paths, symlink, existing
+    # file, bad edits, bad tool input, full dispatch) --
+    runr "R2 old location"                 retro Write "docs/plans/x.retro.md"           none "x" none 0
     runr "R2 plan path"                    retro Write "docs/plans/x.plan.md"           none "x" none 0
-    runr "R2 nested retro"                 retro Write "docs/plans/sub/x.retro.md"      none "x" none 0
-    runr "R2 wrong dir retro"              retro Write "docs/x.retro.md"                none "x" none 0
+    runr "R2 nested retro"                 retro Write ".harness/retros/sub/x.retro.md" none "x" none 0
+    runr "R2 wrong dir retro"              retro Write ".harness/x.retro.md"            none "x" none 0
     runr "R2 root INSIGHTS"                retro Write "INSIGHTS.md"                    none "x" none 0
     runr "R2 server INSIGHTS"              retro Write "server/INSIGHTS.md"             none "x" none 0
     runr "R2 agent file"                   retro Write ".claude/agents/retro-writer.md" none "x" none 0
-    runr "R2 traversal"                    retro Write "docs/plans/../plans/x.plan.md"  none "x" none 0
+    runr "R2 traversal"                    retro Write ".harness/retros/../analysis/x.md" none "x" none 0
     runr "R2 outside repo"                 retro Write "/etc/hosts"                     none "x" none 0
     runr "R2 edit on plan path"            retro Edit  "docs/plans/x.plan.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
 more" none 0
-    runr "R2 symlink to plan"              retro Edit "docs/plans/link.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+    runr "A3 write retro blocks analysis path" retro Write ".harness/analysis/x.md" none "x" none 0
+    runr "R2 symlink to plan"              retro Edit ".harness/retros/link.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
 more" none 0 "$RETRO_FAKE_ROOT"
-    runr "R2 write over existing"          retro Write "docs/plans/old.retro.md"  none "x" none 0 "$RETRO_FAKE_ROOT"
-    runr "R2 old_string not a marker"      retro Edit "docs/plans/x.retro.md" "### Iteration 1" "### Iteration 1
+    runr "R2 write over existing"          retro Write ".harness/retros/old.retro.md"  none "x" none 0 "$RETRO_FAKE_ROOT"
+    runr "R2 old_string not a marker"      retro Edit ".harness/retros/x.retro.md" "### Iteration 1" "### Iteration 1
 more" none 0
-    runr "R2 old_string marker plus text"  retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->
+    runr "R2 old_string marker plus text"  retro Edit ".harness/retros/x.retro.md" "<!-- newest first: retro-entries -->
 extra" "<!-- newest first: retro-entries -->
 extra
 more" none 0
-    runr "R2 new_string no marker"         retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "not the marker" none 0
-    runr "R2 marker twice"                 retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+    runr "R2 new_string no marker"         retro Edit ".harness/retros/x.retro.md" "<!-- newest first: retro-entries -->" "not the marker" none 0
+    runr "R2 marker twice"                 retro Edit ".harness/retros/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
 foo
 <!-- newest first: retro-entries -->" none 0
-    runr "R2 replace_all true"             retro Edit "docs/plans/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
+    runr "R2 replace_all true"             retro Edit ".harness/retros/x.retro.md" "<!-- newest first: retro-entries -->" "<!-- newest first: retro-entries -->
 more" true 0
-    runr "R2 NotebookEdit"                 retro NotebookEdit "docs/plans/x.retro.md" none "x" none 0
-    runr "R2 missing tool_name"            retro none "docs/plans/x.retro.md" none "x" none 0
+    runr "R2 NotebookEdit"                 retro NotebookEdit ".harness/retros/x.retro.md" none "x" none 0
+    runr "R2 missing tool_name"            retro none ".harness/retros/x.retro.md" none "x" none 0
     runw_json "R2 no file_path"            retro '{"tool_name":"Write","tool_input":{}}' 0
+    runr "R2 empty stem"                   retro Write ".harness/retros/.retro.md"  none "x" none 0 "$RETRO_FAKE_ROOT"
+    runr "R2 hidden stem"                  retro Write ".harness/retros/.x.retro.md" none "x" none 0 "$RETRO_FAKE_ROOT"
+    runrd "R2 full dispatch old location write" retro Write "docs/plans/x.retro.md" none "x" none 2
     runrd "R2 full dispatch plan write"    retro Write "docs/plans/x.plan.md" none "x" none 2
     runrd "R2 full dispatch insights write" retro Write "INSIGHTS.md" none "x" none 2
-    runrd "R2 full dispatch non-marker edit" retro Edit "docs/plans/x.retro.md" "### Iteration 1" "### Iteration 1
+    runrd "R2 full dispatch non-marker edit" retro Edit ".harness/retros/x.retro.md" "### Iteration 1" "### Iteration 1
 more" none 2
+    CLAUDE_PROJECT_DIR="$RETRO_FAKE_ROOT" runrd "R2 full dispatch empty stem" retro Write ".harness/retros/.retro.md" none "x" none 2
 
     RETRO_STATUS_AFTER=$(git -C "$ROOT" status --short)
-    if [ "$RETRO_STATUS_BEFORE" = "$RETRO_STATUS_AFTER" ]; then
+    RETRO_STATUS_IGNORED_AFTER=$(git -C "$ROOT" status --short --ignored -- .harness)
+    if [ "$RETRO_STATUS_BEFORE" = "$RETRO_STATUS_AFTER" ] && [ "$RETRO_STATUS_IGNORED_BEFORE" = "$RETRO_STATUS_IGNORED_AFTER" ]; then
       printf 'ok    %s\n' "R5 write retro self-test leaves the repo working tree unchanged"
     else
-      printf 'FAIL  %s (before=%s after=%s)\n' "R5 write retro self-test leaves the repo working tree unchanged" "$RETRO_STATUS_BEFORE" "$RETRO_STATUS_AFTER"
+      printf 'FAIL  %s (before=%s after=%s ignored_before=%s ignored_after=%s)\n' "R5 write retro self-test leaves the repo working tree unchanged" "$RETRO_STATUS_BEFORE" "$RETRO_STATUS_AFTER" "$RETRO_STATUS_IGNORED_BEFORE" "$RETRO_STATUS_IGNORED_AFTER"
       fails=$((fails + 1))
     fi
 
@@ -1411,11 +1488,15 @@ more" none 2
     fails=$((fails + 1))
   fi
 
-  # -- R3: write docs is not loosened — still denies docs/plans/** including *.retro.md
-  # (plan T3) --
+  # -- R3: write docs/write tests are not loosened — still deny docs/plans/** including
+  # *.retro.md, and neither allows anything under .harness/** (plan T3, extended by A3) --
   runw "R3 write docs still blocks retro" docs "docs/plans/x.retro.md" 0
   runw "R3 write docs still blocks plan"  docs "docs/plans/x.plan.md" 0
   runw "R3 write docs still allows topic" docs "docs/some-topic.md"   1
+  runw "R3 write docs blocks harness retro"    docs ".harness/retros/x.retro.md" 0
+  runw "R3 write docs blocks harness analysis" docs ".harness/analysis/x.md"     0
+  runw "R3 write tests blocks harness retro"    tests ".harness/retros/x.retro.md" 0
+  runw "R3 write tests blocks harness analysis" tests ".harness/analysis/x.md"     0
 
   # -- R4: dispatch (plan T4) --
   rund "R4 write retros typo (misconfigured)" write retros 2
@@ -1428,6 +1509,82 @@ more" none 2
     fails=$((fails + 1))
   fi
 
+  # -- harness-retros S2: `write analysis` profile. A1-A5 mirror R1-R5 for the new
+  # profile, in their own throwaway fake root (Test plan T3), never the real
+  # .harness/analysis/, which may hold real local files. --
+  ANALYSIS_FAKE_ROOT=$(mktemp -d) || ANALYSIS_FAKE_ROOT=""
+  if [ -n "$ANALYSIS_FAKE_ROOT" ]; then
+    trap 'rm -rf "$ANALYSIS_FAKE_ROOT"' RETURN
+    mkdir -p "$ANALYSIS_FAKE_ROOT/.harness/analysis" "$ANALYSIS_FAKE_ROOT/.harness/retros" "$ANALYSIS_FAKE_ROOT/.claude/agents"
+    printf '# Analysis: old\n' > "$ANALYSIS_FAKE_ROOT/.harness/analysis/old.md"
+    printf '# Retro: x\n' > "$ANALYSIS_FAKE_ROOT/.harness/retros/x.retro.md"
+    ln -s ../retros/x.retro.md "$ANALYSIS_FAKE_ROOT/.harness/analysis/link.md"
+    ln -s ../../.claude/agents/new.md "$ANALYSIS_FAKE_ROOT/.harness/analysis/ghost.md"
+    ANALYSIS_STATUS_BEFORE=$(git -C "$ROOT" status --short)
+    ANALYSIS_STATUS_IGNORED_BEFORE=$(git -C "$ROOT" status --short --ignored -- .harness)
+
+    # -- A1: write analysis, allowed (plan T3) --
+    runr "A1 write new analysis"           analysis Write ".harness/analysis/2026-09-26.md"   none "# Analysis" none 1 "$ANALYSIS_FAKE_ROOT"
+    runr "A1 write second dated analysis"  analysis Write ".harness/analysis/2026-09-26-2.md" none "# Analysis" none 1 "$ANALYSIS_FAKE_ROOT"
+    CLAUDE_PROJECT_DIR="$ANALYSIS_FAKE_ROOT" runrd "A1 full dispatch write allowed" analysis Write ".harness/analysis/2026-09-26-rd.md" none "# Analysis" none 0
+    runr "A1 dotted name allowed"           analysis Write ".harness/analysis/2026-09-26.v2.md" none "# Analysis" none 1 "$ANALYSIS_FAKE_ROOT"
+
+    # -- A2: write analysis, blocked (plan T3: wrong paths, symlinks, existing file, bad
+    # tool input, full dispatch) --
+    runr "A2 retro path"                   analysis Write ".harness/retros/x.retro.md" none "x" none 0
+    runr "A2 nested analysis"              analysis Write ".harness/analysis/sub/x.md" none "x" none 0
+    runr "A2 non-md analysis"              analysis Write ".harness/analysis/x.txt"    none "x" none 0
+    runr "A2 wrong dir analysis"           analysis Write ".harness/x.md"              none "x" none 0
+    runr "A2 agent file"                   analysis Write ".claude/agents/planner.md"  none "x" none 0
+    runr "A2 hook file"                    analysis Write ".claude/hooks/scope-guard.sh" none "x" none 0
+    runr "A2 root AGENTS.md"               analysis Write "AGENTS.md"                  none "x" none 0
+    runr "A2 server INSIGHTS"              analysis Write "server/INSIGHTS.md"         none "x" none 0
+    runr "A2 client CLAUDE.md"             analysis Write "client/CLAUDE.md"           none "x" none 0
+    runr "A2 plan path"                    analysis Write "docs/plans/x.plan.md"       none "x" none 0
+    runr "A2 traversal"                    analysis Write ".harness/analysis/../retros/x.retro.md" none "x" none 0
+    runr "A2 outside repo"                 analysis Write "/etc/hosts"                 none "x" none 0
+    runr "A2 symlink to existing retro"    analysis Write ".harness/analysis/link.md"  none "x" none 0 "$ANALYSIS_FAKE_ROOT"
+    runr "A2 dangling symlink to harness"  analysis Write ".harness/analysis/ghost.md" none "x" none 0 "$ANALYSIS_FAKE_ROOT"
+    runr "A2 write over existing"          analysis Write ".harness/analysis/old.md"   none "x" none 0 "$ANALYSIS_FAKE_ROOT"
+    runr "A2 Edit on analysis path"        analysis Edit  ".harness/analysis/new.md"   "x" "y" none 0
+    runr "A2 NotebookEdit"                 analysis NotebookEdit ".harness/analysis/x.md" none "x" none 0
+    runr "A2 missing tool_name"            analysis none ".harness/analysis/x.md"      none "x" none 0
+    runw_json "A2 no file_path"            analysis '{"tool_name":"Write","tool_input":{}}' 0
+    runr "A2 empty stem"                   analysis Write ".harness/analysis/.md"   none "x" none 0 "$ANALYSIS_FAKE_ROOT"
+    runr "A2 hidden stem"                  analysis Write ".harness/analysis/.x.md" none "x" none 0 "$ANALYSIS_FAKE_ROOT"
+    runrd "A2 full dispatch plan write"    analysis Write ".claude/agents/planner.md"  none "x" none 2
+    runrd "A2 full dispatch retro write"   analysis Write ".harness/retros/x.retro.md" none "x" none 2
+    runrd "A2 full dispatch edit"          analysis Edit  ".harness/analysis/new.md"   "x" "y" none 2
+    CLAUDE_PROJECT_DIR="$ANALYSIS_FAKE_ROOT" runrd "A2 full dispatch write over existing" analysis Write ".harness/analysis/old.md" none "x" none 2
+    CLAUDE_PROJECT_DIR="$ANALYSIS_FAKE_ROOT" runrd "A2 full dispatch empty stem" analysis Write ".harness/analysis/.md" none "x" none 2
+
+    ANALYSIS_STATUS_AFTER=$(git -C "$ROOT" status --short)
+    ANALYSIS_STATUS_IGNORED_AFTER=$(git -C "$ROOT" status --short --ignored -- .harness)
+    if [ "$ANALYSIS_STATUS_BEFORE" = "$ANALYSIS_STATUS_AFTER" ] && [ "$ANALYSIS_STATUS_IGNORED_BEFORE" = "$ANALYSIS_STATUS_IGNORED_AFTER" ]; then
+      printf 'ok    %s\n' "A5 write analysis self-test leaves the repo working tree unchanged"
+    else
+      printf 'FAIL  %s (before=%s after=%s ignored_before=%s ignored_after=%s)\n' "A5 write analysis self-test leaves the repo working tree unchanged" "$ANALYSIS_STATUS_BEFORE" "$ANALYSIS_STATUS_AFTER" "$ANALYSIS_STATUS_IGNORED_BEFORE" "$ANALYSIS_STATUS_IGNORED_AFTER"
+      fails=$((fails + 1))
+    fi
+
+    rm -rf "$ANALYSIS_FAKE_ROOT"
+    trap - RETURN
+  else
+    printf 'FAIL  %s (could not create the analysis fake root)\n' "A1 write analysis fixtures"
+    fails=$((fails + 1))
+  fi
+
+  # -- A4: dispatch (plan T5) --
+  rund "A4 write analyses typo (misconfigured)" write analyses 2
+  ANALYSIS_GARBAGE_OUT=$(printf 'garbage' | "$SELF" write analysis 2>&1)
+  ANALYSIS_GARBAGE_RC=$?
+  if [ "$ANALYSIS_GARBAGE_RC" = 0 ] && [ -n "$ANALYSIS_GARBAGE_OUT" ]; then
+    printf 'ok    %s\n' "A4 write analysis garbage stdin fail-open (full dispatch)"
+  else
+    printf 'FAIL  %s (rc=%s out=%s)\n' "A4 write analysis garbage stdin fail-open (full dispatch)" "$ANALYSIS_GARBAGE_RC" "$ANALYSIS_GARBAGE_OUT"
+    fails=$((fails + 1))
+  fi
+
   printf '\n%s failing case(s)\n' "$fails"
   [ "$fails" = 0 ]
 }
@@ -1437,8 +1594,8 @@ case "${1:-}" in
   write)
     SUB="${2:-}"
     case "$SUB" in
-      tests|docs|retro) ;;
-      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs|retro) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
+      tests|docs|retro|analysis) ;;
+      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs|retro|analysis) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
     esac
     RAW=$(cat) || allow
     REASON=$(printf '%s' "$RAW" | write_eval "$SUB"); RC=$?

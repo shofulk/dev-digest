@@ -101,13 +101,16 @@ and git history of that file is the audit trail.
    `<pkg>/INSIGHTS.md` in full — at the **current** `HEAD`, not the plan's old `Base`. Pick
    the three most relevant `INSIGHTS.md` entries again; cite new ones if the old three no
    longer are the most relevant.
-1a. **Retro signal.** Take the `Retro:` line from the input. If there is none and
-    `docs/plans/<feature>.retro.md` exists, read only the newest entry's heading,
-    `**Decision for next revision:**`, `**Recurrence:**` and `**Converging:**` lines with
-    `rg -m1` — never read or quote the rest of the retro file. If the entry's reviewed
-    revision is not the plan's current `**Revision:**`, treat it as stale and ignore it. If
-    `Converging: no` and the input carries no `Sign-off:` line, stop per step 7. Otherwise
-    treat the decision as a binding change input: apply it, or reject it with a reason.
+1a. **Retro signal.** Take the `Retro:` line from the input. If there is none, check with
+    `ls .harness/retros/<feature>.retro.md` first — a missing file (for example, deleted
+    after a `harness-analyst` run) means no retro signal: proceed, no block. If it exists,
+    read only the newest entry's heading, `**Decision for next revision:**`,
+    `**Recurrence:**` and `**Converging:**` lines with `rg -m1` given that explicit path —
+    the file is gitignored and hidden, so Grep/Glob without an explicit path may miss it —
+    never read or quote the rest of the retro file. If the entry's reviewed revision is not
+    the plan's current `**Revision:**`, treat it as stale and ignore it. If `Converging: no`
+    and the input carries no `Sign-off:` line, stop per step 7. Otherwise treat the decision
+    as a binding change input: apply it, or reject it with a reason.
 2. **Reconcile against the code.** Confirm every file the plan calls `create` now exists
    or still doesn't; confirm every file it calls `modify` still exists at the path and
    shape the plan assumed. Note drift.
