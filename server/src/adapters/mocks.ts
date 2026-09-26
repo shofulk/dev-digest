@@ -56,11 +56,11 @@ export interface MockLLMOptions {
 }
 
 export class MockLLMProvider implements LLMProvider {
-  readonly id: 'openai' | 'anthropic';
+  readonly id: 'openai' | 'anthropic' | 'openrouter';
   public calls: { method: string; req: unknown }[] = [];
 
   constructor(
-    id: 'openai' | 'anthropic' = 'openai',
+    id: 'openai' | 'anthropic' | 'openrouter' = 'openai',
     private opts: MockLLMOptions = {},
   ) {
     this.id = id;
@@ -125,6 +125,15 @@ export interface MockGitHubOptions {
   login?: string;
   /** Existing inline review comments returned by listReviewComments. */
   comments?: PrReviewComment[];
+  /** In-memory file fixtures for getFileContent, keyed `path@ref` (falls back
+   *  to `path`). A missing entry → 404 (`not found`); `'timeout'` as the
+   *  content triggers a thrown timeout-flavoured error for tests; `'never'`
+   *  never resolves (a slow-fetch probe fixture — the caller's own
+   *  `withTimeout`/`opts.timeoutMs` is what stops it). */
+  files?: Record<string, { content: string; size?: number } | 'timeout' | '404' | 'never'>;
+  /** Closing-issue refs returned by listClosingIssueRefs, keyed by PR number.
+   *  `'never'` never resolves — a slow-fetch probe fixture, same as `files`. */
+  closingRefs?: Record<number, { owner: string; name: string; number: number }[] | 'never'>;
 }
 
 export class MockGitHubClient implements GitHubClient {
@@ -236,6 +245,32 @@ export class MockGitHubClient implements GitHubClient {
 
   async currentLogin(): Promise<string> {
     return this.opts.login ?? 'mock-user';
+  }
+
+  async getFileContent(
+    _repo: RepoRef,
+    path: string,
+    ref: string,
+    opts: { maxBytes?: number; timeoutMs?: number } = {},
+  ): Promise<{ path: string; ref: string; content: string; size: number; truncated: boolean }> {
+    const fixture = this.opts.files?.[`${path}@${ref}`] ?? this.opts.files?.[path];
+    if (fixture === 'never') return new Promise<never>(() => {}); // slow-fetch probe fixture
+    if (!fixture || fixture === '404') throw new Error(`404: '${path}' not found at ${ref}`);
+    if (fixture === 'timeout') throw new Error('timeout fetching file content');
+    const size = fixture.size ?? Buffer.byteLength(fixture.content, 'utf-8');
+    const maxBytes = opts.maxBytes ?? Infinity;
+    if (size > maxBytes) throw new Error(`'${path}' is ${size} bytes, over the ${maxBytes}-byte cap`);
+    return { path, ref, content: fixture.content, size, truncated: false };
+  }
+
+  async listClosingIssueRefs(
+    _repo: RepoRef,
+    n: number,
+    _opts: { timeoutMs?: number } = {},
+  ): Promise<{ owner: string; name: string; number: number }[]> {
+    const fixture = this.opts.closingRefs?.[n];
+    if (fixture === 'never') return new Promise<never>(() => {}); // slow-fetch probe fixture
+    return fixture ?? [];
   }
 }
 

@@ -1,5 +1,7 @@
 /* FileCard — one collapsible file in the diff: header (path, +/- stat, comment
-   count) and, when open, its parsed lines plus any outdated comments. */
+   count, open-findings dot) and, when open, its parsed lines, any unanchored
+   findings, and any outdated comments. Keyed by `file.path` (D3) so state
+   survives Smart/Original regrouping. */
 "use client";
 
 import React from "react";
@@ -15,9 +17,18 @@ import {
   type CommentThread,
   type DiffCommentApi,
 } from "../comments";
+import {
+  findingCardsVisible,
+  findingsForFile,
+  isOpenFinding,
+  partitionFindings,
+  type DiffFindingApi,
+} from "../findings";
+import type { FindingRecord } from "@devdigest/shared";
 import { s, chevronFor } from "../styles";
 import { CodeLine } from "../CodeLine";
 import { OutdatedComments } from "../OutdatedComments";
+import { UnanchoredFindings } from "../UnanchoredFindings";
 
 /** Threads anchored to a given parsed line (RIGHT=new, LEFT=old). */
 function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): CommentThread[] {
@@ -30,12 +41,32 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+/** Findings anchored to this line's RIGHT key (AC4 — only RIGHT is ever keyed). */
+function findingsForLine(ln: Line, matched: Map<string, FindingRecord[]>): FindingRecord[] {
+  if (matched.size === 0 || ln.newNo == null) return [];
+  return matched.get(`RIGHT:${ln.newNo}`) ?? [];
+}
+
+export function FileCard({
+  file,
+  commenting,
+  findings,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  findings?: DiffFindingApi;
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
     (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
+
+  const renderedKeys = React.useMemo(() => {
+    const keys = new Set<string>();
+    for (const ln of lines) for (const k of keysForLine(ln)) keys.add(k);
+    return keys;
+  }, [lines]);
 
   // Group this file's comments into threads, then split into ones we can anchor
   // to a rendered line vs. "outdated" (GitHub dropped the line / it's not here).
@@ -43,10 +74,18 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
   const { matched, outdated } = React.useMemo(() => {
     if (!comments) return { matched: new Map<string, CommentThread[]>(), outdated: [] };
     const fileThreads = buildThreads(comments.filter((c) => c.path === file.path));
-    const renderedKeys = new Set<string>();
-    for (const ln of lines) for (const k of keysForLine(ln)) renderedKeys.add(k);
     return partitionThreads(fileThreads, renderedKeys);
-  }, [comments, file.path, lines]);
+  }, [comments, file.path, renderedKeys]);
+
+  const fileFindings = React.useMemo(
+    () => (findings ? findingsForFile(findings.findings, file.path) : []),
+    [findings, file.path]
+  );
+  const { matched: findingsMatched, unanchored } = React.useMemo(
+    () => partitionFindings(fileFindings, renderedKeys),
+    [fileFindings, renderedKeys]
+  );
+  const hasOpenFindings = fileFindings.some(isOpenFinding);
 
   const commentCount = commenting
     ? commenting.comments.filter((c) => c.path === file.path).length
@@ -60,6 +99,7 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
         <span className="mono" style={s.filePath}>
           {file.path}
         </span>
+        {hasOpenFindings && <span aria-label={t("diffViewer.hasFindings")} style={s.findingDot} />}
         <span className="mono tnum" style={s.fileStat}>
           <span style={s.addText}>+{file.additions}</span>{" "}
           <span style={s.delText}>−{file.deletions}</span>
@@ -75,6 +115,7 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
       </div>
       {open && (
         <div style={s.fileBody}>
+          {findingCardsVisible(findings) && <UnanchoredFindings findings={unanchored} api={findings} />}
           {lines.length === 0 ? (
             <div style={s.noDiff}>{t("diffViewer.noDiffText")}</div>
           ) : (
@@ -85,6 +126,8 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
+                findings={findingsForLine(ln, findingsMatched)}
+                findingApi={findings}
               />
             ))
           )}

@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { pgTable, uuid, text, integer, jsonb, timestamp, doublePrecision, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, jsonb, timestamp, doublePrecision, index, check } from 'drizzle-orm/pg-core';
 import { now } from './_shared';
 import { workspaces } from './core';
 import { pullRequests } from './pulls';
@@ -47,10 +47,14 @@ export const findings = pgTable('findings', {
   trifectaComponents: jsonb('trifecta_components').$type<string[]>(),
   acceptedAt: timestamp('accepted_at', { withTimezone: true }),
   dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+  /** Model-tagged in/out-of-scope (only when a PR intent was in the prompt);
+   *  the out-of-scope FILTER is mechanical, this column is just the tag. */
+  scope: text('scope'),
 }, (t) => ({
   // Findings are always read per review (the PR list's severity tally, the
   // detail page's per-run lists); the FK alone gives no index.
   reviewIdx: index('findings_review_idx').on(t.reviewId),
+  scopeCk: check('findings_scope_ck', sql`${t.scope} is null or ${t.scope} in ('in', 'out')`),
 }));
 
 export const prIntent = pgTable('pr_intent', {
@@ -60,7 +64,24 @@ export const prIntent = pgTable('pr_intent', {
   intent: text('intent').notNull(),
   inScope: jsonb('in_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   outOfScope: jsonb('out_of_scope').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-});
+  /** low/medium/high — gates the reviewer-core scope filter (AC9) and the UI chip. */
+  confidence: text('confidence').notNull().default('low'),
+  /** Resolved references (`IntentSource[]`): kind, ref, status, reason, chars. */
+  sources: jsonb('sources').$type<unknown[]>().notNull().default(sql`'[]'::jsonb`),
+  /** PR head SHA this intent was derived at — staleness is derived by comparing
+   *  to the PR's CURRENT head_sha, never stored as a boolean. */
+  headSha: text('head_sha'),
+  /** Provider/model that produced this intent (audit + UI footer). */
+  model: text('model'),
+  /** Last derivation's section sizes/usage — content-free (AC12). */
+  stats: jsonb('stats'),
+  derivedAt: timestamp('derived_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  confidenceCk: check(
+    'pr_intent_confidence_ck',
+    sql`${t.confidence} in ('low', 'medium', 'high')`,
+  ),
+}));
 
 export const prBrief = pgTable('pr_brief', {
   prId: uuid('pr_id')

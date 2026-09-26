@@ -2,8 +2,21 @@
  * Pure helpers for the review service (side-effect free; operate purely on
  * their arguments — no DB / network / `this`).
  */
-import type { Finding } from '@devdigest/shared';
+import type { Finding, PrIntentRecord } from '@devdigest/shared';
+import type { ReviewIntent } from '@devdigest/reviewer-core';
 import type { FindingRow, PullRow, ReviewRow } from './repository.js';
+
+/** Persisted `PrIntentRecord` → the minimal shape `reviewPullRequest` needs
+ *  (D2 §3 step 5) — server-only fields (`pr_id`, `sources`, `head_sha`, …)
+ *  never cross into reviewer-core. */
+export function toReviewIntent(record: PrIntentRecord): ReviewIntent {
+  return {
+    intent: record.intent,
+    in_scope: record.in_scope,
+    out_of_scope: record.out_of_scope,
+    confidence: record.confidence,
+  };
+}
 
 // reduceReviews + sliceDiff live in @devdigest/reviewer-core (pure engine logic
 // shared with the CI runner); re-exported here for backward-compatible imports.
@@ -46,6 +59,7 @@ export function findingRowToDto(row: FindingRow): ReviewDtoFinding {
     kind: (row.kind as Finding['kind']) ?? 'finding',
     trifecta_components: (row.trifectaComponents as Finding['trifecta_components']) ?? null,
     evidence: null,
+    scope: (row.scope as Finding['scope']) ?? null,
     review_id: row.reviewId,
     accepted_at: row.acceptedAt?.toISOString() ?? null,
     dismissed_at: row.dismissedAt?.toISOString() ?? null,

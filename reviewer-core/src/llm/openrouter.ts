@@ -81,6 +81,12 @@ export class OpenRouterProvider implements LLMProvider {
         // OpenRouter usage accounting — ask it to return the REAL generation
         // cost (USD) in `usage.cost`, instead of estimating from a price book.
         ...(this.id === 'openrouter' ? { usage: { include: true } } : {}),
+        // Reject an endpoint that doesn't support every requested parameter
+        // (here: structured outputs), so a user-picked model without
+        // JSON-schema support never silently degrades (AC11).
+        ...(this.id === 'openrouter' && req.requireParameters
+          ? { provider: { require_parameters: true } }
+          : {}),
       });
 
       // OpenRouter can return HTTP 200 with no `choices` (an upstream provider

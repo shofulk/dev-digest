@@ -1,4 +1,4 @@
-import type { ChatMessage, PromptAssembly } from '@devdigest/shared';
+import type { ChatMessage, PromptAssembly, Intent, IntentConfidence } from '@devdigest/shared';
 
 /**
  * Prompt assembly + prompt-injection hardening.
@@ -31,6 +31,43 @@ export function wrapUntrusted(label: string, content: string): string {
   // strip any attempt to close our own delimiter
   const safe = content.replaceAll('</untrusted>', '<\\/untrusted>');
   return `<untrusted source="${label}">\n${safe}\n</untrusted>`;
+}
+
+/**
+ * The intent as the review engine needs it — a minimal, derived slice of the
+ * persisted `PrIntentRecord` (server-only fields like `pr_id`/`sources`/
+ * `head_sha` never cross into reviewer-core). Built by the caller's
+ * `toReviewIntent`.
+ */
+export interface ReviewIntent extends Intent {
+  confidence: IntentConfidence;
+}
+
+/**
+ * Trusted rule appended to the system message ONLY when an intent is present.
+ * The MODEL tags every finding with `scope`; it never withholds one — the
+ * mechanical `applyScopeFilter` (review/scope.ts) is what actually removes
+ * out-of-scope findings, and only above a confidence gate. This keeps
+ * INJECTION_GUARD's "never descope" promise literally true for the model.
+ */
+const SCOPE_RULE =
+  'A derived PR intent is provided below in `## PR intent (derived, advisory)`. Tag every ' +
+  'finding with `scope`: `"in"` if it concerns what the PR intends to change, else `"out"`. ' +
+  'Tagging NEVER removes a finding — report every real defect at its true severity ' +
+  'regardless of scope; the scope tag is metadata, not a filter you apply yourself.';
+
+/** Render the `## PR intent` block, wrapped as untrusted (it is model-derived
+ *  content, not our instruction) — same treatment as the diff/PR description. */
+function renderIntentBlock(intent: ReviewIntent): string {
+  const inScope = intent.in_scope.length > 0 ? intent.in_scope.map((s) => `- ${s}`).join('\n') : '(none stated)';
+  const outOfScope =
+    intent.out_of_scope.length > 0 ? intent.out_of_scope.map((s) => `- ${s}`).join('\n') : '(none stated)';
+  const body =
+    `Summary: ${intent.intent}\n` +
+    `Confidence: ${intent.confidence}\n` +
+    `In scope:\n${inScope}\n` +
+    `Out of scope:\n${outOfScope}`;
+  return wrapUntrusted('intent', body);
 }
 
 /** Cap the PR description so a huge author body can't blow the token budget. */
@@ -66,6 +103,13 @@ export interface PromptParts {
    * undefined → section omitted.
    */
   prDescription?: string;
+  /**
+   * Derived PR intent (AC8). Rendered after `## PR description` as
+   * `## PR intent (derived, advisory)`, untrusted-wrapped, plus the trusted
+   * `SCOPE_RULE` appended to the system message. Undefined → both are
+   * omitted and the prompt is byte-identical to no-intent (C2).
+   */
+  intent?: ReviewIntent;
   /** The unified diff / user task (untrusted content). */
   diff: string;
   /** Optional task framing line, e.g. "Review PR #482 '…'". */
@@ -83,7 +127,8 @@ export interface AssembledPrompt {
  * appended to the system message.
  */
 export function assemblePrompt(parts: PromptParts): AssembledPrompt {
-  const system = `${parts.system}\n\n${INJECTION_GUARD}`;
+  const intentBlock = parts.intent ? renderIntentBlock(parts.intent) : undefined;
+  const system = `${parts.system}\n\n${INJECTION_GUARD}${intentBlock ? `\n\n${SCOPE_RULE}` : ''}`;
 
   const skillsBlock =
     parts.skills && parts.skills.length > 0 ? parts.skills.join('\n\n') : undefined;
@@ -106,6 +151,7 @@ export function assemblePrompt(parts: PromptParts): AssembledPrompt {
   if (prDescription) {
     userSections.push(`## PR description\n${wrapUntrusted('pr-description', prDescription)}`);
   }
+  if (intentBlock) userSections.push(`## PR intent (derived, advisory)\n${intentBlock}`);
   if (skillsBlock) userSections.push(`## Skills / rules\n${skillsBlock}`);
   if (memoryBlock) userSections.push(`## Relevant memory\n${memoryBlock}`);
   if (parts.repoMap && parts.repoMap.trim().length > 0) {
@@ -134,6 +180,7 @@ export function assemblePrompt(parts: PromptParts): AssembledPrompt {
     callers: parts.callers ?? null,
     repo_map: parts.repoMap ?? null,
     pr_description: prDescription ?? null,
+    intent: intentBlock ?? null,
     user,
   };
 

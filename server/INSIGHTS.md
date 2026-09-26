@@ -209,6 +209,37 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-09-26 — `tsc --noEmit -p tsconfig.json` never sees `test/*.ts`, so a type error injected only into a test file is invisible to `pnpm typecheck`
+
+`server/tsconfig.json` is `"include": ["src/**/*.ts"]` — `test/` is out of scope for the
+compiler run `typecheck` invokes. `MockLLMProvider`'s constructor was typed
+`id: 'openai' | 'anthropic'`, so `new MockLLMProvider('openrouter', …)` (needed to give the
+S27 intent classifier its own mock, separate from the review's) is a real type error, but
+`pnpm typecheck` stayed green because it never compiled the file containing it — only
+`vitest` (esbuild, types stripped, no checking) ran it, so it also passed. Widened
+`MockLLMProvider`'s `id` to include `'openrouter'` (`ContainerOverrides.llm` already allowed
+it) rather than leave a test-only type hole. Any change that only touches `server/test/**`
+needs its own read-through — `typecheck` will not catch a type mismatch there.
+**Evidence:** `server/src/adapters/mocks.ts:59`, `server/tsconfig.json:23`,
+`server/test/reviews.it.test.ts:139`
+
+### 2026-09-26 — a grep-based probe (`rg -n '<banned-substring>' <dir>`) fails on a comment that merely NAMES the banned thing, not just on a real violation
+
+Writing the C1 ring-purity guarantee ("`_shared/intent/*` never imports `db/rows.ts`") as an
+explanatory code comment — `// forbids importing \`db/rows.ts\` here` — makes probe P6(b)
+(`! rg -n 'db/rows|/repository/|platform/container' server/src/modules/_shared/intent`) fail,
+because the probe cannot distinguish "this file imports X" from "this comment is ABOUT X".
+Same trap hit P6(a) (`intent.repo`, `getIntentRow`, `toPrIntentRecord` named in doc comments
+in files that don't call them) and P6(b) again (`platform/container.ts` named in a comment
+explaining WHY it is never imported). Fix: describe the forbidden thing without its literal
+path/identifier in any comment inside a directory a textual probe scans (e.g. "the
+persistence row-type module" instead of `` `db/rows.ts` ``, "the DI container module" instead
+of `` `platform/container.ts` ``). Write comments in a probed file as if the probe's exact
+regex will run over them, because it will.
+**Evidence:** `server/src/modules/_shared/intent/derive.ts` (header comment),
+`server/src/modules/_shared/intent/helpers.ts` (header comment),
+`docs/plans/intent-layer.plan.md` probe P6
+
 ### 2026-09-20 — `db:generate` hangs on an interactive "is this a rename?" prompt; splitting the change into two passes avoids it entirely
 
 drizzle-kit asks the rename question only when one diff contains **both** a DROP and an ADD
@@ -270,6 +301,34 @@ skill.
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-09-25 — a pre-work LLM call sharing an injected mock provider silently steals `llm.calls[0]` from the review's own assertion
+
+**Cause:** the intent layer's pre-work step (`run-executor.ts` `resolveIntent`, before the
+per-agent loop) resolves its provider through `resolveUsableFeatureModel(review_intent, …)`.
+With no workspace override and no `openrouter`/`anthropic` mock injected, it falls through
+`CHEAP_CHOICES` to whichever provider IS injected — in `test/reviews.it.test.ts` that is the
+same single `MockLLMProvider` instance the test passes as the review agent's own
+`overrides.llm.openai`. The classifier's `completeStructured({schemaName:
+'IntentClassification'})` call is recorded on that instance's `.calls` array BEFORE the
+review's own `completeStructured({schemaName: 'Review'})` call, because it runs first.
+**Signal:** a `.it.test.ts` doing `llm.calls.find(c => c.method === 'completeStructured')` to
+inspect the review's own prompt gets the WRONG call — content that looks like an unrelated
+prompt (here: `## PR` / `## Changed files` / `## Missing context`, the intent classifier's
+sections) instead of `## Diff to review`. The classifier call itself throws inside the mock
+(`MockLLMProvider fixture failed schema`, since the review fixture doesn't satisfy
+`IntentClassification`) and is swallowed by `resolveIntent`'s catch — so the run still
+completes `done`, which makes the failure look purely like a content mismatch, not a second
+call existing at all.
+**Fix:** not fixed in this iteration (a hard test-writing constraint deferred T5, the test
+that is meant to give the classifier its own `overrides.llm.openrouter` mock — see
+`server/.spec/intent-layer.spec.md`). Any test written from now on that asserts on
+`MockLLMProvider.calls` for a review run must either inject a distinct provider for
+`review_intent` (own mock, e.g. `overrides.llm.openrouter`) so the two calls land on
+different `.calls` arrays, or filter `.calls` by `req.schemaName === 'Review'` instead of
+taking the first `completeStructured` entry.
+**Evidence:** `server/src/modules/reviews/run-executor.ts` (`resolveIntent`),
+`server/src/modules/_shared/intent/deps.ts`, `server/test/reviews.it.test.ts:309`
 
 ### 2026-09-20 — `TypeError: Cannot read properties of undefined (reading 'skills')` in `reviews.it.test.ts`, about one full run in two
 

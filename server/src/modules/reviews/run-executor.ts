@@ -1,12 +1,12 @@
 import type { Container } from '../../platform/container.js';
-import type { Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
+import type { PrIntentRecord, Provider, Review, RunTrace, UnifiedDiff } from '@devdigest/shared';
 import { reviewPullRequest, countBlockers } from '@devdigest/reviewer-core';
 import { RunLogger } from '../../platform/run-logger.js';
 import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine } from './helpers.js';
+import { taskLine, toReviewIntent } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 import {
   formatSkillBlock,
@@ -14,6 +14,7 @@ import {
   skillsForPrompt,
   type ResolvedSkill,
 } from '../_shared/agent-skills.js';
+import type { IntentDeriver } from '../_shared/intent/derive.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -51,6 +52,7 @@ export class ReviewRunExecutor {
     private container: Container,
     private repo: ReviewRepository,
     private agents: Container['agentsRepo'],
+    private intentDeriver: IntentDeriver,
   ) {}
 
   /**
@@ -111,6 +113,11 @@ export class ReviewRunExecutor {
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
 
+    // AC8 — resolve the PR intent ONCE for every queued agent. Missing/stale →
+    // derive inline; a derivation failure never fails the run, it just means
+    // every agent reviews without an intent block (the stale one is NEVER used).
+    const intent = await this.resolveIntent(workspaceId, pull, runLog);
+
     for (const { agent, runId } of jobs) {
       const agentStart = Date.now();
       logger?.info(
@@ -118,7 +125,7 @@ export class ReviewRunExecutor {
         `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
       );
       try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog);
+        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog, intent);
         logger?.info(
           {
             runId,
@@ -141,6 +148,35 @@ export class ReviewRunExecutor {
     }
   }
 
+  /**
+   * AC8 — read the PR's intent row; missing/stale → derive inline once. A
+   * derivation failure logs and returns `undefined` (no intent block), never
+   * throws — it must never fail the run.
+   */
+  private async resolveIntent(
+    workspaceId: string,
+    pull: PullRow,
+    runLog: RunLogger,
+  ): Promise<PrIntentRecord | undefined> {
+    try {
+      return await runLog.step(
+        'Resolving PR intent',
+        async () => {
+          // The executor reads NO row itself — every intent read/derive goes
+          // through the shared deriver's `resolveForReview` (C1).
+          const { record } = await this.intentDeriver.resolveForReview(workspaceId, pull.id, {
+            info: (msg) => runLog.info(msg),
+          });
+          return record;
+        },
+        { kind: 'tool' },
+      );
+    } catch (err) {
+      runLog.info(`intent unavailable: ${(err as Error).message} — reviewing without intent`);
+      return undefined;
+    }
+  }
+
   /** Execute a single agent's review against a PR, streaming progress. */
   private async runOneAgent(
     workspaceId: string,
@@ -150,6 +186,7 @@ export class ReviewRunExecutor {
     agent: AgentRow,
     runId: string,
     parentLog: RunLogger,
+    intent: PrIntentRecord | undefined,
   ): Promise<RunOutcome> {
     const start = Date.now();
     // Narrow the fanned-out pre-work logger to THIS run; the shared diff/intent
@@ -217,6 +254,9 @@ export class ReviewRunExecutor {
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
+        // AC8/AC9 — omitted when missing/stale-and-failed-to-derive; the
+        // out-of-scope filter (reviewer-core) then stays a no-op too.
+        ...(intent ? { intent: toReviewIntent(intent) } : {}),
         task,
         sessionId: `${repo.owner}/${repo.name}#${pull.number}:${agent.name}`,
         onEvent: (e) => runLog.event(e.kind, e.msg, e.data),
@@ -284,6 +324,7 @@ export class ReviewRunExecutor {
           cost_usd: costUsd,
           findings: findingRows.length,
           grounding,
+          scope_filtered: outcome.scopeFiltered.length,
         },
         prompt_assembly: outcome.assembly,
         tool_calls: outcome.chunks.map((c) => ({

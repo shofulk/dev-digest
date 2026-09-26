@@ -26,3 +26,6 @@ test-results/
 
 # pr-self-review verdicts, reports and draft PR bodies (local, per branch)
 .pr-review/
+
+# agent-harness raw material: retro files (retro-writer) and analyses (harness-analyst); local, short-lived, never committed
+.harness/

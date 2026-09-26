@@ -60,6 +60,21 @@ const REVIEW_FIXTURE: Review = {
   ],
 };
 
+/**
+ * S27/F1/C7 — a valid `IntentClassification` fixture for the pre-work intent
+ * classifier's OWN `openrouter` mock. Without this, `review_intent` falls
+ * through `CHEAP_CHOICES` to whichever provider a test injected for the
+ * REVIEW itself, and the classifier's `completeStructured` call lands FIRST
+ * on that same mock's `.calls` array — stealing `llm.calls[0]` from the
+ * review's own assertion (server/INSIGHTS.md, 2026-09-25).
+ */
+const INTENT_FIXTURE = {
+  summary: 'Add rate limiting to public API endpoints.',
+  in_scope: ['Rate limiter middleware'],
+  out_of_scope: [],
+  confidence: 'medium' as const,
+};
+
 let repoSeq = 0;
 async function setupRepoAndPr(db: PgFixture['handle']['db'], workspaceId: string) {
   const name = `payments-api-${repoSeq++}`;
@@ -119,6 +134,9 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
         git: new MockGitClient({ diff: DIFF }),
         llm: {
           [provider]: new MockLLMProvider(provider, { structured }),
+          // S27 — the pre-work intent classifier gets its OWN mock, separate
+          // from the review's, so its call never lands on `llm.calls` above.
+          openrouter: new MockLLMProvider('openrouter', { structured: INTENT_FIXTURE }),
         },
       },
     });
@@ -239,14 +257,21 @@ d('A2 reviews + agents (Testcontainers pg)', () => {
       overrides: Partial<Parameters<typeof buildApp>[0]['overrides'] & object> = {},
     ) {
       const llm = new MockLLMProvider('openai', { structured: REVIEW_FIXTURE });
+      // S27 — merge `overrides.llm` rather than replace it, so a caller-supplied
+      // llm override (none today) still keeps the classifier's own openrouter mock.
+      const { llm: llmOverride, ...restOverrides } = overrides;
       const app = await buildApp({
         config: config(),
         db: pg.handle.db,
         overrides: {
           embedder: new MockEmbedder(),
           git: new MockGitClient({ diff: DIFF }),
-          llm: { openai: llm },
-          ...overrides,
+          llm: {
+            openai: llm,
+            openrouter: new MockLLMProvider('openrouter', { structured: INTENT_FIXTURE }),
+            ...llmOverride,
+          },
+          ...restOverrides,
         },
       });
       const { pr } = await setupRepoAndPr(pg.handle.db, workspaceId);
