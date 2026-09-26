@@ -71,6 +71,7 @@ flowchart TB
   subgraph Review["Review & runs"]
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
+    smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
@@ -85,6 +86,11 @@ flowchart TB
   end
   HEALTH["/health (liveness) · /health/ready (DB ping → 200/503)"]
 ```
+
+`smart-diff` is a deterministic, DB-only route: it groups a PR's files by role
+(core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.
+It owns roles and order; the client overlays live finding dots/counters from
+`GET /pulls/:id/reviews` on top of it, so the two never round-trip together.
 
 ## Environment
 
