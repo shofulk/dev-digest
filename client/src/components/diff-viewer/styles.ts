@@ -64,6 +64,43 @@ export const s = {
     color: "var(--text-primary)",
     paddingRight: 12,
   } satisfies CSSProperties,
+  lineBadge: { paddingRight: 12, flexShrink: 0 } satisfies CSSProperties,
+  findingDot: {
+    display: "inline-block",
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+    background: "var(--accent)",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  // ---- FileGroup (AC1/AC2, Smart order) ----
+  fileGroup: {
+    border: "1px solid var(--border)",
+    borderRadius: 7,
+    overflow: "hidden",
+    background: "var(--bg-elevated)",
+  } satisfies CSSProperties,
+  groupHeader: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 12px",
+    cursor: "pointer",
+  } satisfies CSSProperties,
+  roleSquare: { width: 10, height: 10, borderRadius: 3, flexShrink: 0 } satisfies CSSProperties,
+  groupLabelWrap: { display: "flex", flexDirection: "column", flex: 1, minWidth: 0 } satisfies CSSProperties,
+  groupLabel: { fontSize: 13, fontWeight: 600, color: "var(--text-primary)" } satisfies CSSProperties,
+  groupSubtitle: {
+    fontSize: 11.5,
+    color: "var(--text-muted)",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  } satisfies CSSProperties,
+  groupRight: { display: "flex", alignItems: "center", gap: 10, flexShrink: 0 } satisfies CSSProperties,
+  groupFindingCount: { fontSize: 12, fontWeight: 600, color: "var(--accent)" } satisfies CSSProperties,
+  groupFilesCount: { fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  groupBody: { borderTop: "1px solid var(--border)", padding: 10, display: "flex", flexDirection: "column", gap: 10 } satisfies CSSProperties,
 } as const;
 
 /** Chevron rotates 90deg when the file card is open. */

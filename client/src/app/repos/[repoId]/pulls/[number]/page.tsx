@@ -15,7 +15,7 @@ import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
 import { DiffTab } from "./_components/DiffTab";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
-import { usePullDetail, usePulls } from "../../../../../lib/hooks";
+import { usePullDetail, usePulls, useInvalidateOnRunSettle } from "../../../../../lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } from "../../../../../lib/hooks/reviews";
 import { useActiveRepo, useRepoNotFound } from "../../../../../lib/repo-context";
@@ -62,6 +62,12 @@ export default function PRDetailPage() {
   const invalidateIntent = () => {
     if (prId) qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
   };
+
+  // D6 — refresh Smart Diff's grouping/finding-lines and the review data it
+  // overlays on a run-settle transition, INDEPENDENT of which tab is open
+  // (FindingsTab's own `onRunDone` only fires while it is mounted). See
+  // `useInvalidateOnRunSettle` (state-free, tested in isolation).
+  useInvalidateOnRunSettle(prId, reviewRunning);
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
@@ -182,6 +188,7 @@ export default function PRDetailPage() {
               invalidateRunHistory();
               invalidateIntent();
               refetchReviews();
+              if (prId) qc.invalidateQueries({ queryKey: ["smart-diff", prId] });
             }}
           />
         )}
@@ -191,6 +198,10 @@ export default function PRDetailPage() {
             prId={prId}
             filesCount={pr.files_count}
             files={pr.files}
+            additions={pr.additions}
+            deletions={pr.deletions}
+            repoFullName={repoFullName}
+            headSha={pr.head_sha}
             canComment={pr.status === "open"}
           />
         )}

@@ -63,14 +63,19 @@
     "blockers": " · {count} blockers"
   },
   "smartDiff": {
-    "coreLabel": "Core",
-    "wiringLabel": "Wiring",
-    "boilerplateLabel": "Boilerplate",
     "largeTitle": "This PR is large ({lines} changed lines)",
     "largeBody": "Consider splitting it into smaller, focused PRs for easier review:",
-    "filesCount": "{count} files",
     "findingLines": "{count} finding-lines",
-    "groupedByRole": "Smart Diff · grouped by role"
+    "groupedByRole": "Smart Diff · grouped by role",
+    "title": "Reviewer-ordered diff",
+    "summary": "{files} files · +{additions} −{deletions}",
+    "smartOrder": "Smart order",
+    "originalOrder": "Original order",
+    "orderLabel": "Diff order",
+    "loadFailed": "Couldn't load the reviewer-ordered diff.",
+    "showComments": "Show comments",
+    "hideComments": "Hide comments",
+    "commentFailed": "Couldn't post the comment to GitHub."
   },
   "list": {
     "breadcrumb": "Pull Requests",
