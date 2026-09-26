@@ -38,6 +38,32 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-26 — a staged `git rm --cached` done in an implementer step was silently gone two agent rounds later
+The deletion was verified staged (`D `) after rev 1, then showed unstaged (` D`) after the
+rev-2 implementer run, with reflog `reset: moving to HEAD` and nothing in any report.
+`implementer-guard.sh` blocks only `git commit`/`push`, `gh pr` and migrations — not
+`git reset`, `git restore --staged` or `git stash` — so index state is not a durable artifact
+across subagent rounds. Do index changes (untracking, staging) in the main session's commit
+step, immediately before the commit, and check `git status --short` there.
+**Evidence:** `.claude/hooks/implementer-guard.sh:102`, `docs/plans/harness-retros.plan.md:215`
+
+### 2026-09-26 — this sandbox's `server/.env`/`client/.env` already override the default ports, so `lsof -iTCP:3000`/`:3001` being free proves nothing about whether the app stack is up
+
+`server/.env` here sets `API_PORT=3003` and `WEB_PORT=3002` (and `DEVDIGEST_PG_PORT=5435`),
+so the actual dev stack — a `./scripts/dev.sh` instance that had already been running for
+over an hour before this session started — listens on `:3002`/`:3003`/`:5435`, not the
+documented defaults. `:3000`/`:3001` were occupied by unrelated processes belonging to other
+work in this shared sandbox. Re-running `./scripts/dev.sh` on top of the already-running
+instance does not fail cleanly: it recreates the `devdigest-postgres` container (harmless —
+same port, data volume kept) and then dies with "port 3003 is already in use" *after*
+Postgres restarted, one step before it would have tried the API. Two consequences: (1)
+before starting a stack for evidence, check `pgrep -fa 'scripts/dev.sh|next dev|tsx watch'`
+and the actual `API_PORT`/`WEB_PORT` in `server/.env`/`client/.env` rather than assuming
+3000/3001; (2) if one is already running and healthy (`curl :$API_PORT/health`,
+`curl :$WEB_PORT/`), reuse it — both `next dev` and `tsx watch` hot-reload on file changes,
+so a stack started before your edits still serves current code.
+**Evidence:** `server/.env` (`API_PORT`, `WEB_PORT`, `DEVDIGEST_PG_PORT`), `scripts/dev.sh`
+
 ### 2026-09-25 — four review rounds of a permission hook came back `Clean` / `0 not met` while every round had a real bypass
 review-agents rev 4–7 hardened `.claude/hooks/scope-guard.sh` through four planner → implementer →
 architecture-reviewer ∥ plan-verifier rounds; each round's gates were green, and each round's
@@ -74,6 +100,33 @@ ports. Verify with `curl -H 'Origin: http://localhost:<port>' http://localhost:3
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-09-26 — a plan's `rg -F` Verify for a verbatim phrase reported pass while the phrase was absent from the file
+Two independent causes, both hit in one fix round of harness-flow-rules: (1) Markdown prose
+hard-wrapped mid-phrase (`**full JSON` / `dispatch**`) is invisible to `rg -F`, which matches
+line by line, so the rendered text is right and the check fails; (2) one `rg` with several
+`-e` patterns exits 0 when ANY pattern matches, so it cannot prove each phrase — the
+implementer read that 0 as "all three phrases present". Keep every verbatim-required phrase on
+one source line, and check each with its own single-phrase `rg`. (A multi-`-e` search is only
+valid as a negative control, where "nothing matched" is the claim.)
+**Evidence:** `.claude/agents/planner.md:186`, `.claude/agents/README.md:92`
+
+### 2026-09-26 — `scope-guard.sh` write glob `dir/*.ext` also admits `dir/.ext` (empty or hidden filename)
+The glob compiler turns `*` into `[^/]*`, which matches zero characters, so every allow glob
+of the form `dir/*.ext` accepts an empty stem (`.harness/analysis/.md`) and dot-prefixed,
+`ls`-invisible names. The `retro`/`analysis` profiles close it with one shared predicate
+(`visibleNamePolicy`: basename must not start with `.`); `write tests`/`write docs` still
+accept e.g. `docs/.md` by design (tracked, PR-reviewed paths). Any new write profile needs the
+same predicate plus a blocked full-dispatch empty-stem row — do not change `*` itself, it
+silently shifts every profile.
+**Evidence:** `.claude/hooks/scope-guard.sh:780`, `.claude/hooks/scope-guard.sh:911`
+
+### 2026-09-26 — `git mv` into a gitignored directory stages the destination anyway
+`git mv docs/plans/x.retro.md .harness/retros/` showed `R  docs/plans/x.retro.md -> .harness/retros/x.retro.md`
+although `.harness/` is in `.gitignore` — committing it would have tracked the ignored file.
+To move a tracked file out of git into an ignored location use plain `mv` plus
+`git rm --cached <old path>`, and check `git ls-files <ignored dir>` is empty before committing.
+**Evidence:** `docs/plans/harness-retros.plan.md:84`
 
 ### 2026-09-25 — a Write through a *dangling* symlink passed every `scope-guard.sh` write profile: the link's name was judged, not the file the Write creates
 `docs/plans/ghost.retro.md → ../../server/src/new.ts` passed `write retro` (and the same shape
