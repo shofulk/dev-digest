@@ -116,14 +116,21 @@ request)`, the plan's own `## Acceptance criteria` section is the spec.
      verify**, reason "outside plan-verifier's remit", and name what would settle it. The
      hook Verify commands of S1/S7/S8/S15/S16/S19–S21 are runnable exactly as written in
      the plan — a block on one of them from the repo root is evidence of a regression, not
-     a reason to respell the command.
+     a reason to respell the command. If the delegating prompt carries a
+     `Manual acceptance:` block for that item (the command or action run by the main
+     session, and its key output line), cite it as evidence marked
+     `manual acceptance (main session)`. The verdict may be `met` only if the quoted
+     output shows the expected result. Without the block the item stays **cannot verify**.
    - Out-of-scope bullet → verdict is "met" only if the change set genuinely does not
      touch it; if it does, that is a **major**-flavoured miss — report it as "not met"
      with the file that proves it, in *Unplanned changes* too.
 4. **Architecture/security observations.** If something you read while gathering
    evidence looks like a layering or security issue, add one line to *Handed off (not
    judged)* naming the file and a one-sentence description — never a severity, never a
-   verdict, never advice on the fix.
+   verdict, never advice on the fix. When the observation is a possible way around
+   `scope-guard.sh`, `implementer-guard.sh` or `pr-gate.sh`, the line starts with
+   `bypass-candidate` and names the command or path that may pass. It still carries no
+   severity, verdict or fix advice, and it is still not scored against a plan item.
 5. **Summarize.** Count met / partial / not-met / cannot-verify. The verdict line is
    factual, not a recommendation.
 
@@ -152,6 +159,8 @@ Return only this report — no code review, no generic remarks.
 
 ## Handed off (not judged)
 - <file> — <one-sentence observation, architecture or security, no severity>
+- bypass-candidate: <file or command> — <one-sentence observation of a possible way around
+  `scope-guard.sh` / `implementer-guard.sh` / `pr-gate.sh`, no severity>
 
 ## Verification status: Verified | Gaps (<n> not met, <n> partial, <n> cannot verify) | Blocked (<reason>)
 ````

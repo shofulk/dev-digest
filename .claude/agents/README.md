@@ -20,7 +20,9 @@ the matching row here.
 | [harness-analyst](harness-analyst.md) | Launched manually, never in a fix loop: reads every retro file and prior analysis, clusters recurring class labels and harness targets across features, proposes concrete harness changes with evidence | `opus` | analysis file only | — |
 
 Security review is **not** in this set yet — it belongs to a future reviewer agent. The
-pre-PR gate stays the [`pr-self-review`](../skills/pr-self-review/SKILL.md) skill.
+pre-PR gate stays the [`pr-self-review`](../skills/pr-self-review/SKILL.md) skill. Until
+such an agent exists, a reproduced permission-boundary bypass fails the round exactly like
+any other unmet item — see [*The fix loop*](#flow).
 
 ## Flow
 
@@ -33,10 +35,12 @@ request / .spec ─► planner ─► Development Plan ─► user approves ─�
      │                                                             ▼
      │                                                test-writer? ─► tests + INSIGHTS entries (proposed)
      │                                                             │
+     │                                            main session: manual acceptance
+     │                                                             │
      │                                   ┌── architecture-reviewer ┤  (run in parallel)
      │                                   └── plan-verifier ────────┘
      │                                                             │
-     │                    clean / all items met ◄──────────────────┴──────────► critical finding / item not met
+     │                    clean / all items met ◄──────────────────┴──────────► critical finding / item not met / reproduced bypass
      │                                   │                                                    │
      │                                   ▼                                                    ▼
      │                            doc-writer ─► /pr-self-review ─► PR                   retro-writer ─► .harness/retros/<feature>.retro.md
@@ -83,6 +87,25 @@ looping and asks the user. doc-writer runs once both reviewers are clean, then
 approved plan needs to change, the main session hands the planner that plan's path plus
 the change (a request in words, an Implementation Report, or a Plan Verification), and
 gets back the whole revised plan to save over the same file.
+
+The main session reproduces every plan-verifier `bypass-candidate` through the
+**full JSON dispatch**, a `node`-built `JSON.stringify` payload piped into the hook, with
+the agent's own profile arguments as separate quoted arguments, from `bash -c`. Reproduced
+(the hook allows what the boundary should block), it **fails the round** exactly like "not
+met": the payload, exit code and stderr go to retro-writer with the reviewer reports, then
+the fix loop, fixed by class invariant, not by the reported spelling. A candidate that is
+not reproduced is recorded — the payload and exit code — and does not fail the round. A
+malformed probe that fails open proves nothing; it is not a reproduced bypass.
+
+**Manual acceptance.** Between the implementer (and test-writer, when one ran) and the
+reviewers, the main session runs or delegates every `manual acceptance:` line from the
+Implementation Report's *Open issues*. An implementer `Partial` whose only open items are
+`manual acceptance:` lines routes to this step, not a fix round. For a running stack it
+first checks the real `API_PORT`/`WEB_PORT` and reuses a healthy running stack, rather than
+assuming 3000/3001 or re-running `dev.sh` on top of one — root `INSIGHTS.md` 2026-09-26
+("this sandbox's `server/.env`/`client/.env` already override the default ports"). It
+passes each result (the command or action plus the key output line) to plan-verifier as a
+`Manual acceptance:` block. An item it cannot run stays *cannot verify*, never `met`.
 
 **The retro step.** The main session runs retro-writer after every non-clean reviewer
 round and before the fix round starts — this is an explicit main-session step, not a hook
@@ -228,7 +251,7 @@ happens inside implementation.
 | implementer | Path to an approved `docs/plans/<feature>.plan.md` (`Plan status: Ready`) | Working-tree changes (uncommitted), appended `INSIGHTS.md` entries, *Implementation Report* — steps, deviations, verification table, skipped checks, self-check, reviewer hand-off, open issues |
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
-| plan-verifier | A plan path (`Plan status: Ready`) | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
+| plan-verifier | A plan path (`Plan status: Ready`) + optional `Manual acceptance:` block | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
 | doc-writer | Source material (plan path, spec, files or feature name) + audience/doc kind | Doc files per the Diátaxis home table, *Documentation Report* — files written, diagrams, claims checked against code, proposed edits outside scope, conventions notes, `**Docs status:**` |
 | retro-writer | Plan path + inline reviewer report(s) + `HEAD` sha + clean-round flag, or a backfill instruction — plus the retro file's existing labels and newest entries, when one exists | `.harness/retros/<feature>.retro.md` entry (via marker-line `Edit`, `Write` only on first create), *Retro Report* — entry table, why the loop is (not) converging, feed-forward line, sign-off JSON when not converging, graduation candidates, `**Retro status:**` |
 | harness-analyst | `User language:` + `Date:` (+ optional retro-file subset or focus) | `.harness/analysis/<date>.md` (`Write`, once), *Harness Analysis Report* — inputs, clusters, proposals, not-proposed, per-retro-file consume recommendation, `AskUserQuestion` decision JSON, limits, `**Analysis status:**` |

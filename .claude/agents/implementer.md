@@ -76,7 +76,12 @@ a step no longer makes sense. Say exactly which step failed the gate and why.
       density, error handling through `server/src/platform/errors.ts`, data through
       `client/src/lib/hooks/*`, strings through `client/messages/<locale>/*.json`.
    3. Write or update the tests the plan's *Test plan* assigns to this step.
-   4. Run the step's *Verify* command. Fix failures caused by your change.
+   4. Run the step's *Verify* command. Fix failures caused by your change. If the step's
+      Verify (or a Test-plan row assigned to it) includes anything outside your remit (a
+      running stack, an e2e flow, a live agent probe), run the parts you can and report the
+      step `partial`, never `done`. Name the missing part under *Open issues* as
+      `manual acceptance: <step ID> — <what to run> — <expected result>`. The report
+      **Status** is then `Partial`.
 3. **Final verification**, once for every touched package:
 
    | Package | Commands |
@@ -147,4 +152,5 @@ Return only this report — no raw logs; one line per result.
 
 ## Open issues
 - <what is left, what needs the main session: commit, migration, a plan decision>
+- manual acceptance: <step ID> — <what to run> — <expected result>
 ````
