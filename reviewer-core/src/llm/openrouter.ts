@@ -24,6 +24,13 @@ import { toJsonSchema, parseWithRepair } from './structured.js';
 
 const NOT_SUPPORTED = 'OpenRouterProvider only implements completeStructured';
 
+/**
+ * Output-token cap when the caller sets none. Without `max_tokens` OpenRouter
+ * reserves credits for the model's full max output (e.g. 131k) and rejects the
+ * call with 402 on a small balance; a Review JSON needs a few thousand tokens.
+ */
+const DEFAULT_MAX_TOKENS = 16_000;
+
 export interface OpenRouterProviderOptions {
   /** OpenAI-compatible base URL (default: OpenRouter). */
   baseURL?: string;
@@ -53,6 +60,9 @@ export class OpenRouterProvider implements LLMProvider {
       baseURL: this.baseURL,
       timeout: opts.timeoutMs ?? 90_000,
       maxRetries: opts.maxRetries ?? 2,
+      // Native fetch, not the SDK's bundled node-fetch@2: it fails to read
+      // brotli-encoded bodies ("Premature close") on some networks.
+      fetch: globalThis.fetch,
     });
   }
 
@@ -70,7 +80,7 @@ export class OpenRouterProvider implements LLMProvider {
         model: req.model,
         messages,
         temperature: req.temperature ?? 0,
-        ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
+        max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
         response_format: {
           type: 'json_schema',
           json_schema: { name: req.schemaName, schema: jsonSchema.schema, strict: true },

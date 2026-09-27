@@ -49,7 +49,9 @@ export class OpenAIProvider implements LLMProvider {
   private client: OpenAI;
 
   constructor(apiKey: string) {
-    this.client = new OpenAI({ apiKey });
+    // Native fetch, not the SDK's bundled node-fetch@2: it fails to read
+    // brotli-encoded bodies ("Premature close") on some networks.
+    this.client = new OpenAI({ apiKey, fetch: globalThis.fetch });
   }
 
   async listModels(): Promise<ModelInfo[]> {

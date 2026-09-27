@@ -43,7 +43,8 @@ export class AnthropicProvider implements LLMProvider {
   private client: Anthropic;
 
   constructor(apiKey: string) {
-    this.client = new Anthropic({ apiKey });
+    // Native fetch, not the SDK's bundled node-fetch@2 (see openai.ts).
+    this.client = new Anthropic({ apiKey, fetch: globalThis.fetch });
   }
 
   async listModels(): Promise<ModelInfo[]> {
