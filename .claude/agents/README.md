@@ -14,15 +14,16 @@ the matching row here.
 | [implementer](implementer.md) | Executes an approved plan in server/, client/, reviewer-core/, e2e/; runs the package checks; self-checks its own diff | `sonnet` | code + tests | `engineering-insights`, `onion-architecture`, `frontend-ui-architecture` |
 | [test-writer](test-writer.md) | Writes client RTL, server hermetic and `*.it.test.ts`, reviewer-core and e2e flow tests for code the implementer (or a plan step) left untested; never touches production code | `sonnet` | tests only | `engineering-insights` |
 | [architecture-reviewer](architecture-reviewer.md) | Checks a change set against onion rings, frontend-ui-architecture, reviewer-core purity, vendor mirrors, the DI-container rule and package independence; reuses `pnpm --dir server arch` | `opus` | no | `onion-architecture`, `frontend-ui-architecture` |
+| [security-reviewer](security-reviewer.md) | Checks a change set for exploitable vulnerabilities — prompt injection past `wrapUntrusted`/`INJECTION_GUARD`, secrets leaving `LocalSecretsProvider`, clone/command/path handling, SSRF, unvalidated Fastify routes, raw SQL, client XSS; HIGH-confidence findings only, traced source → sink | `opus` | no | `security` |
 | [plan-verifier](plan-verifier.md) | Builds a per-item traceability matrix over every plan item and spec AC — verdict + evidence, never generic advice | `opus` | no | — |
 | [doc-writer](doc-writer.md) | Documents a shipped feature — turns a plan or code into README/`.doc`/root-README material, with Mermaid diagrams checked against the code | `sonnet` | docs only | `mermaid-diagram` |
 | [retro-writer](retro-writer.md) | After a non-clean reviewer round, records why the loop has not converged — findings by class label, one root cause each, point-fix/class-fix, one Decision sentence, a hard non-convergence gate — into `.harness/retros/`, raw material for harness-analyst | `opus` | retro file only | — |
 | [harness-analyst](harness-analyst.md) | Launched manually, never in a fix loop: reads every retro file and prior analysis, clusters recurring class labels and harness targets across features, proposes concrete harness changes with evidence | `opus` | analysis file only | — |
 
-Security review is **not** in this set yet — it belongs to a future reviewer agent. The
-pre-PR gate stays the [`pr-self-review`](../skills/pr-self-review/SKILL.md) skill. Until
-such an agent exists, a reproduced permission-boundary bypass fails the round exactly like
-any other unmet item — see [*The fix loop*](#flow).
+Security review belongs to security-reviewer; it complements, not replaces, the `security`
+bucket of the pre-PR gate [`pr-self-review`](../skills/pr-self-review/SKILL.md). A
+reproduced permission-boundary bypass of the agents' own hooks still fails the round exactly
+like any other unmet item — see [*The fix loop*](#flow).
 
 ## Flow
 
@@ -37,7 +38,8 @@ request / .spec ─► planner ─► Development Plan ─► user approves ─�
      │                                                             │
      │                                            main session: manual acceptance
      │                                                             │
-     │                                   ┌── architecture-reviewer ┤  (run in parallel)
+     │                                   ┌── architecture-reviewer ┤
+     │                                   ├── security-reviewer ────┤  (run in parallel)
      │                                   └── plan-verifier ────────┘
      │                                                             │
      │                    clean / all items met ◄──────────────────┴──────────► critical finding / item not met / reproduced bypass
@@ -75,9 +77,10 @@ agent falls back to the prompt's own language). Only prose follows it: IDs, path
 command output and the section headings of each agent's skeleton stay verbatim, and files
 written to the repo stay in English.
 
-**The fix loop.** architecture-reviewer and plan-verifier run in parallel after the
-implementer (and test-writer, when one ran). A critical architecture finding or a plan
-item verified "not met"/"partial" goes back to the implementer for a code fix, or to
+**The fix loop.** architecture-reviewer, security-reviewer and plan-verifier run in
+parallel after the implementer (and test-writer, when one ran). A critical architecture or
+security finding or a plan item verified "not met"/"partial" goes back to the implementer
+for a code fix, or to
 test-writer for a test gap; if the finding means the *plan* was wrong, the main session
 re-invokes the planner in **Update mode** with the Implementation Report or Plan
 Verification as the change input, and the corrected plan flows through implementer →
@@ -152,6 +155,7 @@ the planner is held by the process rule alone.
 | implementer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`implementer-guard.sh`](../hooks/implementer-guard.sh) |
 | test-writer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write tests` + `bash checks` |
 | architecture-reviewer | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash checks` (no write tool at all) |
+| security-reviewer | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash readonly` (no write tool at all) |
 | plan-verifier | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash checks` (no write tool at all) |
 | doc-writer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write docs` + `bash readonly` |
 | retro-writer | Read, Grep, Glob, Edit, Write, Bash | Agent, NotebookEdit, Skill, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write retro` + `bash readonly` |
@@ -230,7 +234,7 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
 
-No agent here may spawn subagents (`Agent` is denied on all nine), so review never
+No agent here may spawn subagents (`Agent` is denied on all ten), so review never
 happens inside implementation.
 
 ## Artifacts
@@ -242,6 +246,7 @@ happens inside implementation.
 | implementer | Path to an approved `docs/plans/<feature>.plan.md` (`Plan status: Ready`) | Working-tree changes (uncommitted), appended `INSIGHTS.md` entries, *Implementation Report* — steps, deviations, verification table, skipped checks, self-check, reviewer hand-off, open issues |
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
+| security-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers → Security* line | *Security Review* — deterministic checks (secret scan, dangerous sinks, injection guard), findings (category, `file:line`, source → sink, exploit path, severity, evidence), needs-verification, checked-no-finding, pre-existing context, limits, `**Review status:**` |
 | plan-verifier | A plan path (`Plan status: Ready`) + optional `Manual acceptance:` block | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
 | doc-writer | Source material (plan path, spec, files or feature name) + audience/doc kind | Doc files per the Diátaxis home table, *Documentation Report* — files written, diagrams, claims checked against code, proposed edits outside scope, conventions notes, `**Docs status:**` |
 | retro-writer | Plan path + inline reviewer report(s) + `HEAD` sha + clean-round flag, or a backfill instruction — plus the retro file's existing labels and newest entries, when one exists | `.harness/retros/<feature>.retro.md` entry (via marker-line `Edit`, `Write` only on first create), *Retro Report* — entry table, why the loop is (not) converging, feed-forward line, sign-off JSON when not converging, graduation candidates, `**Retro status:**` |
@@ -268,9 +273,9 @@ below.
 
 | Practice | Where it shows up | Source |
 |----------|-------------------|--------|
-| `description` drives automatic delegation; state scope and what the agent does *not* do | all nine descriptions | [Subagents][s1] |
+| `description` drives automatic delegation; state scope and what the agent does *not* do | all ten descriptions | [Subagents][s1] |
 | Least privilege via `tools` allowlist + `disallowedTools` denylist | Permissions table | [Subagents][s1] |
-| Subagents can nest by default — deny `Agent` to keep review out of implementation | all nine | [Subagents][s1] |
+| Subagents can nest by default — deny `Agent` to keep review out of implementation | all ten | [Subagents][s1] |
 | Fresh context per subagent — the plan must be self-contained | planner output, plan file handoff | [Subagents][s1] |
 | Return a concise structured summary, not raw logs | all output formats | [Subagents][s1] |
 | Agent-scoped `hooks`, `permissionMode`, `model`, `skills` frontmatter; `disallowedTools` with a specifier still removes the whole tool | implementer/scope-guard hooks, modes | [Subagents][s1] |
@@ -364,12 +369,12 @@ and reviewers).
   .claude/hooks/implementer-guard.sh self-test
   ```
 
-- **test-writer / architecture-reviewer / plan-verifier / doc-writer / retro-writer /
-  harness-analyst is blocked on a Write, Edit or Bash command.** Expected outside their
-  profile's allow-list — production code for test-writer, anything but a doc path for
+- **test-writer / architecture-reviewer / security-reviewer / plan-verifier / doc-writer /
+  retro-writer / harness-analyst is blocked on a Write, Edit or Bash command.** Expected
+  outside their profile's allow-list — production code for test-writer, anything but a doc path for
   doc-writer, anything but `.harness/retros/<feature>.retro.md` (and only through the
   marker lines) for retro-writer, anything but `.harness/analysis/<date>.md` (and only
-  `Write`, once) for harness-analyst, any write tool at all for the two review agents, and
+  `Write`, once) for harness-analyst, any write tool at all for the three review agents, and
   any command outside `readonly`/`checks` for Bash. The report's *not made* / *cannot
   verify* sections say what to do in the main session instead. Check the matcher, the
   canonical tables (`HEAD_ARGS`, `GIT_ARGS`, the `pnpm` allowlist, `CHECKS_EXACT`) in

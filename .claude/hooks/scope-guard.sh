@@ -11,7 +11,7 @@
 #   scope-guard.sh write retro    — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
 #   scope-guard.sh write analysis — PreToolUse(Write|Edit|NotebookEdit) for harness-analyst
 #   scope-guard.sh bash readonly  — PreToolUse(Bash) for doc-writer, retro-writer,
-#                                    harness-analyst
+#                                    harness-analyst, security-reviewer
 #   scope-guard.sh bash checks    — PreToolUse(Bash) for test-writer, architecture-reviewer,
 #                                    plan-verifier
 #   scope-guard.sh self-test      — path matrix + command matrix, exit 0 iff every case is right
