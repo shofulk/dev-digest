@@ -15,7 +15,7 @@ import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
 import { DiffTab } from "./_components/DiffTab";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
-import { usePullDetail, usePulls } from "../../../../../lib/hooks";
+import { usePullDetail, usePulls, useInvalidateOnRunSettle } from "../../../../../lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePrReviews, useCancelRun, usePrActiveRuns, usePrRuns, useDeleteRun } from "../../../../../lib/hooks/reviews";
 import { useActiveRepo, useRepoNotFound } from "../../../../../lib/repo-context";
@@ -57,6 +57,17 @@ export default function PRDetailPage() {
   const invalidateRunHistory = () => {
     if (prId) qc.invalidateQueries({ queryKey: ["pr-runs", prId] });
   };
+  // A review may have derived the intent inline (AC8) — drop the cached
+  // "no intent yet" / stale state once a run settles.
+  const invalidateIntent = () => {
+    if (prId) qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
+  };
+
+  // D6 — refresh Smart Diff's grouping/finding-lines and the review data it
+  // overlays on a run-settle transition, INDEPENDENT of which tab is open
+  // (FindingsTab's own `onRunDone` only fires while it is mounted). See
+  // `useInvalidateOnRunSettle` (state-free, tested in isolation).
+  useInvalidateOnRunSettle(prId, reviewRunning);
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
@@ -152,7 +163,7 @@ export default function PRDetailPage() {
       />
 
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
-        {tab === "overview" && <OverviewTab prBody={pr.body} />}
+        {tab === "overview" && <OverviewTab prId={prId} prBody={pr.body} />}
 
         {tab === "findings" && (
           <FindingsTab
@@ -175,7 +186,9 @@ export default function PRDetailPage() {
             onRunDone={() => {
               invalidateActiveRuns();
               invalidateRunHistory();
+              invalidateIntent();
               refetchReviews();
+              if (prId) qc.invalidateQueries({ queryKey: ["smart-diff", prId] });
             }}
           />
         )}
@@ -185,6 +198,10 @@ export default function PRDetailPage() {
             prId={prId}
             filesCount={pr.files_count}
             files={pr.files}
+            additions={pr.additions}
+            deletions={pr.deletions}
+            repoFullName={repoFullName}
+            headSha={pr.head_sha}
             canComment={pr.status === "open"}
           />
         )}

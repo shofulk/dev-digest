@@ -179,6 +179,30 @@ export async function seed(db: Db): Promise<{ workspaceId: string; userId: strin
     ]);
   }
 
+  // pr_intent — so the Overview tab's Intent card has something to show
+  // before the user ever clicks "Derive intent" (AC10, S15's e2e flow).
+  // Outside the `if (!pr)` block with `onConflictDoNothing()` (S29/F11) so a
+  // LOCAL DATABASE SEEDED BEFORE THIS FEATURE — where PR #482 already exists
+  // from a prior seed run, and the `if (!pr)` block above is skipped
+  // entirely — still gets this row on the next `db:seed`.
+  await db
+    .insert(t.prIntent)
+    .values({
+      prId: pr!.id,
+      intent: 'Add token-bucket rate limiting to the public API endpoints to prevent abuse from unauthenticated clients.',
+      inScope: ['Token-bucket rate limiter middleware', 'Public API endpoints'],
+      outOfScope: ['User-list pagination'],
+      confidence: 'medium',
+      sources: [
+        { kind: 'pr_title', ref: 'acme/payments-api#482', status: 'used' },
+        { kind: 'pr_body', ref: 'acme/payments-api#482', status: 'used' },
+        { kind: 'file_list', ref: 'acme/payments-api#482', status: 'used' },
+      ],
+      headSha: 'a1b2c3d4e5f6',
+      model: 'openrouter/google/gemini-2.5-flash-lite',
+    })
+    .onConflictDoNothing();
+
   // ---- built-in agents (the three starter presets) ----
   // Prompt bodies live in ./seed-prompts.ts (mirrored in docs/agent-prompts/*.md).
   const seedAgents: Array<typeof t.agents.$inferInsert> = [

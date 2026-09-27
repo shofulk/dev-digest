@@ -264,6 +264,11 @@ export default async function pullsRoutes(appBase: FastifyInstance) {
           filesCount: detail.files_count,
         })
         .where(eq(t.pullRequests.id, pr.id));
+      // AC7 — persist a changed head_sha through the repository (not an extra
+      // field in this route's own `.set`), so `GET /pulls/:id/intent` sees
+      // staleness as soon as the PR is opened, not only on the next list/poll
+      // sync (S11/S22).
+      await container.reviewRepo.updateHeadSha(pr.id, detail.head_sha);
 
       return { ...detail, id: pr.id };
     } catch (err) {

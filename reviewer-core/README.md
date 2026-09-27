@@ -20,13 +20,22 @@ flowchart LR
   WRAP --> LLM["LLMProvider (injected)<br/>llm/openrouter.ts"]
   LLM --> STRUCT["structured output<br/>llm/structured.ts<br/>Zod → JSON Schema · parse-with-repair"]
   STRUCT --> GROUND["groundFindings()<br/>grounding.ts<br/>mechanical citation gate vs the diff"]
-  GROUND --> OUT["Review<br/>verdict · score · grounded findings"]
+  GROUND --> SCOPE["applyScopeFilter()<br/>review/scope.ts<br/>drops out-of-scope findings vs a derived PR intent"]
+  SCOPE --> OUT["Review<br/>verdict · score · grounded, in-scope findings"]
 ```
 
 The grounding step is the mandatory gate: a finding that doesn't cite a real line
-in the diff is dropped, so the engine can't hallucinate locations. The score is
-recomputed deterministically from the **surviving** findings, not trusted from the
-model. `review/run.ts` orchestrates the run (single-pass by default).
+in the diff is dropped, so the engine can't hallucinate locations. Next, when the
+caller supplies an `intent` (the server derives one before review — see
+`server/README.md`'s "Review context"), `applyScopeFilter` runs: the model tags
+every finding `scope: in | out` (a trusted rule appended to the system prompt,
+`SCOPE_RULE` in `prompt.ts`), and the filter mechanically drops `out` findings —
+except it always keeps exactly one if any is *serious* (`CRITICAL`, or `WARNING` +
+`category: security`), so a real defect can never be silently descoped by a
+manipulated intent. The filter is a no-op with no intent, or one of confidence
+`low`. The score is recomputed deterministically from the findings that survive
+**both** gates, not trusted from the model. `review/run.ts` orchestrates the run
+(single-pass by default) and reports the filtered set as `ReviewOutcome.scopeFiltered`.
 
 The engine also accepts optional prompt slots the **course lessons** start
 feeding it — `skills` (L02), `memory` (L07), `specs` (L05), `callers` — plus a
@@ -37,7 +46,8 @@ extra slots are omitted, so `assemblePrompt` simply leaves those sections out.
 ## Public API
 
 Exported from `src/index.ts`: `assemblePrompt` / `wrapUntrusted` (prompt),
-`groundFindings` / `groundingSummary` (grounding), `toJsonSchema` / `extractJson`
+`groundFindings` / `groundingSummary` (grounding), `applyScopeFilter`
+(out-of-scope filter, `review/scope.ts`), `toJsonSchema` / `extractJson`
 / `parseWithRepair` (structured output), plus the `run` entrypoint and
 `reduce`. Contracts (`Review`, `Finding`, `Verdict`, …) come from
 `@devdigest/shared`.

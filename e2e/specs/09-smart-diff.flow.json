@@ -1,0 +1,19 @@
+{
+  "name": "Smart Diff renders role groups, live findings and the order toggle",
+  "description": "From PR #482, open the Files changed tab and confirm the reviewer-ordered diff (Smart order, one Core group of the 4 seeded files) renders, that the seeded config.ts finding (no patch, so it lands in the unanchored block) shows inline, and that Original order switches to the flat GitHub list. Read-only seeded data (no model call, R7 explains the 09 numbering). Assumes a freshly-seeded DB (see e2e/README.md).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Files changed"], "label": "switch to the Files changed tab" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "diff tab is active in the URL" },
+    { "cmd": ["wait", "--text", "Smart order"], "label": "Smart order is the default toggle state" },
+    { "cmd": ["wait", "--text", "Core"], "label": "the single Core group renders" },
+    { "cmd": ["wait", "--text", "4 files"], "label": "the Core group holds all 4 seeded files" },
+    { "cmd": ["wait", "--text", "Hardcoded Stripe secret key in commit"], "label": "the seeded finding on src/config.ts (no patch) renders unanchored" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Original order"], "label": "switch to Original order" },
+    { "cmd": ["wait", "--text", "src/api/users.ts"], "label": "the flat GitHub-order list shows a seeded file" }
+  ]
+}

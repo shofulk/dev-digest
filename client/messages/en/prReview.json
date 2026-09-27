@@ -6,6 +6,7 @@
     "accept": "Accept",
     "dismiss": "Dismiss",
     "learn": "Learn",
+    "outOfScope": "Out of scope",
     "replyToAuthor": "Reply to author",
     "replyPlaceholder": "Reply to the author about this finding…",
     "sendReply": "Send reply",
@@ -62,14 +63,19 @@
     "blockers": " · {count} blockers"
   },
   "smartDiff": {
-    "coreLabel": "Core",
-    "wiringLabel": "Wiring",
-    "boilerplateLabel": "Boilerplate",
     "largeTitle": "This PR is large ({lines} changed lines)",
     "largeBody": "Consider splitting it into smaller, focused PRs for easier review:",
-    "filesCount": "{count} files",
     "findingLines": "{count} finding-lines",
-    "groupedByRole": "Smart Diff · grouped by role"
+    "groupedByRole": "Smart Diff · grouped by role",
+    "title": "Reviewer-ordered diff",
+    "summary": "{files} files · +{additions} −{deletions}",
+    "smartOrder": "Smart order",
+    "originalOrder": "Original order",
+    "orderLabel": "Diff order",
+    "loadFailed": "Couldn't load the reviewer-ordered diff.",
+    "showComments": "Show comments",
+    "hideComments": "Hide comments",
+    "commentFailed": "Couldn't post the comment to GitHub."
   },
   "list": {
     "breadcrumb": "Pull Requests",
@@ -127,5 +133,47 @@
     "goToReview": "Jump to this run’s findings below",
     "openTrace": "Open run trace & logs",
     "deleteRun": "Delete run"
+  },
+  "intent": {
+    "title": "Intent",
+    "reDerive": "Re-derive intent",
+    "deriving": "Deriving…",
+    "emptyTitle": "No intent derived yet",
+    "emptyBody": "Derive a PR intent from its title, body, linked issues and changed files.",
+    "emptyCta": "Derive intent",
+    "errorTitle": "Couldn’t load the PR intent",
+    "staleBadge": "Stale — PR updated since derivation",
+    "lowConfidenceHint": "Classified from the title and changed files — the PR body was empty or too short.",
+    "missingContextBanner": "Some referenced context could not be fetched",
+    "inScope": "In scope",
+    "outOfScope": "Out of scope",
+    "sources": "Sources",
+    "confidence": {
+      "low": "Low confidence",
+      "medium": "Medium confidence",
+      "high": "High confidence"
+    },
+    "sourceStatus": {
+      "used": "used",
+      "missing": "missing",
+      "not_fetched": "not fetched"
+    },
+    "reason": {
+      "not_found": "not found",
+      "timeout": "timed out",
+      "phase_timeout": "ran out of time",
+      "no_token": "no GitHub token configured",
+      "cross_org": "belongs to a different owner",
+      "host_not_allowed": "host not allowed",
+      "unsupported": "unsupported file type",
+      "too_large": "too large to fetch",
+      "no_adapter": "no adapter for this tracker",
+      "cap_reached": "source limit reached",
+      "fetch_failed": "fetch failed",
+      "unknown": "unavailable"
+    },
+    "deriveFailed": "Failed to derive intent",
+    "footerModel": "Model: {model}",
+    "footerDerivedAt": "Derived {time}"
   }
 }

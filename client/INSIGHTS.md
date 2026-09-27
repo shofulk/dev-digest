@@ -36,6 +36,41 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-26 — a test for an ordering function passed while the function used the wrong order, because both used the same order
+
+`orderBySmartDiff`'s original T8 built its `SmartDiff` fixture with each group's
+`files` already in `PrDetail.files` order, so the implementation (which grouped by
+walking `smartDiff.groups[].files` directly, ignoring the input `files` order)
+and the test's expectation were both derived from the *same* list — the test
+could not have told a correct implementation from a broken one; it would pass
+either way (plan-verifier finding, `smart-diff.retro.md` iteration 1, class
+`test-oracle-weaker-than-plan`). Fixed by making the fixture's response order
+for one multi-file group the *reverse* of the `PrDetail.files` (input) order,
+then asserting the input order wins — a case where the two candidate
+implementations produce different, checkable output. General rule for any
+pure "reorder/merge two sources" function: build the fixture so the two inputs
+disagree on order, not just on which items belong together — agreement lets a
+wrong implementation hide.
+**Evidence:** `client/src/components/diff-viewer/helpers.ts:52`,
+`client/src/components/diff-viewer/helpers.test.ts:18`
+
+### 2026-09-26 — adding a new `useTranslations` namespace call to a shared component passes typecheck/lint/its own tests, then breaks an unrelated existing test's console output
+
+Giving `diff-viewer/FileCard.tsx` a second, unconditional `useTranslations("prReview")` call
+(for the open-findings dot, Smart Diff AC3) is invisible to every check that renders the
+component with its own fixtures (`DiffTab.test.tsx`, `DiffViewer.test.tsx` both already
+supply the `prReview` namespace) — but `src/test/smoke.test.tsx` mounts the shared
+`DiffViewer` directly with only `{ shell: shellMessages }`, and `next-intl`'s
+`useTranslations` throws `MISSING_MESSAGE` the moment the hook runs, regardless of whether
+the missing key is ever actually read. `pnpm test` still exits 0 (the component doesn't
+crash, next-intl just logs), so the only signal is a stderr `IntlError` block in an
+otherwise-green run — easy to miss in a big test run's output. Any new `useTranslations`
+namespace added to a component under `client/src/components/` (not `_components/`, i.e. one
+usable by more than one route) needs every direct-mount test of that component checked for
+the new namespace, not just the tests written for the new feature.
+**Evidence:** `client/src/components/diff-viewer/FileCard/FileCard.tsx`,
+`client/src/test/smoke.test.tsx:37`
+
 ### 2026-09-17 — closing a fixed-position popover on `scroll` makes its own content unscrollable
 
 **Supersedes:** the 2026-09-17 entry below — its "must close on `scroll` (capture phase) and

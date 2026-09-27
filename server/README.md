@@ -70,6 +70,8 @@ flowchart TB
   end
   subgraph Review["Review & runs"]
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
+    intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
+    smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
@@ -84,6 +86,11 @@ flowchart TB
   end
   HEALTH["/health (liveness) · /health/ready (DB ping → 200/503)"]
 ```
+
+`smart-diff` is a deterministic, DB-only route: it groups a PR's files by role
+(core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.
+It owns roles and order; the client overlays live finding dots/counters from
+`GET /pulls/:id/reviews` on top of it, so the two never round-trip together.
 
 ## Environment
 
@@ -133,6 +140,38 @@ What the reviewer actually sends to the model is assembled in
 - **Grounding is mandatory.** Every finding must cite a line that exists in the
   diff or it is dropped (`groundFindings`), and the score is recomputed from the
   surviving findings — the model's self-reported score is ignored.
+- **A PR intent is resolved as pre-work, once, for every queued agent.**
+  `run-executor.ts` reads the `pr_intent` row before the per-agent loop; missing
+  or stale (stored `head_sha` ≠ the PR's current one) triggers one inline
+  derivation (`modules/_shared/intent/derive.ts` — a single, cheap, structured
+  OpenRouter call that never sees diff bodies, only title/body, linked issues,
+  fetched docs, and per-file `+a/-d` + hunk-header lines). A derivation failure
+  never fails the run: every agent then reviews with no intent block, logged in
+  the Live Log. When available, the intent renders as `## PR intent (derived,
+  advisory)` in the prompt (`reviewer-core/prompt.ts`) and the model tags every
+  finding `scope: in|out`; the mechanical filter that actually removes
+  out-of-scope findings lives in `reviewer-core/review/scope.ts`, runs **after**
+  grounding and **before** scoring, and only when confidence is `medium`/`high` —
+  one serious survivor (`CRITICAL`, or `WARNING` + `security`) is always kept.
+  `GET /pulls/:id/intent` and `POST /pulls/:id/intent/derive` (`modules/intent/`)
+  serve the same intent to the Overview tab's Intent card. Both routes and the
+  review pre-work read/derive through ONE shared `IntentDeriver`
+  (`modules/_shared/intent/deps.ts` `intentDeriverFor(container)`, memoised per
+  `Container`), so a manual derive and an inline review-start derive for the
+  same PR share one in-flight map instead of racing two LLM calls. All
+  derivation logging (stats + per-source warnings) lives in `IntentService`,
+  never in `intent/routes.ts` itself.
+- **Source-fetch caps and residual SSRF risk (R1).** Every reference the
+  classifier resolves goes only through `GitHubClient` — no generic URL
+  fetcher exists. Each GitHub call is bounded to 5 s
+  (`FETCH_TIMEOUT_MS`), and the whole source-gathering phase to 15 s
+  (`TOTAL_SOURCE_PHASE_BUDGET_MS`); a call already in flight can never push
+  the phase past its budget, since every timeout is
+  `min(5s, time left in the 15s phase)`. Only `github.com`/
+  `raw.githubusercontent.com` URLs whose owner matches the PR's own repo
+  owner are ever translated into a call — but that allowlist is by **owner**,
+  not by visibility.
+  Residual risk: a **private** doc or issue in the same org, referenced from a PR body, is fetched with the installation's PAT and its text IS sent to **OpenRouter** as part of the classifier prompt. This is accepted risk (same org, not "any repo"), not a bug — see plan `Risks / open questions` R1.
 
 ## Testing
 

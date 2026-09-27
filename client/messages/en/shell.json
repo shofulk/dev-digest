@@ -40,6 +40,21 @@
     "reply": "Reply",
     "viewOnGitHub": "View on GitHub",
     "postedToGitHub": "Posts to GitHub immediately",
-    "outdatedTitle": "{count} comment(s) on older revisions"
+    "outdatedTitle": "{count} comment(s) on older revisions",
+    "coreLabel": "Core",
+    "testsLabel": "Tests",
+    "wiringLabel": "Wiring",
+    "docsLabel": "Docs",
+    "boilerplateLabel": "Boilerplate",
+    "coreSubtitle": "The behaviour this PR changes",
+    "testsSubtitle": "Coverage for the change",
+    "wiringSubtitle": "Config, entry points and CI",
+    "docsSubtitle": "Documentation and specs",
+    "boilerplateSubtitle": "Generated and vendored files",
+    "filesCount": "{count} files",
+    "filesWithFindings": "● {count}",
+    "filesWithFindingsAria": "{count} files with findings",
+    "hasFindings": "This file has open findings",
+    "unanchoredTitle": "{count} finding(s) not on a shown line"
   }
 }

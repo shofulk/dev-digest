@@ -59,6 +59,14 @@ export const Finding = z.object({
   // Lethal-trifecta variant fields (present only when kind === 'lethal_trifecta')
   trifecta_components: z.array(TrifectaComponent).nullish(),
   evidence: z.array(TrifectaEvidence).nullish(),
+  /**
+   * Set by the MODEL, only when a PR intent was supplied in the prompt: `in` if
+   * the finding concerns what the PR intends to change, else `out`. Tagging
+   * never removes a finding at generation time — the mechanical out-of-scope
+   * filter (reviewer-core `applyScopeFilter`) is what actually drops findings,
+   * and only when intent confidence is medium/high.
+   */
+  scope: z.enum(['in', 'out']).nullish(),
 });
 export type Finding = z.infer<typeof Finding>;
 

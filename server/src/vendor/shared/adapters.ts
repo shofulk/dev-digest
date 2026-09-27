@@ -67,6 +67,13 @@ export interface StructuredRequest<T> {
    * the `session_id` body field; ignored by providers that don't support it.
    */
   sessionId?: string;
+  /**
+   * OpenRouter `provider.require_parameters: true` — reject an endpoint that
+   * does not support every requested parameter (here: structured outputs), so
+   * a user-picked model without JSON-schema support never silently degrades.
+   * Ignored by providers that don't support it.
+   */
+  requireParameters?: boolean;
 }
 
 export interface StructuredResult<T> {
@@ -164,6 +171,26 @@ export interface GitHubClient {
   getIssue(repo: RepoRef, n: number): Promise<IssueMeta>;
   /** GET /user — for "posting as @user". */
   currentLogin(): Promise<string>;
+  /**
+   * Fetch a text file's content at `ref` (Contents API). Used ONLY for
+   * allowlisted github.com/raw.githubusercontent.com references resolved by
+   * the intent classifier (never a raw URL fetch — SSRF-safe by construction).
+   * Rejects (via the caller's `not_fetched`/`missing` mapping) a non-file
+   * entry (dir/symlink/submodule) or a size over `opts.maxBytes`, checked from
+   * metadata BEFORE decoding.
+   */
+  getFileContent(
+    repo: RepoRef,
+    path: string,
+    ref: string,
+    opts?: { maxBytes?: number; timeoutMs?: number },
+  ): Promise<{ path: string; ref: string; content: string; size: number; truncated: boolean }>;
+  /** GraphQL `PullRequest.closingIssuesReferences` — issues this PR would close. */
+  listClosingIssueRefs(
+    repo: RepoRef,
+    n: number,
+    opts?: { timeoutMs?: number },
+  ): Promise<{ owner: string; name: string; number: number }[]>;
 }
 
 // ---------- Git (simple-git, heavy) ----------

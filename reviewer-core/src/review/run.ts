@@ -7,9 +7,10 @@ import type {
   UnifiedDiff,
 } from '@devdigest/shared';
 import { Review as ReviewSchema } from '@devdigest/shared';
-import { assemblePrompt } from '../prompt.js';
+import { assemblePrompt, type ReviewIntent } from '../prompt.js';
 import { groundFindings, groundingSummary } from '../grounding.js';
 import { reduceReviews, scoreFromFindings, sliceDiff } from './reduce.js';
+import { applyScopeFilter } from './scope.js';
 
 /**
  * reviewPullRequest — the review engine entry point.
@@ -71,6 +72,13 @@ export interface ReviewInput {
   /** PR author's description/body (untrusted; truncated + delimiter-wrapped in
       the prompt). Empty/undefined → section omitted. */
   prDescription?: string;
+  /**
+   * Derived PR intent (AC8/AC9). Undefined → prompt and outcome are
+   * byte-identical to today (C2). When present: rendered in the prompt +
+   * `SCOPE_RULE` is added, and `applyScopeFilter` runs after grounding (only
+   * when `confidence` is medium/high).
+   */
+  intent?: ReviewIntent;
   /** Task framing line, e.g. "Review PR #482 …". */
   task?: string;
   /** Override the structured-output retry budget. */
@@ -99,6 +107,9 @@ export interface ReviewOutcome {
   grounding: string;
   /** Findings dropped by grounding, with reasons (for logs / "never go silent"). */
   dropped: { finding: Finding; reason: string }[];
+  /** Findings removed by the out-of-scope filter (AC9); empty when no intent
+   *  was supplied or its confidence was too low to filter. */
+  scopeFiltered: { finding: Finding; reason: string }[];
   /** Which path ran. */
   mode: ReviewMode;
   /** Prompt assembly (for the run trace). Single-pass: the one call; map-reduce: the whole-diff assembly. */
@@ -135,6 +146,7 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
     callers: input.callers,
     repoMap: input.repoMap,
     prDescription: input.prDescription,
+    intent: input.intent,
     task: input.task,
   };
 
@@ -201,13 +213,29 @@ export async function reviewPullRequest(input: ReviewInput): Promise<ReviewOutco
   }
   emit('result', `Citation grounding: ${grounding}`);
 
-  // Score is derived from the findings that SURVIVED grounding (not the model's
-  // self-reported number, and not the pre-grounding set) so the score, the
-  // findings list, and the deterministic event always agree.
+  // Out-of-scope filter (AC9) runs AFTER grounding — an ungrounded finding can
+  // never become the "one serious signal" survivor — and BEFORE scoring, so
+  // the score always matches what the findings list actually shows.
+  const scope = applyScopeFilter(ground.kept, input.intent);
+  // D7/F9 — emit whenever the filter actually ran, INCLUDING zero removed, so
+  // "ran and found nothing" is distinguishable in the trace from "never ran"
+  // (no intent, or confidence too low to trust for filtering).
+  if (scope.applied) {
+    const signalKept = scope.kept.some((f) => f.scope === 'out');
+    emit(
+      'result',
+      `scope filter: ${scope.filtered.length} out-of-scope finding(s) removed, signal kept: ${signalKept ? 'yes' : 'no'}`,
+    );
+  }
+
+  // Score is derived from the findings that SURVIVED both gates (not the
+  // model's self-reported number) so the score, the findings list, and the
+  // deterministic event always agree.
   return {
-    review: { ...merged, findings: ground.kept, score: scoreFromFindings(ground.kept) },
+    review: { ...merged, findings: scope.kept, score: scoreFromFindings(scope.kept) },
     grounding,
     dropped: ground.dropped,
+    scopeFiltered: scope.filtered,
     mode,
     assembly,
     chunks: chunks.map((c) => ({ label: c.label })),

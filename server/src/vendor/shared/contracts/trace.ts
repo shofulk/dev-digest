@@ -48,6 +48,8 @@ export const PromptAssembly = z.object({
   repo_map: z.string().nullish(),
   /** PR author's description/body (truncated); null when absent. */
   pr_description: z.string().nullish(),
+  /** The rendered `## PR intent` block (AC8); null when no intent was available. */
+  intent: z.string().nullish(),
   user: z.string(),
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;
@@ -70,6 +72,13 @@ export const RunStats = z.object({
   cost_usd: z.number().nullish(),
   findings: z.number().int(),
   grounding: z.string(),
+  /**
+   * Findings removed by the out-of-scope filter (AC9). NULLISH, not nullable —
+   * a RunTrace is replayed verbatim from the run_traces jsonb blob, and every
+   * trace persisted before this field existed has no such key
+   * (`server/INSIGHTS.md`, 2026-09-17).
+   */
+  scope_filtered: z.number().int().nullish(),
 });
 export type RunStats = z.infer<typeof RunStats>;
 
