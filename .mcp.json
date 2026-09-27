@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "devdigest": {
+      "type": "stdio",
+      "command": "pnpm",
+      "args": ["--silent", "--dir", "mcp-server", "start"],
+      "env": {
+        "DEVDIGEST_API_URL": "${DEVDIGEST_API_URL:-http://localhost:3001}"
+      }
+    }
+  }
+}

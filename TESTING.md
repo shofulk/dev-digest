@@ -31,10 +31,11 @@ If a test wouldn't catch a class of regression we care about, we don't write it.
 | server-integration | `server/` | integration (real Postgres) | vitest | `server-integration.yml` | **yes** |
 | reviewer-core | `reviewer-core/` | unit (engine) | vitest | `reviewer-core.yml` | no |
 | e2e web | `e2e/` | browser e2e (deterministic) | agent-browser + `run.ts` | `e2e-web.yml` | yes (stack) |
+| mcp-server | `mcp-server/` | unit (hermetic MCP client + fake API) | vitest | `mcp-server.yml` | no |
 
-`client`, `server-unit`, `reviewer-core` and `e2e web` also run `lint` (ESLint 10,
-flat config) before their tests. `server-integration` does not: `server-unit` already
-lints the same package, and this lane exists to spend its time on Postgres. See
+`client`, `server-unit`, `reviewer-core`, `e2e web` and `mcp-server` also run `lint`
+(ESLint 10, flat config) before their tests. `server-integration` does not: `server-unit`
+already lints the same package, and this lane exists to spend its time on Postgres. See
 **Lint** below.
 
 ## What each suite covers
@@ -60,6 +61,12 @@ and a `run` with a stubbed model → grounded findings. No DB / GitHub / FS.
 **e2e web** — see `e2e/README.md`. Deterministic agent-browser flows over the
 main journeys (boot → PR list → PR detail; agents) against a real seeded stack.
 No `chat`, no model key.
+
+**mcp-server** — see `mcp-server/README.md`. Tool registration and budget (`tools/list`
+shape, annotations, description/argument limits), the HTTP adapter against a stubbed
+`fetch`, run resolution and polling with a fake clock, findings shaping, and every tool's
+happy path plus its forward-leading errors — all driven through the MCP SDK's in-memory
+client against a faked `DevDigestApi`. No network, no Docker.
 
 ## Running locally
 
