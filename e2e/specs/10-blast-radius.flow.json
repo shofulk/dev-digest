@@ -7,7 +7,7 @@
     { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
     { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
-    { "cmd": ["wait", "--text", "Blast radius"], "label": "the Blast radius card renders on the Overview tab" },
+    { "cmd": ["wait", "--text", "BLAST RADIUS"], "label": "the Blast radius card renders on the Overview tab (SectionLabel is CSS-uppercased; wait --text matches rendered text)" },
     { "cmd": ["wait", "--text", "Index incomplete"], "label": "the degraded badge shows (the seed repo is never indexed)" },
     { "cmd": ["wait", "--text", "No index data yet. Resync the repo to build one."], "label": "the no_data reason sentence renders" }
   ]
