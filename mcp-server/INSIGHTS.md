@@ -42,6 +42,38 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-28 — `budgetBlast` trimmed only `downstream`; a huge `changed_symbols` list alone can blow the budget with `downstream` empty
+
+The rev-2 `budgetBlast` called `fitToBudget(value, 'downstream', …)` and stopped there, on
+the assumption that `downstream` is always the large field. It is not: `changed_symbols` is
+also unbounded (every symbol declared in every changed file), and a PR that touches a file
+with hundreds of small symbols but few cross-file callers produces a huge
+`changed_symbols` array with a small or empty `downstream` — trimming `downstream` to zero
+does nothing for that shape. Fix: after the `downstream` trim, if the serialized result is
+still over budget, trim `changed_symbols` from the tail too, but drop symbols with **no**
+matching `downstream` entry first (they are already the least informative rows — "no callers
+found" is a fine thing to lose before a symbol the caller data still shows information for).
+Implemented as two index arrays (`withoutDownstream`, `withDownstream`, each built once and
+reversed so removal order is tail-first within its group) and a `Set` of dropped indices
+rebuilt each iteration — `O(n^2)` in the array size, fine at MCP response scale. The combined
+hint now names both cuts: `"N downstream symbol(s) and M changed symbol(s) omitted…"`.
+**Evidence:** `mcp-server/src/tools/budget.ts` (`budgetBlast`), `mcp-server/test/budget.test.ts`
+("get_blast_radius with an oversized changed_symbols list … stays under the budget")
+
+### 2026-09-28 — the generic `budgetExceededText(toolName)` fallback told every tool to narrow with args it might not have
+
+`guard`'s last-resort budget-exceeded text said "narrow the request (e.g. limit,
+min_severity, category)" for every tool, including `get_blast_radius`, which takes only
+`repo`/`pr` — none of those three arguments exist on it, so a user hitting this fallback for
+blast radius would be told to pass arguments the tool schema rejects. Per the package's
+text-placement rule (`mcp-server/AGENTS.md` "Error and hint text placement"), the fix stays
+inside `tools/errors.ts` (the one place every `fail()`/budget-exceeded text lives): branch on
+`toolName === 'get_blast_radius'` and return tool-appropriate wording ("the PR touches too
+much shared code to summarize in one call") instead of the generic one. Any future tool whose
+argument set does not include `limit`/`min_severity`/`category` needs the same branch, not a
+one-size-fits-all string.
+**Evidence:** `mcp-server/src/tools/errors.ts` (`budgetExceededText`)
+
 ### 2026-09-27 — a naive mutual-`extends` check does not prove two unions are exactly equal; it silently passes when one side has an extra member
 
 Building `AssertMutuallyAssignable<A, B> = A extends B ? (B extends A ? true : never) : never`

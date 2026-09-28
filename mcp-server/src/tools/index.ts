@@ -18,5 +18,5 @@ export function registerTools(server: McpServer, api: DevDigestApi, config: Conf
   registerRunAgentOnPr(server, api, config, clock);
   registerGetFindings(server, api, config);
   registerGetConventions(server, api, config);
-  registerGetBlastRadius(server, config);
+  registerGetBlastRadius(server, api, config);
 }

@@ -84,6 +84,36 @@ describe('response budget through the MCP client (T15)', () => {
     await assertBudgeted(result);
   });
 
+  it('get_blast_radius with an oversized changed_symbols list (small downstream) stays under the budget', async () => {
+    // Trimming `downstream` alone cannot fit this: `changed_symbols` on its own already
+    // exceeds the budget, so budgetBlast must also trim the tail of `changed_symbols`.
+    const changed_symbols = Array.from({ length: 400 }, (_, i) => ({
+      name: `sym${i}${'X'.repeat(200)}`,
+      file: `${'F'.repeat(200)}/file${i}.ts`,
+      kind: 'function',
+    }));
+    const downstream = [
+      {
+        symbol: 'sym0X'.repeat(1),
+        callers: [{ name: 'caller0', file: 'src/file0.ts', line: 1 }],
+        endpoints_affected: [],
+        crons_affected: [],
+      },
+    ];
+    const api = makeFakeApi({
+      repos,
+      pulls,
+      blast: { p1: { changed_symbols, downstream, summary: 's' } },
+    });
+    const server = createServer({ api, config });
+    const client = await connect(server);
+    const result = await client.callTool({ name: 'get_blast_radius', arguments: { repo: 'acme/foo', pr: 42 } });
+    await assertBudgeted(result);
+    expect((result.structuredContent as { hint?: string }).hint).toMatch(/changed symbol/);
+    const shownSymbols = (result.structuredContent as { changed_symbols: unknown[] }).changed_symbols;
+    expect(shownSymbols.length).toBeLessThan(400);
+  });
+
   it('get_conventions with 60 oversized accepted conventions stays under the budget', async () => {
     const conventions: ConventionCandidate[] = Array.from({ length: 60 }, (_, i) => ({
       id: `c${i}`,

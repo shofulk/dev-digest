@@ -7,6 +7,8 @@
 // value interpolated from a `DomainError` is clipped to `textMax` here — an `ApiFailure`
 // detail, a URL, a repo/agent/run query, a list of known repos or ambiguous matches — so a
 // long API message or a long tool argument cannot itself blow the response budget (R14).
+// get_blast_radius reuses the existing PrNotImported/RepoNotFound/ApiFailure cases below —
+// it needed no domain error of its own.
 import type { KnownDomainError } from '../domain/errors.js';
 import { truncate } from '../domain/findings.js';
 
@@ -55,17 +57,17 @@ export function toForwardText(err: KnownDomainError, textMax: number): string {
   }
 }
 
-/** The last-resort text when a tool's result still exceeds the budget after trimming. */
+/** The last-resort text when a tool's result still exceeds the budget after trimming. Each
+ *  tool is named because they take different narrowing arguments — `get_blast_radius` has
+ *  no `limit`/`min_severity`/`category` of its own, so it must not be told to pass one. */
 export function budgetExceededText(toolName: string): string {
+  if (toolName === 'get_blast_radius') {
+    return `${toolName} response exceeded the size budget even after trimming — the PR touches too much shared code to summarize in one call.`;
+  }
   return `${toolName} response exceeded the size budget even after trimming — narrow the request (e.g. limit, min_severity, category) and try again.`;
 }
 
 /** `guard`'s fallback for anything that is not a DomainError — `detail` is already clipped. */
 export function unexpectedErrorText(toolName: string, detail: string): string {
   return `${toolName} failed unexpectedly: ${detail}`;
-}
-
-/** The get_blast_radius stub text (AC12) — not implemented yet, and never worth retrying. */
-export function notImplementedText(toolName: string): string {
-  return `${toolName} is not implemented yet — do not retry; it always returns this error.`;
 }

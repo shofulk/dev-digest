@@ -2,6 +2,7 @@
 // it received so a test can assert on side effects (e.g. "0 POSTs" for a disabled agent).
 import type {
   Agent,
+  BlastRadius,
   ConventionCandidate,
   PrMeta,
   Repo,
@@ -23,6 +24,8 @@ export interface FakeApiData {
   reviews?: Record<string, ReviewRecord[]>;
   /** Keyed by repo id. */
   conventions?: Record<string, ConventionCandidate[]>;
+  /** Keyed by PR id. */
+  blast?: Record<string, BlastRadius>;
   /** What triggerReview() returns; if a function, called with (prId, agentId). */
   triggerRun?: ReviewRunResponse | ((prId: string, agentId: string) => ReviewRunResponse);
   /** Throws ApiUnreachable from every method when set — simulates the API being down. */
@@ -71,6 +74,10 @@ export function makeFakeApi(data: FakeApiData = {}): FakeApi {
     async listConventions(repoId: string) {
       record('listConventions', [repoId]);
       return data.conventions?.[repoId] ?? [];
+    },
+    async getBlastRadius(prId: string) {
+      record('getBlastRadius', [prId]);
+      return data.blast?.[prId] ?? { changed_symbols: [], downstream: [], summary: '' };
     },
   };
 }

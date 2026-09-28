@@ -2,7 +2,7 @@
 
 Local stdio MCP server: a thin client of the existing DevDigest HTTP API. No DB access, no
 DI container, no change to `server/`. Exposes `list_agents`, `run_agent_on_pr`,
-`get_findings`, `get_conventions` and a stub `get_blast_radius` to MCP clients (Claude Code).
+`get_findings`, `get_conventions` and `get_blast_radius` to MCP clients (Claude Code).
 
 ## Read when
 
@@ -38,12 +38,14 @@ package runs from TypeScript through `tsx` (O6).
   its source contract in a comment. `server/**` is never imported either — this package is a
   pure HTTP client of it. Both are enforced by `eslint.config.js`'s `no-restricted-imports`.
 - **Error and hint text placement (rev 5).** Placement rule: every `fail()` text in the
-  package — including `guard`'s unexpected-error and budget-exceeded texts and the
-  `get_blast_radius` stub — lives only in `src/tools/errors.ts`, which clips every echoed
-  field (a URL, an API message, a repo/agent/run query, a list of known repos or ambiguous
-  matches) to `TEXT_FIELD_MAX`. Second half of the rule: every success-path hint — a result's
-  `hint` key: the findings cap, the findings cut, the `run_agent_on_pr` "still running" hint
-  and the `get_conventions` empty-list hint — lives only in `src/tools/budget.ts`, which
+  package — including `guard`'s unexpected-error and budget-exceeded texts — lives only in
+  `src/tools/errors.ts`, which clips every echoed field (a URL, an API message, a
+  repo/agent/run query, a list of known repos or ambiguous matches) to `TEXT_FIELD_MAX`.
+  `get_blast_radius` needs no domain error of its own — it reuses `PrNotImported` /
+  `RepoNotFound` / `ApiFailure`. Second half of the rule: every success-path hint — a result's
+  `hint` key: the findings cap, the findings cut, the `run_agent_on_pr` "still running" hint,
+  the `get_conventions` empty-list hint and the `get_blast_radius` downstream-cut hint — lives
+  only in `src/tools/budget.ts`, which
   clips the `repo`/`agent` it echoes too. Tool descriptions and input schemas stay in their
   own tool files. Everywhere else, a failure is a typed `DomainError` subclass from
   `src/domain/errors.ts` carrying data only (a repo query, a PR number, a URL tried), and

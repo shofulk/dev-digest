@@ -3,6 +3,7 @@
 // Every method fails with a DomainError from ./errors.ts, never with a transport error.
 import type {
   Agent,
+  BlastRadius,
   ConventionCandidate,
   PrMeta,
   Repo,
@@ -21,4 +22,5 @@ export interface DevDigestApi {
   /** Newest first; includes `kind: 'summary'` rows. */
   listReviews(prId: string): Promise<ReviewRecord[]>;
   listConventions(repoId: string): Promise<ConventionCandidate[]>;
+  getBlastRadius(prId: string): Promise<BlastRadius>;
 }

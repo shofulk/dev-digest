@@ -4,6 +4,7 @@
 // constructor arguments (C1's "config arrives as constructor args").
 import type {
   Agent,
+  BlastRadius,
   ConventionCandidate,
   PrMeta,
   Repo,
@@ -99,6 +100,10 @@ export function createHttpApi(options: HttpApiOptions): DevDigestApi {
 
     async listConventions(repoId: string): Promise<ConventionCandidate[]> {
       return (await request(`/repos/${encodeURIComponent(repoId)}/conventions`)) as ConventionCandidate[];
+    },
+
+    async getBlastRadius(prId: string): Promise<BlastRadius> {
+      return (await request(`/pulls/${encodeURIComponent(prId)}/blast`)) as BlastRadius;
     },
   };
 }

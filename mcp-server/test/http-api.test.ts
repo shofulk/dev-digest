@@ -41,6 +41,15 @@ describe('createHttpApi', () => {
     expect(fetchMock).toHaveBeenCalledWith('http://api.test/repos/repo%2Fwith%20space/pulls', expect.any(Object));
   });
 
+  it('getBlastRadius requests GET <base>/pulls/:id/blast, URL-encoded; a 404 becomes ApiFailure with the API message (T10)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: { message: 'Pull request not found' } }, 404));
+    const api = createHttpApi({ baseUrl: 'http://api.test', timeoutMs: 1000, fetch: fetchMock });
+    const err = await api.getBlastRadius('p 1').catch((e: unknown) => e);
+    expect(fetchMock).toHaveBeenCalledWith('http://api.test/pulls/p%201/blast', expect.any(Object));
+    expect(err).toBeInstanceOf(ApiFailure);
+    expect((err as ApiFailure).message).toContain('Pull request not found');
+  });
+
   it('maps a 429 to RateLimited by status alone, ignoring its internal_error code', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       jsonResponse({ error: { code: 'internal_error', message: 'rate limit' } }, 429),

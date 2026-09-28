@@ -107,3 +107,41 @@ export interface ConventionCandidate {
   evidence_line?: number | null;
   status: 'pending' | 'accepted' | 'rejected';
 }
+
+/** contracts/brief.ts `ChangedSymbol`. */
+export interface ChangedSymbol {
+  name: string;
+  file: string;
+  kind: string;
+}
+
+/** contracts/brief.ts `BlastCaller`. */
+export interface BlastCaller {
+  name: string;
+  file: string;
+  line: number;
+  depth?: 1 | 2 | null;
+  via?: string | null;
+}
+
+/** contracts/brief.ts `DownstreamImpact`. */
+export interface DownstreamImpact {
+  symbol: string;
+  callers: BlastCaller[];
+  endpoints_affected: string[];
+  crons_affected: string[];
+}
+
+/** contracts/brief.ts `BlastDegradedReason` — the closed reason enum, mirrored by hand since
+ *  this package imports no runtime value from `@devdigest/shared` (see this file's header). */
+export type BlastDegradedReason = 'flag_off' | 'index_failed' | 'index_partial' | 'repo_too_large' | 'no_data' | null;
+
+/** contracts/brief.ts `BlastRadius` (`GET /pulls/:id/blast` response). */
+export interface BlastRadius {
+  changed_symbols: ChangedSymbol[];
+  downstream: DownstreamImpact[];
+  summary: string;
+  degraded?: boolean | null;
+  reason?: BlastDegradedReason;
+  limits?: { max_callers_per_symbol: number; bfs_depth: number } | null;
+}

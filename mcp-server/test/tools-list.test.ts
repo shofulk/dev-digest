@@ -59,6 +59,12 @@ describe('tools/list', () => {
     }
   });
 
+  it('the instructions name get_blast_radius', async () => {
+    const server = createServer({ api: makeFakeApi(), config: loadConfig({}) });
+    const client = await connect(server);
+    expect(client.getInstructions() ?? '').toContain('get_blast_radius');
+  });
+
   it('stays within the description/argument budget (C4)', async () => {
     const server = createServer({ api: makeFakeApi(), config: loadConfig({}) });
     const client = await connect(server);
@@ -89,5 +95,6 @@ describe('tools/list', () => {
     expect(byName.run_agent_on_pr?.description ?? '').toContain('untrusted');
     expect(byName.get_findings?.description ?? '').toContain('untrusted');
     expect(byName.get_conventions?.description ?? '').toContain('untrusted');
+    expect(byName.get_blast_radius?.description ?? '').toContain('untrusted');
   });
 });

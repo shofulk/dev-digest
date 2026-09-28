@@ -84,7 +84,7 @@ Names are bare snake_case — the client already namespaces them.
 | `run_agent_on_pr` | `repo, pr, agent` | `status, run_id, agent, verdict, score, total, findings[]` | not read-only, not destructive, not idempotent |
 | `get_findings` | `repo, pr, agent?, run_id?, min_severity?, limit?, response_format?` | same shape as `run_agent_on_pr` | read-only |
 | `get_conventions` | `repo, category?` | accepted conventions: `category, rule, evidence` (`path:line`) | read-only |
-| `get_blast_radius` | `repo, pr` | stub, see AC 12 | read-only |
+| `get_blast_radius` | `repo, pr` | superseded by `docs/plans/blast-radius.plan.md` (AC11) | read-only |
 
 Read-only tools also carry `openWorldHint: false`.
 
@@ -148,8 +148,8 @@ ToolSearch. So:
 11. `get_conventions` returns only `status = accepted` conventions, filtered by `category`
     when given; an empty list says the repo has no accepted conventions yet and that a
     scan runs from the DevDigest UI.
-12. `get_blast_radius` is registered with its final input schema and returns
-    `isError: true` with text stating it is not implemented yet and must not be retried.
+12. `get_blast_radius` — superseded by `docs/plans/blast-radius.plan.md` (AC11): it is a
+    real tool now, not a stub.
 13. The `mcp-server` tests are hermetic: the HTTP API is faked, the MCP server is driven
     through an in-memory client — no network, no Docker.
 14. `.mcp.json` registers the server; `/mcp` in Claude Code shows `devdigest` connected, and

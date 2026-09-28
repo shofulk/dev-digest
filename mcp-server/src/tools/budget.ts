@@ -82,3 +82,53 @@ export function runningHint(repo: string, pr: number, agent: string, textMax: nu
 export function noConventionsHint(repo: string, textMax: number): string {
   return `${truncate(repo, textMax)} has no accepted conventions yet — run a conventions scan from the DevDigest UI.`;
 }
+
+function blastCutHint(downstreamCut: number, symbolsCut: number): string | undefined {
+  const parts: string[] = [];
+  if (downstreamCut > 0) parts.push(`${downstreamCut} downstream symbol(s)`);
+  if (symbolsCut > 0) parts.push(`${symbolsCut} changed symbol(s)`);
+  if (parts.length === 0) return undefined;
+  return `${parts.join(' and ')} omitted to fit the response size budget.`;
+}
+
+/**
+ * Applies the budget to `get_blast_radius`'s `{ changed_symbols, downstream }` result.
+ * `downstream` is trimmed first, from the tail (lowest-ranked symbols last — the route
+ * already orders `downstream` by rank). If that alone does not fit, `changed_symbols` is
+ * then trimmed too — also from the tail, but a symbol with no matching `downstream` entry
+ * (already the least informative kind of row) is dropped before one that still has callers.
+ */
+export function budgetBlast<T extends { downstream: unknown[]; changed_symbols: unknown[] }>(
+  value: T,
+  maxChars: number,
+): { value: T; hint?: string } {
+  const budget = maxChars - HINT_RESERVE;
+  const { value: afterDownstream, cut: downstreamCut } = fitToBudget(value, 'downstream', budget);
+
+  const downstreamSymbols = new Set(
+    (afterDownstream.downstream as { symbol: string }[]).map((d) => d.symbol),
+  );
+  const symbols = [...(afterDownstream.changed_symbols as { name: string }[])];
+  const withoutDownstream: number[] = [];
+  const withDownstream: number[] = [];
+  symbols.forEach((s, i) => {
+    (downstreamSymbols.has(s.name) ? withDownstream : withoutDownstream).push(i);
+  });
+  const dropOrder = [...withoutDownstream.reverse(), ...withDownstream.reverse()];
+
+  const dropped = new Set<number>();
+  let symbolsCut = 0;
+  let current = { ...afterDownstream, changed_symbols: symbols } as T;
+  let i = 0;
+  while (JSON.stringify(current).length > budget && i < dropOrder.length) {
+    dropped.add(dropOrder[i]!);
+    i += 1;
+    symbolsCut += 1;
+    current = {
+      ...afterDownstream,
+      changed_symbols: symbols.filter((_, idx) => !dropped.has(idx)),
+    } as T;
+  }
+
+  return { value: current, hint: blastCutHint(downstreamCut, symbolsCut) };
+}
