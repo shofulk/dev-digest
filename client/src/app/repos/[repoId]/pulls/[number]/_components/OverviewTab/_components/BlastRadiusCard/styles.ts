@@ -66,6 +66,9 @@ export const s = {
   } satisfies CSSProperties,
   callerRow: (indent: boolean): CSSProperties => ({
     display: "flex",
+    flexWrap: "wrap",
+    overflowWrap: "anywhere",
+    minWidth: 0,
     alignItems: "center",
     gap: 6,
     fontSize: 13,

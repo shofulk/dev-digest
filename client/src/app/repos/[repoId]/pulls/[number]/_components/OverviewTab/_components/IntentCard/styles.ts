@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 export const s = {
   header: {
     display: "flex",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 10,
     marginBottom: 14,
@@ -17,6 +18,7 @@ export const s = {
   headerActions: {
     marginLeft: "auto",
     display: "flex",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 8,
   } satisfies CSSProperties,
