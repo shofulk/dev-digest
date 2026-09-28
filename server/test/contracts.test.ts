@@ -4,6 +4,8 @@ import {
   Finding,
   Intent,
   BlastRadius,
+  BlastDegradedReason,
+  BlastRadiusResponse,
   Risks,
   PrHistory,
   SmartDiff,
@@ -122,6 +124,82 @@ describe('AI contracts parse fixtures', () => {
     expect(SmartDiffRole.parse('tests')).toBe('tests');
     expect(SmartDiffRole.parse('docs')).toBe('docs');
     expect(() => SmartDiffRole.parse('misc')).toThrow();
+  });
+
+  it('BlastRadius (T1) accepts legacy documents, accepts the new fields and rejects invalid ones', () => {
+    // A legacy document with only the original keys (no depth/via/degraded/reason/limits) still parses.
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [{ name: 'rateLimit', file: 'a.ts', kind: 'function' }],
+        downstream: [
+          {
+            symbol: 'rateLimit',
+            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23 }],
+            endpoints_affected: ['GET /x'],
+            crons_affected: ['c'],
+          },
+        ],
+        summary: 's',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [
+          {
+            symbol: 'handle',
+            callers: [{ name: 'route', file: 'c.ts', line: 30, depth: 2, via: 'handle' }],
+            endpoints_affected: [],
+            crons_affected: [],
+          },
+        ],
+        summary: 's',
+        degraded: true,
+        reason: 'index_partial',
+        limits: { max_callers_per_symbol: 20, bfs_depth: 2 },
+      }),
+    ).not.toThrow();
+
+    expect(() => BlastRadius.parse({ changed_symbols: [], downstream: [], summary: 's', reason: 'bogus' })).toThrow();
+
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [
+          {
+            symbol: 'h',
+            callers: [{ name: 'r', file: 'c.ts', line: 1, depth: 3 }],
+            endpoints_affected: [],
+            crons_affected: [],
+          },
+        ],
+        summary: 's',
+      }),
+    ).toThrow();
+
+    expect(BlastDegradedReason.options).toEqual([
+      'flag_off',
+      'index_failed',
+      'index_partial',
+      'repo_too_large',
+      'no_data',
+    ]);
+
+    expect(() =>
+      BlastRadiusResponse.parse({
+        changed_symbols: [{ name: 'rateLimit', file: 'a.ts', kind: 'function' }],
+        downstream: [
+          {
+            symbol: 'rateLimit',
+            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23 }],
+            endpoints_affected: ['GET /x'],
+            crons_affected: ['c'],
+          },
+        ],
+        summary: 's',
+      }),
+    ).not.toThrow();
   });
 
   it('Conformance / Onboarding / EvalRun / MemoryItem', () => {

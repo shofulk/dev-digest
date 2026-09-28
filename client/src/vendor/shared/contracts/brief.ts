@@ -80,6 +80,8 @@ export const BlastCaller = z.object({
   name: z.string(),
   file: z.string(),
   line: z.number().int(),
+  depth: z.union([z.literal(1), z.literal(2)]).nullish(),
+  via: z.string().nullish(),
 });
 export type BlastCaller = z.infer<typeof BlastCaller>;
 
@@ -91,10 +93,30 @@ export const DownstreamImpact = z.object({
 });
 export type DownstreamImpact = z.infer<typeof DownstreamImpact>;
 
+/** Every reason a blast-radius read can be degraded (D2). Mirrors repo-intel's
+ *  internal `DegradedReason` one-for-one; kept as a separate enum here because this
+ *  contract is the public API/UI shape, not the facade's internal type. */
+export const BlastDegradedReason = z.enum([
+  'flag_off',
+  'index_failed',
+  'index_partial',
+  'repo_too_large',
+  'no_data',
+]);
+export type BlastDegradedReason = z.infer<typeof BlastDegradedReason>;
+
 export const BlastRadius = z.object({
   changed_symbols: z.array(ChangedSymbol),
   downstream: z.array(DownstreamImpact),
   summary: z.string(),
+  degraded: z.boolean().nullish(),
+  reason: BlastDegradedReason.nullish(),
+  limits: z
+    .object({
+      max_callers_per_symbol: z.number().int(),
+      bfs_depth: z.number().int(),
+    })
+    .nullish(),
 });
 export type BlastRadius = z.infer<typeof BlastRadius>;
 
