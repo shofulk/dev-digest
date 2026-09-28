@@ -140,6 +140,22 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-09-28 — `e2e/` is npm-locked, not pnpm: `pnpm --dir e2e install` writes a stray `e2e/pnpm-lock.yaml`, and a live `e2e` run also needs the separate `agent-browser` binary
+
+`e2e/` is the one package whose tracked lockfile is `e2e/package-lock.json` (npm), and
+`TESTING.md` installs it with `cd e2e && npm install`. `e2e/AGENTS.md` lists `pnpm test` /
+`pnpm typecheck` / `pnpm lint`, which *run* fine through pnpm once `node_modules` exists — but
+an uninstalled checkout fails them with `sh: tsc: command not found`, and the tempting fix,
+`pnpm --dir e2e install`, writes an untracked `e2e/pnpm-lock.yaml` next to the npm one. That is
+lockfile churn with no `package.json` change, which `pr-self-review` treats as critical and
+every plan's "no lockfile" constraint forbids. Install e2e with `npm install` (or leave it
+uninstalled and mark its Verify cells manual). Separately, `pnpm test` then fails every flow
+identically with `spawn agent-browser ENOENT`: the `agent-browser` CLI that `run.ts` shells out
+to is a global install (`npm i -g agent-browser && agent-browser install`). **Every** flow
+failing with the same `ENOENT` means the binary is missing, not that a flow is wrong.
+**Evidence:** `git ls-files e2e` → `e2e/package-lock.json`, `TESTING.md` (browser e2e block),
+`e2e/AGENTS.md:16-18`, `e2e/run.ts`
+
 ### 2026-09-26 — a plan's `rg -F` Verify for a verbatim phrase reported pass while the phrase was absent from the file
 Two independent causes, both hit in one fix round of harness-flow-rules: (1) Markdown prose
 hard-wrapped mid-phrase (`**full JSON` / `dispatch**`) is invisible to `rg -F`, which matches
