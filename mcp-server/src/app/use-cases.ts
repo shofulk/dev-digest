@@ -190,6 +190,7 @@ export interface BlastRadiusOutcome {
   degraded: boolean | null;
   reason: BlastDegradedReason;
   limits: { max_callers_per_symbol: number; bfs_depth: number } | null;
+  indexed_sha: string | null;
   changed_symbols: ConciseChangedSymbol[];
   downstream: ConciseDownstream[];
 }
@@ -241,6 +242,7 @@ export async function getBlastRadius(
     limits: blast.limits
       ? { max_callers_per_symbol: blast.limits.max_callers_per_symbol, bfs_depth: blast.limits.bfs_depth }
       : null,
+    indexed_sha: blast.indexed_sha ?? null,
     changed_symbols: blast.changed_symbols.map((s) => conciseChangedSymbol(s, opts.textMax)),
     downstream: blast.downstream.map((d) => conciseDownstream(d, opts.textMax)),
   };

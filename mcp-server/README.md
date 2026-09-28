@@ -45,7 +45,7 @@ comment — a rename or field removal on the server side is caught by the live s
 | `run_agent_on_pr` | `repo, pr, agent` | `status, run_id, agent, verdict, score, total, findings[]` | not read-only, not destructive, not idempotent |
 | `get_findings` | `repo, pr, agent?, run_id?, min_severity?, limit?, response_format?` | same shape as `run_agent_on_pr` | read-only |
 | `get_conventions` | `repo, category?` | `repo, total, conventions: [{category, rule, evidence}]` | read-only |
-| `get_blast_radius` | `repo, pr` | `repo, pr, summary, degraded, reason, limits, changed_symbols, downstream[{symbol, callers[{name,file,line,depth,via}], endpoints_affected, crons_affected}]` | read-only |
+| `get_blast_radius` | `repo, pr` | `repo, pr, summary, degraded, reason, limits, indexed_sha, changed_symbols, downstream[{symbol, callers[{name,file,line,depth,via}], endpoints_affected, crons_affected}]` | read-only |
 
 Addressing: `repo` is `owner/name` (case-insensitive), or a unique bare name; `pr` is the
 GitHub PR number; `agent` is an id, or a name matched case-insensitively.

@@ -60,6 +60,17 @@ describe("splitSymbols (T7)", () => {
     expect(withCallers.map((d) => d.symbol)).toEqual(["alpha"]);
     expect(withoutCallers).toEqual(["beta"]);
   });
+
+  it("lists a same-name symbol declared in several changed files once", () => {
+    const b = blast({
+      changed_symbols: [
+        { name: "complete", file: "a.ts", kind: "method" },
+        { name: "complete", file: "b.ts", kind: "method" },
+        { name: "embed", file: "a.ts", kind: "method" },
+      ],
+    });
+    expect(splitSymbols(b).withoutCallers).toEqual(["complete", "embed"]);
+  });
 });
 
 describe("degradedReasonKey (T7)", () => {
@@ -76,10 +87,34 @@ describe("degradedReasonKey (T7)", () => {
 });
 
 describe("callerHref (T7)", () => {
-  it("pins to the sha with #L<line>; null when repoFullName is null", () => {
-    expect(callerHref("acme/api", "abc123", "src/x.ts", 23)).toBe(
+  it("pins to headSha with #L<line> when indexedSha is null; null when repoFullName is null", () => {
+    expect(callerHref("acme/api", null, "abc123", "src/x.ts", 23)).toBe(
       "https://github.com/acme/api/blob/abc123/src/x.ts#L23",
     );
-    expect(callerHref(null, "abc123", "src/x.ts", 23)).toBeNull();
+    expect(callerHref(null, null, "abc123", "src/x.ts", 23)).toBeNull();
+  });
+});
+
+describe("callerHref link sha (T18)", () => {
+  it("prefers indexedSha over headSha when both are given (distinct shas)", () => {
+    expect(callerHref("acme/api", "c6af1e4", "abc123", "src/x.ts", 409)).toBe(
+      "https://github.com/acme/api/blob/c6af1e4/src/x.ts#L409",
+    );
+  });
+
+  it("falls back to headSha when indexedSha is null", () => {
+    expect(callerHref("acme/api", null, "abc123", "src/x.ts", 409)).toBe(
+      "https://github.com/acme/api/blob/abc123/src/x.ts#L409",
+    );
+  });
+
+  it("falls back to headSha when indexedSha is undefined", () => {
+    expect(callerHref("acme/api", undefined, "abc123", "src/x.ts", 409)).toBe(
+      "https://github.com/acme/api/blob/abc123/src/x.ts#L409",
+    );
+  });
+
+  it("stays null when repoFullName is null, regardless of indexedSha", () => {
+    expect(callerHref(null, "c6af1e4", "abc123", "src/x.ts", 409)).toBeNull();
   });
 });

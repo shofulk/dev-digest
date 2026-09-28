@@ -202,6 +202,28 @@ describe('AI contracts parse fixtures', () => {
     ).not.toThrow();
   });
 
+  it('BlastRadius.indexed_sha (T15) parses, nulls, defaults and rejects a non-string', () => {
+    const base = {
+      changed_symbols: [] as unknown[],
+      downstream: [] as unknown[],
+      summary: 's',
+    };
+
+    const withSha = BlastRadius.parse({ ...base, indexed_sha: 'c6af1e4' });
+    expect(withSha.indexed_sha).toBe('c6af1e4');
+
+    const withNull = BlastRadius.parse({ ...base, indexed_sha: null });
+    expect(withNull.indexed_sha).toBeNull();
+
+    const legacy = BlastRadius.parse(base);
+    expect(legacy.indexed_sha).toBeUndefined();
+
+    expect(() => BlastRadius.parse({ ...base, indexed_sha: 42 })).toThrow();
+
+    const response = BlastRadiusResponse.parse({ ...base, indexed_sha: 'c6af1e4' });
+    expect(response.indexed_sha).toBe('c6af1e4');
+  });
+
   it('Conformance / Onboarding / EvalRun / MemoryItem', () => {
     expect(() =>
       Conformance.parse({

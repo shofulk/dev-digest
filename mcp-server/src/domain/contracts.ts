@@ -144,4 +144,5 @@ export interface BlastRadius {
   degraded?: boolean | null;
   reason?: BlastDegradedReason;
   limits?: { max_callers_per_symbol: number; bfs_depth: number } | null;
+  indexed_sha?: string | null;
 }

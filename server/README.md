@@ -98,7 +98,7 @@ persistent index (symbols, resolved references, file rank, file facts) for a
 PR's changed files, so `degraded`/`reason` reflect the index's own state
 (`flag_off`, `index_failed`, `index_partial`, `repo_too_large`, `no_data`)
 rather than the facade's ripgrep-fallback semantics, which stay unchanged for
-every other consumer of `getBlastRadius`.
+every other consumer of `getBlastRadius`. The response's `indexed_sha` is the commit the index (and so every caller line) was read from, and it is null when the map did not come from the index; the UI links callers to it and falls back to the PR head.
 
 ## Environment
 

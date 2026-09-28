@@ -34,7 +34,10 @@ export interface SplitSymbols {
 export function splitSymbols(blast: BlastRadius): SplitSymbols {
   const withCallers = blast.downstream.length > 0 ? blast.downstream : [];
   const covered = new Set(withCallers.map((d) => d.symbol));
-  const withoutCallers = blast.changed_symbols.map((s) => s.name).filter((name) => !covered.has(name));
+  // Same-name symbols declared in several changed files are listed once.
+  const withoutCallers = [
+    ...new Set(blast.changed_symbols.map((s) => s.name).filter((name) => !covered.has(name))),
+  ];
   return { withCallers, withoutCallers };
 }
 
@@ -44,8 +47,16 @@ export function degradedReasonKey(reason: string | null | undefined): string {
   return "reason.unknown";
 }
 
-/** GitHub blob link pinned to the PR's head sha; `null` when `repoFullName` is missing (AC4). */
-export function callerHref(repoFullName: string | null | undefined, headSha: string, file: string, line: number): string | null {
+/** GitHub blob link pinned to the commit the caller line was read from (`indexedSha`),
+ *  falling back to the PR's head sha when that commit is unknown; `null` when
+ *  `repoFullName` is missing (AC4, D9). */
+export function callerHref(
+  repoFullName: string | null | undefined,
+  indexedSha: string | null | undefined,
+  headSha: string,
+  file: string,
+  line: number,
+): string | null {
   if (!repoFullName) return null;
-  return githubBlobUrl(repoFullName, headSha, file, line);
+  return githubBlobUrl(repoFullName, indexedSha ?? headSha, file, line);
 }

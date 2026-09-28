@@ -117,6 +117,8 @@ export const BlastRadius = z.object({
       bfs_depth: z.number().int(),
     })
     .nullish(),
+  /** Commit the caller lines were read from; null when not read from the index. */
+  indexed_sha: z.string().nullish(),
 });
 export type BlastRadius = z.infer<typeof BlastRadius>;
 

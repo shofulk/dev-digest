@@ -165,3 +165,96 @@ describe('BlastService.forPull (T4)', () => {
     expect(res.limits).toEqual({ max_callers_per_symbol: 7, bfs_depth: 3 });
   });
 });
+
+describe('BlastService.forPull indexed_sha (T16)', () => {
+  const facadeResult: BlastFacadeResult = {
+    changedSymbols: [{ file: 'a.ts', name: 'alpha', kind: 'function' }],
+    callers: [{ file: 'b.ts', symbol: 'h', viaSymbol: 'alpha', line: 1, rank: 1, depth: 1, via: null }],
+    impactedEndpoints: [],
+    degraded: false,
+  };
+
+  it('full -> indexed_sha: sha1', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'full', lastIndexedSha: 'sha1' },
+      facadeResult,
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBe('sha1');
+  });
+
+  it('partial -> degraded:true, reason:index_partial and indexed_sha: sha1', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'partial', lastIndexedSha: 'sha1' },
+      facadeResult,
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.degraded).toBe(true);
+    expect(res.reason).toBe('index_partial');
+    expect(res.indexed_sha).toBe('sha1');
+  });
+
+  it('full with an empty lastIndexedSha -> indexed_sha: null', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'full', lastIndexedSha: '' },
+      facadeResult,
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBeNull();
+  });
+
+  it('synthesised degraded state -> indexed_sha: null', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'degraded', lastIndexedSha: '' },
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBeNull();
+  });
+
+  it('failed -> indexed_sha: null', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'failed', lastIndexedSha: '' },
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBeNull();
+  });
+
+  it('flag off -> indexed_sha: null', async () => {
+    const { svc } = buildService({
+      enabled: false,
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+    });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBeNull();
+  });
+
+  it('no files -> indexed_sha: null', async () => {
+    const { svc } = buildService({ pull: { id: 'p1', repoId: 'r1' }, files: [] });
+    const res = await svc.forPull('w1', 'p1', log());
+    expect(res.indexed_sha).toBeNull();
+  });
+
+  it('facade fallback on a full state -> source: fallback, indexed_sha: null', async () => {
+    const { svc } = buildService({
+      pull: { id: 'p1', repoId: 'r1' },
+      files: [{ path: 'a.ts' }],
+      indexState: { status: 'full', lastIndexedSha: 'sha1' },
+      facadeResult: { changedSymbols: [], callers: [], impactedEndpoints: [], degraded: true, reason: 'no_data' },
+    });
+    const l = log();
+    const res = await svc.forPull('w1', 'p1', l);
+    expect(l.info).toHaveBeenCalledWith(expect.objectContaining({ source: 'fallback' }), 'blast: read from index');
+    expect(res.indexed_sha).toBeNull();
+  });
+});

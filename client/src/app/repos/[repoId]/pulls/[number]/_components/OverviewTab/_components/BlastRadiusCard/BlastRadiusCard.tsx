@@ -37,14 +37,16 @@ function Summary({ counts }: { counts: ReturnType<typeof blastCounts> }) {
 function CallerRow({
   caller,
   repoFullName,
+  indexedSha,
   headSha,
 }: {
   caller: BlastCaller;
   repoFullName: string | null | undefined;
+  indexedSha: string | null | undefined;
   headSha: string;
 }) {
   const t = useTranslations("blast");
-  const href = callerHref(repoFullName, headSha, caller.file, caller.line);
+  const href = callerHref(repoFullName, indexedSha, headSha, caller.file, caller.line);
   const indent = caller.depth === 2;
   return (
     <div style={s.callerRow(indent)}>
@@ -67,10 +69,12 @@ function CallerRow({
 function DownstreamNode({
   d,
   repoFullName,
+  indexedSha,
   headSha,
 }: {
   d: DownstreamImpact;
   repoFullName: string | null | undefined;
+  indexedSha: string | null | undefined;
   headSha: string;
 }) {
   const t = useTranslations("blast");
@@ -86,7 +90,13 @@ function DownstreamNode({
         <span style={s.nodeCallerCount}>{t("callerCount", { count: d.callers.length })}</span>
       </div>
       {callers.map((c, i) => (
-        <CallerRow key={`${c.file}-${c.line}-${i}`} caller={c} repoFullName={repoFullName} headSha={headSha} />
+        <CallerRow
+          key={`${c.file}-${c.line}-${i}`}
+          caller={c}
+          repoFullName={repoFullName}
+          indexedSha={indexedSha}
+          headSha={headSha}
+        />
       ))}
       {d.endpoints_affected.length > 0 && (
         <div style={s.badgeRow}>
@@ -182,7 +192,13 @@ export function BlastRadiusCard({
           <Summary counts={counts} />
           <div style={s.tree}>
             {withCallers.map((d, i) => (
-              <DownstreamNode key={`${d.symbol}-${i}`} d={d} repoFullName={repoFullName} headSha={headSha} />
+              <DownstreamNode
+                key={`${d.symbol}-${i}`}
+                d={d}
+                repoFullName={repoFullName}
+                indexedSha={blast.indexed_sha}
+                headSha={headSha}
+              />
             ))}
           </div>
           {withoutCallers.length > 0 && (

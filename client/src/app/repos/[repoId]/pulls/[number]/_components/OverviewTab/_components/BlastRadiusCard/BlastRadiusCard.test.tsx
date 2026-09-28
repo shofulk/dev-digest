@@ -178,6 +178,15 @@ describe("BlastRadiusCard", () => {
     expect(screen.getByText("src/api/public.ts:23")).toBeInTheDocument();
   });
 
+  it("indexed_sha (T19) pins caller links, including depth-2 ones, over headSha", async () => {
+    replies["/pulls/pr1/blast"] = { status: 200, body: { ...HAPPY, indexed_sha: "c6af1e4" } };
+    renderCard();
+    const directLink = await screen.findByRole("link", { name: /src\/api\/public\.ts:23/ });
+    expect(directLink).toHaveAttribute("href", "https://github.com/acme/api/blob/c6af1e4/src/api/public.ts#L23");
+    const depth2Link = screen.getByRole("link", { name: /src\/api\/routes\.ts:8/ });
+    expect(depth2Link).toHaveAttribute("href", "https://github.com/acme/api/blob/c6af1e4/src/api/routes.ts#L8");
+  });
+
   it("500 -> loadError and retry issues a second request", async () => {
     replies["/pulls/pr1/blast"] = { status: 500, body: { error: "boom" } };
     renderCard();

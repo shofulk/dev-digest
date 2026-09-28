@@ -72,7 +72,15 @@ export class BlastService {
     const files = await this.pulls.getPrFiles(prId);
     if (files.length === 0) {
       return this.respond(
-        { changed_symbols: [], downstream: [], summary: NO_FILES_SUMMARY, degraded: false, reason: null, limits },
+        {
+          changed_symbols: [],
+          downstream: [],
+          summary: NO_FILES_SUMMARY,
+          degraded: false,
+          reason: null,
+          limits,
+          indexed_sha: null,
+        },
         { prId, repoId: pull.repoId, source: 'none', indexStatus: 'n/a', indexedSha: '', changedFiles: 0, startedAt },
         log,
       );
@@ -80,7 +88,15 @@ export class BlastService {
 
     if (!this.enabled) {
       return this.respond(
-        { changed_symbols: [], downstream: [], summary: INDEX_NOT_READY_SUMMARY, degraded: true, reason: 'flag_off', limits },
+        {
+          changed_symbols: [],
+          downstream: [],
+          summary: INDEX_NOT_READY_SUMMARY,
+          degraded: true,
+          reason: 'flag_off',
+          limits,
+          indexed_sha: null,
+        },
         { prId, repoId: pull.repoId, source: 'none', indexStatus: 'n/a', indexedSha: '', changedFiles: files.length, startedAt },
         log,
       );
@@ -97,6 +113,7 @@ export class BlastService {
           degraded: status.degraded,
           reason: status.reason,
           limits,
+          indexed_sha: null,
         },
         {
           prId,
@@ -121,9 +138,11 @@ export class BlastService {
     });
     const summary = summarizeBlast(changed_symbols, downstream);
     const source: BlastSource = fb.degraded ? 'fallback' : 'index';
+    // The link commit is only honest when the map itself came from the index (D9).
+    const indexedSha = source === 'index' && state.lastIndexedSha !== '' ? state.lastIndexedSha : null;
 
     return this.respond(
-      { changed_symbols, downstream, summary, degraded: status.degraded, reason: status.reason, limits },
+      { changed_symbols, downstream, summary, degraded: status.degraded, reason: status.reason, limits, indexed_sha: indexedSha },
       {
         prId,
         repoId: pull.repoId,

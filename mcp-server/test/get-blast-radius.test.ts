@@ -72,6 +72,7 @@ describe('get_blast_radius via MCP (T11)', () => {
           reason: null,
           // extra field planted on limits -> must not survive mapping
           limits: { max_callers_per_symbol: 20, bfs_depth: 2, ...({ internal: 'leak' } as object) },
+          indexed_sha: 'c6af1e4',
           // top-level extra field -> must not survive
           internal: 'top-secret',
         } as never,
@@ -88,6 +89,7 @@ describe('get_blast_radius via MCP (T11)', () => {
       degraded: false,
       reason: null,
       limits: { max_callers_per_symbol: 20, bfs_depth: 2 },
+      indexed_sha: 'c6af1e4',
       changed_symbols: [{ name: 'rateLimit', file: 'src/mw.ts', kind: 'function' }],
       downstream: [
         {
@@ -102,7 +104,7 @@ describe('get_blast_radius via MCP (T11)', () => {
       ],
     });
     expect(Object.keys(result.structuredContent as object).sort()).toEqual(
-      ['changed_symbols', 'degraded', 'downstream', 'limits', 'pr', 'reason', 'repo', 'summary'].sort(),
+      ['changed_symbols', 'degraded', 'downstream', 'indexed_sha', 'limits', 'pr', 'reason', 'repo', 'summary'].sort(),
     );
     const caller = (result.structuredContent as { downstream: { callers: object[] }[] }).downstream[0]!.callers[0]!;
     expect(Object.keys(caller).sort()).toEqual(['depth', 'file', 'line', 'name', 'via'].sort());
@@ -150,5 +152,22 @@ describe('get_blast_radius via MCP (T11)', () => {
     const result = await client.callTool({ name: 'get_blast_radius', arguments: { repo: 'acme/foo', pr: 42 } });
     expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(config.responseMaxChars);
     expect((result.structuredContent as { hint?: string }).hint).toMatch(/omitted to fit the response size budget/);
+  });
+
+  it('T20 — a payload without indexed_sha maps to null, and the description names it', async () => {
+    const api = makeFakeApi({
+      repos,
+      pulls,
+      blast: { p1: { changed_symbols: [], downstream: [], summary: 's' } },
+    });
+    const server = createServer({ api, config: loadConfig({}) });
+    const client = await connect(server);
+    const result = await client.callTool({ name: 'get_blast_radius', arguments: { repo: 'acme/foo', pr: 42 } });
+    expect((result.structuredContent as { indexed_sha: unknown }).indexed_sha).toBeNull();
+
+    const { GET_BLAST_RADIUS_DESCRIPTION } = await import('../src/tools/get-blast-radius.js');
+    expect(GET_BLAST_RADIUS_DESCRIPTION).toContain('indexed_sha');
+    expect(GET_BLAST_RADIUS_DESCRIPTION).toContain('untrusted');
+    expect(GET_BLAST_RADIUS_DESCRIPTION.length).toBeLessThanOrEqual(400);
   });
 });

@@ -46,6 +46,7 @@ d('GET /pulls/:id/blast (Testcontainers pg)', () => {
     expect(body.reason).toBe('no_data');
     expect(body.downstream).toEqual([]);
     expect(body.limits).toEqual({ max_callers_per_symbol: 20, bfs_depth: 2 });
+    expect(body.indexed_sha).toBeNull();
     await app.close();
   });
 
@@ -122,6 +123,7 @@ d('GET /pulls/:id/blast (Testcontainers pg)', () => {
 
     expect(rateLimit.endpoints_affected.sort()).toEqual(['GET /admin', 'GET /public/data'].sort());
     expect(rateLimit.crons_affected).toEqual(['job:cleanup']);
+    expect(body.indexed_sha).toBe('sha-blast');
 
     await app.close();
   });
@@ -136,6 +138,7 @@ d('GET /pulls/:id/blast (Testcontainers pg)', () => {
     const body = res.json() as BlastRadius;
     expect(body.reason).toBe('index_partial');
     expect(body.downstream).toHaveLength(1);
+    expect(body.indexed_sha).toBe('sha-blast');
     await app.close();
   });
 
@@ -145,6 +148,7 @@ d('GET /pulls/:id/blast (Testcontainers pg)', () => {
     const res = await app.inject({ method: 'GET', url: `/pulls/${pr482Id}/blast` });
     const body = res.json() as BlastRadius;
     expect(body.reason).toBe('flag_off');
+    expect(body.indexed_sha).toBeNull();
     await app.close();
   });
 

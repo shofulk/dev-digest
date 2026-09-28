@@ -115,6 +115,17 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-28 — a blast caller's `file:line` is correct and its GitHub link still opens unrelated code
+Every repo-intel line number (`references.line`, `symbols.line`) belongs to the commit the
+index was built from — `repo_index_state.lastIndexedSha`, a default-branch commit — never to
+the PR head. A link pinned to `pr.head_sha` drifts as soon as the PR edits the caller's file:
+live on shofulk/dev-digest, `getRepoMap → service.ts:409` is the `tryGetIndexState` call at
+`c6af1e4`, but ~100 lines down (514) at the PR head, so the link opened unrelated code. Any
+consumer that turns an indexed line into a URL or a diff anchor must pin it to the indexed
+sha; `GET /pulls/:id/blast` returns it as `indexed_sha` (null when the map did not come from
+the index), and the client falls back to `head_sha` only then.
+**Evidence:** `server/src/modules/blast/service.ts:142`, `client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BlastRadiusCard/helpers.ts:61`
+
 ### 2026-09-28 — a dedupe key over `file|symbol|line` alone silently drops a real caller when one line reaches two changed symbols
 
 `mapFacadeBlast`'s dedupe key was `${c.file}|${c.symbol}|${c.line}`, with no `viaSymbol` — so
