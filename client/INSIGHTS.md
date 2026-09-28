@@ -242,6 +242,19 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-09-28 — `MonoLink` with `href` unset renders a `<button>`, not a link — passing it a possibly-`undefined` href for a "should be plain text" case silently ships a clickable no-op button
+
+`MonoLink({ href })` branches on truthiness: `href` set → `<a target="_blank">`, `href`
+unset → `<button onClick>` with no `onClick` handler wired if the caller never intended one.
+`BlastRadiusCard`'s `CallerRow` passed `href={href ?? undefined}` when `repoFullName` was
+`null` (AC4's "renders as plain mono text, not a broken link"), which produced a focusable,
+clickable, no-op `<button>mono</button>` instead. Fix: branch in the consumer and render a
+plain `<span className="mono">` when `href` is falsy — never rely on `MonoLink`'s own
+fallback to represent "no link".
+
+**Evidence:** `client/src/vendor/ui/primitives/MonoLink.tsx:25-52`,
+`client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BlastRadiusCard/BlastRadiusCard.tsx:49-58`
+
 ## Recurring Errors & Fixes
 
 Errors seen more than once, each with the signal that identifies it.
