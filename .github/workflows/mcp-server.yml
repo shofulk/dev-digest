@@ -1,0 +1,56 @@
+# MCP server suite — @devdigest/mcp-server.
+# Typecheck + lint + hermetic vitest (no network, no Docker; the HTTP API is faked and the
+# MCP server is driven through an in-memory client — see mcp-server/AGENTS.md).
+# `server/src/vendor/shared/**` is in `paths` below only to re-run this hermetic suite when
+# the shared contracts change — mcp-server imports nothing from it (Zod 3 source fails under
+# this package's Zod 4), so this job cannot detect contract drift; the live smoke check
+# (plan S12) is the drift detector for a server-side rename or field removal.
+name: mcp-server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mcp-server/**'
+      - 'server/src/vendor/shared/**'
+      - '.github/workflows/mcp-server.yml'
+  pull_request:
+    paths:
+      - 'mcp-server/**'
+      - 'server/src/vendor/shared/**'
+      - '.github/workflows/mcp-server.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mcp-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: mcp-server/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      - run: pnpm test

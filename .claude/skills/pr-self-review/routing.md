@@ -22,6 +22,7 @@ the wrong reason.
 | **repo-intel** | `server/src/modules/repo-intel/**` | `onion-architecture`, `typescript-expert` | `pnpm --dir server test` |
 | **adapters** | `server/src/adapters/**` | `onion-architecture`, `security` | `pnpm --dir server test` |
 | **e2e** | `e2e/**` | read `e2e/AGENTS.md` + `TESTING.md` (no skill) | `pnpm --dir e2e lint` |
+| **mcp** | `mcp-server/**`, `.mcp.json` | `typescript-expert`, `zod`, `security` | `pnpm --dir mcp-server typecheck`, `lint`, `test` |
 | **security** | `server/src/modules/*/routes.ts`, `server/src/adapters/**`, `server/src/platform/config.ts`, `server/src/platform/prompts.ts`, any path matching `secret|token|auth|upload|password|key`, any `client/src/app/**/route.ts` | `security` | secret scan (severity.md §1) |
 | **types** | any `**/*.ts`, `**/*.tsx` outside `vendor/`, `dist/`, `migrations/` | `typescript-expert` | per-package `typecheck` |
 | **repo-hygiene** | always runs | root `AGENTS.md` + each touched `<pkg>/AGENTS.md` | all tripwires (severity.md §1) |

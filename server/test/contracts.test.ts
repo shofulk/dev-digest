@@ -4,6 +4,8 @@ import {
   Finding,
   Intent,
   BlastRadius,
+  BlastDegradedReason,
+  BlastRadiusResponse,
   Risks,
   PrHistory,
   SmartDiff,
@@ -122,6 +124,104 @@ describe('AI contracts parse fixtures', () => {
     expect(SmartDiffRole.parse('tests')).toBe('tests');
     expect(SmartDiffRole.parse('docs')).toBe('docs');
     expect(() => SmartDiffRole.parse('misc')).toThrow();
+  });
+
+  it('BlastRadius (T1) accepts legacy documents, accepts the new fields and rejects invalid ones', () => {
+    // A legacy document with only the original keys (no depth/via/degraded/reason/limits) still parses.
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [{ name: 'rateLimit', file: 'a.ts', kind: 'function' }],
+        downstream: [
+          {
+            symbol: 'rateLimit',
+            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23 }],
+            endpoints_affected: ['GET /x'],
+            crons_affected: ['c'],
+          },
+        ],
+        summary: 's',
+      }),
+    ).not.toThrow();
+
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [
+          {
+            symbol: 'handle',
+            callers: [{ name: 'route', file: 'c.ts', line: 30, depth: 2, via: 'handle' }],
+            endpoints_affected: [],
+            crons_affected: [],
+          },
+        ],
+        summary: 's',
+        degraded: true,
+        reason: 'index_partial',
+        limits: { max_callers_per_symbol: 20, bfs_depth: 2 },
+      }),
+    ).not.toThrow();
+
+    expect(() => BlastRadius.parse({ changed_symbols: [], downstream: [], summary: 's', reason: 'bogus' })).toThrow();
+
+    expect(() =>
+      BlastRadius.parse({
+        changed_symbols: [],
+        downstream: [
+          {
+            symbol: 'h',
+            callers: [{ name: 'r', file: 'c.ts', line: 1, depth: 3 }],
+            endpoints_affected: [],
+            crons_affected: [],
+          },
+        ],
+        summary: 's',
+      }),
+    ).toThrow();
+
+    expect(BlastDegradedReason.options).toEqual([
+      'flag_off',
+      'index_failed',
+      'index_partial',
+      'repo_too_large',
+      'no_data',
+    ]);
+
+    expect(() =>
+      BlastRadiusResponse.parse({
+        changed_symbols: [{ name: 'rateLimit', file: 'a.ts', kind: 'function' }],
+        downstream: [
+          {
+            symbol: 'rateLimit',
+            callers: [{ name: 'publicRouter', file: 'b.ts', line: 23 }],
+            endpoints_affected: ['GET /x'],
+            crons_affected: ['c'],
+          },
+        ],
+        summary: 's',
+      }),
+    ).not.toThrow();
+  });
+
+  it('BlastRadius.indexed_sha (T15) parses, nulls, defaults and rejects a non-string', () => {
+    const base = {
+      changed_symbols: [] as unknown[],
+      downstream: [] as unknown[],
+      summary: 's',
+    };
+
+    const withSha = BlastRadius.parse({ ...base, indexed_sha: 'c6af1e4' });
+    expect(withSha.indexed_sha).toBe('c6af1e4');
+
+    const withNull = BlastRadius.parse({ ...base, indexed_sha: null });
+    expect(withNull.indexed_sha).toBeNull();
+
+    const legacy = BlastRadius.parse(base);
+    expect(legacy.indexed_sha).toBeUndefined();
+
+    expect(() => BlastRadius.parse({ ...base, indexed_sha: 42 })).toThrow();
+
+    const response = BlastRadiusResponse.parse({ ...base, indexed_sha: 'c6af1e4' });
+    expect(response.indexed_sha).toBe('c6af1e4');
   });
 
   it('Conformance / Onboarding / EvalRun / MemoryItem', () => {

@@ -38,6 +38,19 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-09-27 — `scope-guard.sh`'s bash-checks profile does not know `mcp-server/`, so its `pnpm --dir mcp-server …` verify commands are manual acceptance, not guarded
+
+`ALLOWED_DIRS` and `TESTS_ALLOW` in `.claude/hooks/scope-guard.sh` only name `server`,
+`client`, `reviewer-core`, `e2e` — a package added later (`mcp-server`, per
+`docs/plans/mcp-server.plan.md`) is invisible to the hook's `bash checks` profile. The
+plan's own Steps table therefore marks every `(impl)` Verify cell (`pnpm --dir mcp-server
+typecheck`/`lint`/`test`) as the implementer's own responsibility, pasted into the
+Implementation Report, rather than something the harness enforces — `plan-verifier` must
+treat those cells as manual acceptance instead of expecting the hook to have run them.
+Extending the guard to cover a new package is an explicit, separate, adversarial-round
+decision (see the plan's Q1), never a drive-by fix alongside feature work.
+**Evidence:** `.claude/hooks/scope-guard.sh:705,1223`, `docs/plans/mcp-server.plan.md` (Steps header note, R7)
+
 ### 2026-09-26 — a Bash allowlist over a hand-written tokenizer passed escaped, quoted, globbed and glued shell syntax the tokenizer never modelled
 Four review rounds of `scope-guard.sh` each reproduced a new bypass one level finer: `find . \-delete` and `sort $'-o'out f` (escape/ANSI-C), `CI=-oout; sort $CI f` (expansion), `find . ''*` (an empty quote pair reset a "first character is a glob" check), and `echo x>server/src/a.ts` (a redirection glued mid-word never matched a `^\d*>` token regex) — every one also passed the committed hook. A per-head argument grammar only judges the words the hook's tokenizer produced, not the argv bash executes. What held: a per-word invariant "reject any word containing a character the tokenizer does not model" (unquoted `\`, `$`, `*`/`?`/`[` at any position, `>`/`<` after the operator prefix, assignment-only segments), computed on the finished word, never on streaming state. Any new rule in that hook must be a per-word flag in `tokens()` plus a full-dispatch blocked row.
 **Evidence:** `.claude/hooks/scope-guard.sh` (`tokens()`, `lexerReject`), `docs/plans/harness-guard-classfix.plan.md` (Revisions rev 2 – rev 4 addendum)
@@ -126,6 +139,22 @@ ports. Verify with `curl -H 'Origin: http://localhost:<port>' http://localhost:3
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-09-28 — `e2e/` is npm-locked, not pnpm: `pnpm --dir e2e install` writes a stray `e2e/pnpm-lock.yaml`, and a live `e2e` run also needs the separate `agent-browser` binary
+
+`e2e/` is the one package whose tracked lockfile is `e2e/package-lock.json` (npm), and
+`TESTING.md` installs it with `cd e2e && npm install`. `e2e/AGENTS.md` lists `pnpm test` /
+`pnpm typecheck` / `pnpm lint`, which *run* fine through pnpm once `node_modules` exists — but
+an uninstalled checkout fails them with `sh: tsc: command not found`, and the tempting fix,
+`pnpm --dir e2e install`, writes an untracked `e2e/pnpm-lock.yaml` next to the npm one. That is
+lockfile churn with no `package.json` change, which `pr-self-review` treats as critical and
+every plan's "no lockfile" constraint forbids. Install e2e with `npm install` (or leave it
+uninstalled and mark its Verify cells manual). Separately, `pnpm test` then fails every flow
+identically with `spawn agent-browser ENOENT`: the `agent-browser` CLI that `run.ts` shells out
+to is a global install (`npm i -g agent-browser && agent-browser install`). **Every** flow
+failing with the same `ENOENT` means the binary is missing, not that a flow is wrong.
+**Evidence:** `git ls-files e2e` → `e2e/package-lock.json`, `TESTING.md` (browser e2e block),
+`e2e/AGENTS.md:16-18`, `e2e/run.ts`
 
 ### 2026-09-26 — a plan's `rg -F` Verify for a verbatim phrase reported pass while the phrase was absent from the file
 Two independent causes, both hit in one fix round of harness-flow-rules: (1) Markdown prose

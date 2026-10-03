@@ -281,6 +281,8 @@ export class RepoIntelService implements RepoIntel {
           viaSymbol: sym.name,
           line: r.line,
           rank: 0, // ripgrep/degraded path has no persistent rank
+          depth: 1, // ripgrep fallback never walks hop 2
+          via: null,
         });
         callerFiles.add(r.fromPath);
       }
@@ -304,13 +306,17 @@ export class RepoIntelService implements RepoIntel {
   }
 
   /**
-   * Persistent-index blast (T3): reads symbols / resolved references / file_rank
-   * / file_facts straight from Postgres — NO clone parsing on the hot path.
+   * Persistent-index blast: reads symbols / resolved references / file_rank /
+   * file_facts straight from Postgres — NO clone parsing on the hot path.
    * Returns `null` when the index isn't usable (caller falls back to ripgrep).
    *
-   * Callers are PRECISE: only references whose `decl_file` resolved to a changed
-   * file count. That favours precision over recall — an ambiguous
-   * (NULL decl_file) reference is not asserted as a caller.
+   * Walks callers up to `BFS_DEPTH` hops (`expandHop`), precision-first: a
+   * hop-k caller is kept only when its resolved decl pair matches a hop-(k-1)
+   * frontier pair exactly (the SQL side is a cross product; the JS pair check
+   * is what makes this precise). Callers whose file declares the reached
+   * changed symbol are dropped at any depth, and a `(symbol, file, enclosing)`
+   * already seen at a shallower depth is not repeated (cycles). The result is
+   * capped per changed symbol across all hops by `capPerSymbol`.
    */
   private async tryPersistentBlast(
     repoId: string,
@@ -325,6 +331,7 @@ export class RepoIntelService implements RepoIntel {
     const changedSymbols: BlastChangedSymbol[] = [];
     const nameSet = new Set<string>();
     const seenSym = new Set<string>();
+    const declFilesByName = new Map<string, Set<string>>();
     for (const s of declRows) {
       if (s.name.includes('.')) continue;
       const key = `${s.name}:${s.path}`;
@@ -333,46 +340,70 @@ export class RepoIntelService implements RepoIntel {
         changedSymbols.push({ file: s.path, name: s.name, kind: s.kind });
       }
       nameSet.add(s.name);
+      let files = declFilesByName.get(s.name);
+      if (!files) {
+        files = new Set();
+        declFilesByName.set(s.name, files);
+      }
+      files.add(s.path);
     }
     if (nameSet.size === 0) {
       return { changedSymbols, callers: [], impactedEndpoints: [], degraded: false };
     }
 
-    // Resolved cross-file callers.
-    const callerRows = await this.repo.getResolvedCallers(repoId, changedFiles, [...nameSet]);
-    const callerFiles = [...new Set(callerRows.map((c) => c.fromPath))];
-
-    // Enclosing caller symbol from the callers' persistent symbol rows.
-    const callerSymRows = await this.repo.getSymbolRows(repoId, callerFiles);
-    const symsByFile = new Map<string, FullSymbolRow[]>();
-    for (const s of callerSymRows) {
-      const arr = symsByFile.get(s.path);
-      if (arr) arr.push(s);
-      else symsByFile.set(s.path, [s]);
+    // Hop 1: direct resolved cross-file callers of the changed symbols. Drop
+    // rows in a declaring file first, then cap PER SYMBOL by rank BEFORE
+    // seeding the hop-2 frontier — an uncapped hop-1 fan-out would otherwise
+    // widen every later hop by the same amount.
+    const hop1RowsRaw = await this.repo.getResolvedCallers(repoId, changedFiles, [...nameSet]);
+    const hop1Valid = hop1RowsRaw.filter((r) => !declFilesByName.get(r.toSymbol)?.has(r.fromPath));
+    const hop1CountByViaSymbol = new Map<string, number>();
+    const hop1Rows: typeof hop1Valid = [];
+    for (const r of [...hop1Valid].sort((a, b) => b.rank - a.rank)) {
+      const count = hop1CountByViaSymbol.get(r.toSymbol) ?? 0;
+      if (count >= MAX_CALLERS_PER_SYMBOL) continue;
+      hop1CountByViaSymbol.set(r.toSymbol, count + 1);
+      hop1Rows.push(r);
     }
+    const hop1Files = [...new Set(hop1Rows.map((r) => r.fromPath))];
+    const hop1SymsByFile = await this.symbolsByFile(repoId, hop1Files);
 
-    const callers: BlastCallerRow[] = [];
-    const seenCaller = new Set<string>();
-    for (const c of callerRows) {
-      const enclosing =
-        enclosingFromRows(symsByFile.get(c.fromPath) ?? [], c.line) ??
-        c.fromPath.split('/').pop() ??
-        c.fromPath;
-      const key = `${c.fromPath}|${enclosing}|${c.toSymbol}`;
-      if (seenCaller.has(key)) continue;
-      seenCaller.add(key);
-      callers.push({
-        file: c.fromPath,
-        symbol: enclosing,
-        viaSymbol: c.toSymbol,
-        line: c.line,
-        rank: c.rank,
+    const allCallers: BlastCallerRow[] = [];
+    const visited = new Set<string>();
+    let frontier: Frontier = new Map();
+    for (const r of hop1Rows) {
+      const enclosing = enclosingFromRows(hop1SymsByFile.get(r.fromPath) ?? [], r.line);
+      const enclosingName = enclosing ?? r.fromPath.split('/').pop() ?? r.fromPath;
+      const key = `${r.toSymbol}|${r.fromPath}|${enclosingName}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      allCallers.push({
+        file: r.fromPath,
+        symbol: enclosingName,
+        viaSymbol: r.toSymbol,
+        line: r.line,
+        rank: r.rank,
+        depth: 1,
+        via: null,
       });
+      if (enclosing) frontierAdd(frontier, r.fromPath, enclosing, r.toSymbol);
     }
-    callers.sort((a, b) => b.rank - a.rank);
+
+    // Further hops: precision-filtered expansion of the previous hop's frontier.
+    for (let depth = 2; depth <= BFS_DEPTH; depth += 1) {
+      if (frontier.size === 0) break;
+      const expanded = await this.expandHop(repoId, frontier, depth, declFilesByName, visited);
+      for (const c of expanded.callers) allCallers.push(c);
+      frontier = expanded.nextFrontier;
+    }
+
+    // Depth ascending (direct callers first), rank descending, then cap.
+    allCallers.sort((a, b) => a.depth - b.depth || b.rank - a.rank);
+    const callers = capPerSymbol(allCallers, MAX_CALLERS_PER_SYMBOL);
 
     // Precomputed facts per caller file (endpoints + crons), so consumers can
     // attribute them to the changed symbol whose callers live in that file.
+    const callerFiles = [...new Set(callers.map((c) => c.file))];
     const facts = await this.repo.getFileFacts(repoId, callerFiles);
     const endpoints = new Set<string>();
     const factsByFile: Record<string, { endpoints: string[]; crons: string[] }> = {};
@@ -383,11 +414,85 @@ export class RepoIntelService implements RepoIntel {
 
     return {
       changedSymbols,
-      callers: callers.slice(0, MAX_CALLERS_PER_SYMBOL),
+      callers,
       impactedEndpoints: [...endpoints],
       factsByFile,
       degraded: false,
     };
+  }
+
+  /** Group persistent symbol rows for `paths` by their file, for enclosing-symbol lookups. */
+  private async symbolsByFile(
+    repoId: string,
+    paths: string[],
+  ): Promise<Map<string, FullSymbolRow[]>> {
+    const rows = await this.repo.getSymbolRows(repoId, paths);
+    const byFile = new Map<string, FullSymbolRow[]>();
+    for (const s of rows) {
+      const arr = byFile.get(s.path);
+      if (arr) arr.push(s);
+      else byFile.set(s.path, [s]);
+    }
+    return byFile;
+  }
+
+  /**
+   * Expand one BFS hop: query the resolved callers of the previous hop's
+   * frontier `(file, enclosing symbol)` pairs, keep only rows whose resolved
+   * `(declFile, toSymbol)` pair is exactly a frontier pair (precision filter —
+   * the SQL side is a cross product), and mint a caller for every changed
+   * symbol that pair carries forward.
+   */
+  private async expandHop(
+    repoId: string,
+    frontier: Frontier,
+    depth: number,
+    declFilesByName: Map<string, Set<string>>,
+    visited: Set<string>,
+  ): Promise<{ callers: BlastCallerRow[]; nextFrontier: Frontier }> {
+    const frontierFiles = [...frontier.keys()];
+    const frontierNames = new Set<string>();
+    for (const bySymbol of frontier.values()) {
+      for (const symbol of bySymbol.keys()) frontierNames.add(symbol);
+    }
+    if (frontierFiles.length === 0 || frontierNames.size === 0) {
+      return { callers: [], nextFrontier: new Map() };
+    }
+
+    const rows = await this.repo.getResolvedCallers(repoId, frontierFiles, [...frontierNames]);
+    const newFiles = [...new Set(rows.map((r) => r.fromPath))];
+    const symsByFile = await this.symbolsByFile(repoId, newFiles);
+
+    const callers: BlastCallerRow[] = [];
+    const nextFrontier: Frontier = new Map();
+    for (const row of rows) {
+      if (!row.declFile) continue;
+      const viaSymbols = frontier.get(row.declFile)?.get(row.toSymbol);
+      if (!viaSymbols || viaSymbols.size === 0) continue;
+
+      const enclosing = enclosingFromRows(symsByFile.get(row.fromPath) ?? [], row.line);
+      // A row that re-enters the same frontier pair is a cycle — skip it.
+      if (enclosing && frontier.get(row.fromPath)?.has(enclosing)) continue;
+      const enclosingName = enclosing ?? row.fromPath.split('/').pop() ?? row.fromPath;
+
+      for (const viaSymbol of viaSymbols) {
+        if (declFilesByName.get(viaSymbol)?.has(row.fromPath)) continue;
+        const key = `${viaSymbol}|${row.fromPath}|${enclosingName}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        callers.push({
+          file: row.fromPath,
+          symbol: enclosingName,
+          viaSymbol,
+          line: row.line,
+          rank: row.rank,
+          depth,
+          via: row.toSymbol,
+        });
+        if (enclosing) frontierAdd(nextFrontier, row.fromPath, enclosing, viaSymbol);
+      }
+    }
+    return { callers, nextFrontier };
   }
 
   /**
@@ -738,6 +843,46 @@ function enclosingFromRows(rows: FullSymbolRow[], line: number): string | null {
     .filter((s) => !s.name.includes('.') && (s.line ?? 0) <= line)
     .sort((a, b) => (b.line ?? 0) - (a.line ?? 0))[0];
   return hit?.name ?? null;
+}
+
+/**
+ * The BFS frontier: for each caller file, the enclosing symbols found there
+ * mapped to which changed symbol name(s) they were reached on behalf of.
+ * `file -> enclosing symbol -> Set<changed symbol name>`.
+ */
+type Frontier = Map<string, Map<string, Set<string>>>;
+
+function frontierAdd(frontier: Frontier, file: string, symbol: string, viaSymbol: string): void {
+  let bySymbol = frontier.get(file);
+  if (!bySymbol) {
+    bySymbol = new Map();
+    frontier.set(file, bySymbol);
+  }
+  let viaSymbols = bySymbol.get(symbol);
+  if (!viaSymbols) {
+    viaSymbols = new Set();
+    bySymbol.set(symbol, viaSymbols);
+  }
+  viaSymbols.add(viaSymbol);
+}
+
+/**
+ * Keep at most `max` rows per changed symbol (`viaSymbol`), preserving the
+ * input order (expected to already be sorted depth ascending, rank
+ * descending) — D4's cross-hop per-symbol cap.
+ */
+function capPerSymbol(callers: BlastCallerRow[], max: number): BlastCallerRow[] {
+  const byVia = new Map<string, BlastCallerRow[]>();
+  for (const c of callers) {
+    const arr = byVia.get(c.viaSymbol);
+    if (arr) arr.push(c);
+    else byVia.set(c.viaSymbol, [c]);
+  }
+  const kept = new Set<BlastCallerRow>();
+  for (const arr of byVia.values()) {
+    for (const c of arr.slice(0, max)) kept.add(c);
+  }
+  return callers.filter((c) => kept.has(c));
 }
 
 // ---------------------------------------------------------------------------

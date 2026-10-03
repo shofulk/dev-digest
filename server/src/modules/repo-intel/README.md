@@ -38,7 +38,11 @@ touch the pipeline internals:
 - `getRepoMap(repoId)` → the cached repo skeleton (fed into the **review prompt**).
 - `getFileRank(repoId, files)` → importance percentile per changed file.
 - `getCallerSignatures(repoId, files, limit)` → callers of changed symbols.
-- `getBlastRadius(repoId, files)` → impacted symbols / callers (used by L04).
+- `getBlastRadius(repoId, files)` → impacted symbols / callers (used by L04,
+  `modules/blast/`). On the persistent path it walks callers up to
+  `BFS_DEPTH` hops, precision-filtered against `references.decl_file`, and
+  caps callers per symbol at `MAX_CALLERS_PER_SYMBOL` across all hops
+  (direct callers first, then by rank).
 - `getUnresolvedReferences(repoId, …)` → phantom-symbol detection (used by L06).
 - `getConventionSamples(repoId)` → top-ranked files for convention extraction (L02).
 

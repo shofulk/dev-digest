@@ -128,6 +128,7 @@ export interface ResolvedCallerRow {
   toSymbol: string;
   line: number;
   rank: number;
+  declFile: string | null;
 }
 
 export class RepoIntelRepository {
@@ -512,6 +513,7 @@ export class RepoIntelRepository {
         toSymbol: t.references.toSymbol,
         line: t.references.line,
         rank: t.fileRank.rank,
+        declFile: t.references.declFile,
       })
       .from(t.references)
       .innerJoin(

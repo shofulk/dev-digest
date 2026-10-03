@@ -69,6 +69,10 @@ export interface BlastCallerRow {
   line: number;
   /** file_rank.rank of the caller file (0 in the degraded/ripgrep path). */
   rank: number;
+  /** How many hops from the changed symbol this caller sits at (1 = direct). */
+  depth: number;
+  /** The hop-1 caller's symbol name for a depth-2 row, otherwise null. */
+  via: string | null;
 }
 
 export interface BlastResult {

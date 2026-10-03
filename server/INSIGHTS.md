@@ -115,6 +115,88 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-09-28 — a blast caller's `file:line` is correct and its GitHub link still opens unrelated code
+Every repo-intel line number (`references.line`, `symbols.line`) belongs to the commit the
+index was built from — `repo_index_state.lastIndexedSha`, a default-branch commit — never to
+the PR head. A link pinned to `pr.head_sha` drifts as soon as the PR edits the caller's file:
+live on shofulk/dev-digest, `getRepoMap → service.ts:409` is the `tryGetIndexState` call at
+`c6af1e4`, but ~100 lines down (514) at the PR head, so the link opened unrelated code. Any
+consumer that turns an indexed line into a URL or a diff anchor must pin it to the indexed
+sha; `GET /pulls/:id/blast` returns it as `indexed_sha` (null when the map did not come from
+the index), and the client falls back to `head_sha` only then.
+**Evidence:** `server/src/modules/blast/service.ts:142`, `client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BlastRadiusCard/helpers.ts:61`
+
+### 2026-09-28 — a dedupe key over `file|symbol|line` alone silently drops a real caller when one line reaches two changed symbols
+
+`mapFacadeBlast`'s dedupe key was `${c.file}|${c.symbol}|${c.line}`, with no `viaSymbol` — so
+one source line that calls two different changed symbols (e.g. `format(parse(x))` at
+`ui.ts:12`, both `parse` and `format` changed in the same PR) produced two facade caller rows
+with the *same* `file|symbol|line` but different `viaSymbol`. The dedupe set treated the
+second as a duplicate of the first and dropped it, so only whichever symbol happened to be
+grouped first in `fb.callers` kept that caller; the other symbol's `downstream` entry lost a
+real caller (and, transitively, that caller file's endpoints/crons). The bug is invisible in
+any fixture where each caller line reaches only one changed symbol — the common case — which
+is exactly why it survived a first review pass. Fix: key on
+`${c.viaSymbol}|${c.file}|${c.symbol}|${c.line}` instead, since dedupe is meant to be *within*
+one symbol's caller group, not across groups. Any future caller-list dedupe key in this
+module must include the grouping key it is nested under, not just the row's own identity
+fields.
+**Evidence:** `server/src/modules/blast/helpers.ts:76`, `server/test/blast-helpers.test.ts`
+("a caller line reaching two changed symbols … is kept in both groups")
+
+### 2026-09-28 — the per-symbol caller cap must apply to hop 1 BEFORE the hop-2 frontier is seeded, not just to the final combined list
+
+`tryPersistentBlast` capped `allCallers` to `MAX_CALLERS_PER_SYMBOL` only once, after both
+hops were collected. That caps the *output*, but the hop-2 frontier is seeded from ALL hop-1
+callers, uncapped — so a changed symbol with (say) 500 direct callers fans out into a hop-2
+query over up to 500 frontier files/names, all of which are computed and then thrown away
+except the final 20. Besides the wasted query breadth, it also means which callers make the
+final cut can depend on which unbounded hop-1 row happened to seed a matching hop-2 row,
+rather than being determined purely by rank. Fix: sort hop-1 rows by rank descending and cap
+to `MAX_CALLERS_PER_SYMBOL` per `viaSymbol` right after the declaring-file filter and BEFORE
+building `hop1SymsByFile`/the frontier — only the capped rows seed hop 2 and are carried
+forward as hop-1 callers. The existing "cap is global across hops" test (T2 test `(e)`) still
+passes unchanged because its hop-1 count (18) is under the cap; a new test with 25 hop-1
+callers of one symbol asserts the recorded `getResolvedCallers` hop-2 call args contain only
+the top-20-by-rank frontier files (via an `onResolvedCallers` recorder in the fake repo,
+added to `test/repo-intel-blast-persistent.test.ts`'s `buildService`).
+**Evidence:** `server/src/modules/repo-intel/service.ts:354-368` (hop-1 build),
+`server/test/repo-intel-blast-persistent.test.ts` ("(g) hop-1 is capped per symbol by rank
+BEFORE seeding the hop-2 frontier")
+
+### 2026-09-28 — validating an untrusted string against a Zod string-literal enum inside a ring-1 pure file, without importing the runtime schema
+
+`modules/blast/helpers.ts` is ring-1 pure and imports `@devdigest/shared` types only (C1).
+`deriveBlastStatus` receives `indexReason`/`facadeReason` as plain `string | null` (they
+come from a jsonb `degradedReason` column and the facade's own untyped field) and needs to
+narrow them to the contract's `BlastDegradedReason` literal union. `value as
+BlastDegradedReason` compiles and always "succeeds", so an unrecognised stored string (a
+typo, a future value, test data) would pass straight through instead of falling back.
+Importing the real `BlastDegradedReason` Zod object from `@devdigest/shared` for
+`.safeParse` would work but pulls a runtime value into a file that otherwise carries only
+type imports. Fix used instead: a local `Set<BlastDegradedReason>` literal mirroring the
+enum's five values, checked with `.has()` before the cast, falling back to a caller-supplied
+default when the value is missing or unrecognised — keeps the type-only import and still
+rejects garbage.
+
+**Evidence:** `server/src/modules/blast/helpers.ts:143-176`,
+`server/src/vendor/shared/contracts/brief.ts:99-106`
+
+### 2026-09-28 — `repo-intel/types.ts` row types have two producers in `service.ts`, so widening one for a new field breaks the other silently until `typecheck` runs
+
+Adding `depth`/`via` to `BlastCallerRow` (for the blast BFS hop-2 work) only needed the
+persistent path (`tryPersistentBlast`/`expandHop`) to populate them, but the type is also
+built by the unrelated ripgrep-fallback path in `getBlastRadius` (`callerRows.push({...})`,
+no `depth`/`via`) — a second, easy-to-miss literal construction of the same row shape in the
+same file. `pnpm typecheck` catches it (`TS2345: missing depth, via`), but only because both
+producers live in `src/`, which `typecheck` compiles; a producer added only under `test/`
+would not be caught (see the 2026-09-26 `tsc` entry above). Before widening any row type in
+`repo-intel/types.ts` with a required field, `rg` the file for every literal that builds that
+type — `service.ts` in particular has two independent code paths (persistent index, ripgrep
+degraded fallback) that both construct `BlastCallerRow`/`BlastResult`.
+**Evidence:** `server/src/modules/repo-intel/types.ts` (`BlastCallerRow`),
+`server/src/modules/repo-intel/service.ts` (`tryPersistentBlast`, `getBlastRadius`)
+
 ### 2026-09-20 — a long job can stream progress with no `jobs` row and no table: `RunBus` is keyed by an arbitrary string and replays its buffer
 
 `platform/sse.ts` keys everything by a plain string, not by an `agent_runs` id, and

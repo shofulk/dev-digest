@@ -72,6 +72,7 @@ flowchart TB
     reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
+    blast["blast<br/>/pulls/:id/blast"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
@@ -91,6 +92,13 @@ flowchart TB
 (core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.
 It owns roles and order; the client overlays live finding dots/counters from
 `GET /pulls/:id/reviews` on top of it, so the two never round-trip together.
+
+`blast` is likewise deterministic and DB-only: it reads only the repo-intel
+persistent index (symbols, resolved references, file rank, file facts) for a
+PR's changed files, so `degraded`/`reason` reflect the index's own state
+(`flag_off`, `index_failed`, `index_partial`, `repo_too_large`, `no_data`)
+rather than the facade's ripgrep-fallback semantics, which stay unchanged for
+every other consumer of `getBlastRadius`. The response's `indexed_sha` is the commit the index (and so every caller line) was read from, and it is null when the map did not come from the index; the UI links callers to it and falls back to the PR head.
 
 ## Environment
 

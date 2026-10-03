@@ -54,6 +54,17 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-09-28 — `wait --text "Blast radius"` times out while the card is plainly on screen
+
+**Cause:** `agent-browser wait --text` matches the RENDERED text (`innerText`), which applies
+CSS `text-transform`. `SectionLabel` (and severity `Badge`) render `textTransform: "uppercase"`,
+so the page shows `BLAST RADIUS` and the source-case string never matches. Vitest/jsdom
+applies no CSS, so every component test still finds "Blast radius".
+**Signal:** `Command failed: agent-browser wait --text <Title>` on a section title or badge;
+in the page, `document.body.innerText.includes('<Title>')` is false while `textContent` is true.
+**Fix:** wait on the text as rendered (`"BLAST RADIUS"`), or on a nearby non-transformed string.
+**Evidence:** `client/src/vendor/ui/primitives/SectionLabel.tsx:22`, `e2e/specs/10-blast-radius.flow.json:10`
+
 ## Session Notes
 
 Dated summaries of sessions worth remembering as a whole.
