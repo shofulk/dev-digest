@@ -164,7 +164,13 @@ first checks the real `API_PORT`/`WEB_PORT` and reuses a healthy running stack, 
 assuming 3000/3001 or re-running `dev.sh` on top of one — root `INSIGHTS.md` 2026-09-26
 ("this sandbox's `server/.env`/`client/.env` already override the default ports"). It
 passes each result (the command or action plus the key output line) to plan-verifier as a
-`Manual acceptance:` block. An item it cannot run stays *cannot verify*, never `met`.
+`Manual acceptance:` block. An item the session could run with a stack, Docker or a probe
+but did not stays *cannot verify*, never `met`. An item only the user or an absent browser
+channel can run (a visual check, an axe or keyboard pass, an e2e flow with no
+`agent-browser`) goes into the block as `awaiting manual: <item> — <what to run> — <why it
+could not run>`; plan-verifier reports it `awaiting manual`, counted separately, not re-raised as a gap each round; it reaches the user through `summary.md` ("what is not
+verified") and becomes `met` only through a later `Manual acceptance:` block with the
+user's result.
 
 **The retro step.** The main session runs retro-writer after every non-clean reviewer
 round and before the fix round starts — this is an explicit main-session step, not a hook
@@ -307,7 +313,7 @@ happens inside implementation.
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
 | security-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers → Security* line | *Security Review* — deterministic checks (secret scan, dangerous sinks, injection guard), findings (category, `file:line`, source → sink, exploit path, severity, evidence), needs-verification, checked-no-finding, pre-existing context, limits, `**Review status:**` |
-| plan-verifier | A plan path (`Plan status: Ready`) + optional `Manual acceptance:` block | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
+| plan-verifier | A plan path (`Plan status: Ready`) + optional `Manual acceptance:` block (including `awaiting manual:` lines) | *Plan Verification* — per-item traceability matrix (verdict `met / partial / not met / cannot verify / awaiting manual` + evidence, `file › it` + assertion line, one row per behavioural clause) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
 | doc-writer | Source material (plan path, spec, files or feature name) + audience/doc kind | Doc files per the Diátaxis home table, *Documentation Report* — files written, diagrams, claims checked against code, proposed edits outside scope, conventions notes, `**Docs status:**` |
 | retro-writer | Plan path + inline reviewer report(s) + `HEAD` sha + clean-round flag, or a backfill instruction — plus the retro file's existing labels and newest entries, when one exists | `.harness/retros/<feature>.retro.md` entry (via marker-line `Edit`, `Write` only on first create), *Retro Report* — entry table, why the loop is (not) converging, feed-forward line, sign-off JSON when not converging, graduation candidates, `**Retro status:**` |
 | harness-analyst | `User language:` + `Date:` (+ optional retro-file subset or focus) | `.harness/analysis/<date>.md` (`Write`, once), *Harness Analysis Report* — inputs, usage, recurring actions, anomalies, clusters, proposals, not-proposed, per-retro-file consume recommendation, `AskUserQuestion` decision JSON, limits, `**Analysis status:**` |

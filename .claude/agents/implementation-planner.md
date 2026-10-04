@@ -334,9 +334,24 @@ and git history of that file is the audit trail.
    documented in `.claude/agents/README.md` → *Permissions*). A Verify outside that profile
    is rewritten or named as a manual-acceptance item. In multi-agent mode, confirm that no
    two lanes marked parallel share a file. Confirm every lane has at most 6 steps, every
-   `AC*` is covered by at least one `red` Test-plan row (or the plan says under
-   *Execution* why it skips the red lane), and every Test-plan row names a lane and a
-   phase. Each lane's brief must hold everything that lane needs, because its agent sees
+   AC **clause** — each trigger, each control, each named dimension — every behavioural
+   step detail (a Change that says "on done/failed/error" has three) and every
+   behavioural Constraint/NFR is covered by a `red` Test-plan row whose cell names the
+   assertion that fails without it (or the plan says under *Execution* why it skips the
+   red lane), and every Test-plan row names a lane and a phase. Then check the plan
+   against the ACs, not only against itself:
+   (a) **Restatement fidelity.** Every Decision, Interface, DOM-contract line and
+   Test-plan row that claims an AC names it and carries every dimension of that clause —
+   "icon per kind in the severity colour" keeps *kind* and *severity*; "highlight the
+   line" keeps the visible highlight, with the a11y marker added, not substituted; "model
+   input ≤ N tokens" is measured on what the model receives, not on a fact set. A
+   deliberate narrowing is allowed only as a *Requirements review* row the user answered.
+   (b) **Joint satisfiability.** No two clauses of the plan contradict each other (an
+   ordering that needs an `await` the next bullet forbids; a required field with a
+   constructor path that leaves it unset). Resolve it before emitting.
+   (c) **Contract types.** An Interface field that holds a contract value is typed with
+   the contract type (`Severity`, `RiskKind`), never `string`, so fixtures cannot mix
+   vocabularies. Each lane's brief must hold everything that lane needs, because its agent sees
    nothing else: `lane-brief.mjs` keeps the header, Goal, the ACs the lane covers, its Steps,
    Execution and Test-plan rows, and every other section whole — a Constraint or Decision
    a step depends on goes in its own section, not only in *Requirements review*,
