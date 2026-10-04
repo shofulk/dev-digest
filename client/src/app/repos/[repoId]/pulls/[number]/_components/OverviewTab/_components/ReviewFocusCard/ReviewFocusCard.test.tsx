@@ -114,9 +114,11 @@ describe("ReviewFocusCard", () => {
     reply = { status: 200, body: { brief: theBrief, current_head_sha: "sha1", outdated: false, job: null } };
     renderCard();
 
-    expect(
-      await screen.findByText("src/config.ts — See http://evil.example and **bold** <b>html</b> for context"),
-    ).toBeInTheDocument();
+    // Path and reason render in separate styled spans, so assert the joined
+    // literal text (button name + list item text), not a single text node.
+    const label = "src/config.ts — See http://evil.example and **bold** <b>html</b> for context";
+    expect(await screen.findByRole("button", { name: label })).toBeInTheDocument();
+    expect(screen.getByRole("listitem")).toHaveTextContent(label);
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 });

@@ -7,10 +7,6 @@ export const s = {
     gap: 10,
     marginBottom: 14,
   } satisfies CSSProperties,
-  count: {
-    fontSize: 12,
-    color: "var(--text-muted)",
-  } satisfies CSSProperties,
   hint: {
     fontSize: 13,
     color: "var(--text-muted)",
@@ -18,26 +14,39 @@ export const s = {
   list: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
+    gap: 12,
     margin: 0,
     padding: 0,
-    listStylePosition: "inside",
+    listStyle: "none",
   } satisfies CSSProperties,
   item: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 8,
     fontSize: 13,
+    lineHeight: 1.5,
+  } satisfies CSSProperties,
+  marker: {
+    color: "var(--accent-text)",
+    flexShrink: 0,
+    marginTop: 4,
   } satisfies CSSProperties,
   itemButton: {
     background: "transparent",
     border: "none",
-    color: "var(--text-primary)",
     cursor: "pointer",
     textAlign: "left",
     padding: 0,
     font: "inherit",
+    minWidth: 0,
   } satisfies CSSProperties,
   path: {
     fontFamily: "var(--font-mono, monospace)",
+    fontSize: 12,
     color: "var(--accent-text)",
     overflowWrap: "anywhere",
+  } satisfies CSSProperties,
+  reason: {
+    color: "var(--text-secondary)",
   } satisfies CSSProperties,
 } as const;

@@ -7,7 +7,7 @@
 "use client";
 
 import { useTranslations } from "next-intl";
-import { Card, SectionLabel, Skeleton } from "@devdigest/ui";
+import { Badge, Card, Icon, SectionLabel, Skeleton } from "@devdigest/ui";
 import { usePrBrief } from "@/lib/hooks/brief";
 import { s } from "./styles";
 
@@ -28,7 +28,11 @@ export function ReviewFocusCard({
     <Card>
       <div style={s.header}>
         <SectionLabel icon="ListChecks">{t("focus.title")}</SectionLabel>
-        {brief && items.length > 0 && <span style={s.count}>{t("focus.count", { count: items.length })}</span>}
+        {brief && items.length > 0 && (
+          <Badge color="var(--accent-text)" bg="var(--accent-bg)">
+            {t("focus.count", { count: items.length })}
+          </Badge>
+        )}
       </div>
 
       {loading ? (
@@ -38,15 +42,19 @@ export function ReviewFocusCard({
       ) : (
         <ol style={s.list}>
           {items.map((item, i) => {
-            const label = item.line != null ? `${item.file}:${item.line} — ${item.reason}` : `${item.file} — ${item.reason}`;
+            const ref = item.line != null ? `${item.file}:${item.line}` : item.file;
+            // The text nodes concatenate to `path[:line] — reason` (AC-55), which
+            // is also the button's accessible name; the chevron is decorative.
             return (
               <li key={i} style={s.item}>
+                <Icon.ChevronRight size={12} aria-hidden="true" style={s.marker} />
                 <button
                   type="button"
                   style={s.itemButton}
                   onClick={() => onOpenFile?.(item.file, item.line)}
                 >
-                  {label}
+                  <span style={s.path}>{ref}</span>
+                  <span style={s.reason}>{` — ${item.reason}`}</span>
                 </button>
               </li>
             );
