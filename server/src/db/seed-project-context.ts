@@ -26,14 +26,13 @@ import { join } from 'node:path';
 import { and, eq } from 'drizzle-orm';
 import type { Db } from './client.js';
 import * as t from './schema.js';
-import { wrapUntrusted } from '@devdigest/reviewer-core';
 import { TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 import type { ContextDocTrace, RunTrace } from '@devdigest/shared';
 
 /** Fixed so re-seeding never duplicates the demo run (the idempotency check). */
 const DEMO_RUN_ID = '00000000-0000-0000-0000-00000000da7a';
 
-const ARCHITECTURE_MD = `# Payments API architecture
+export const ARCHITECTURE_MD = `# Payments API architecture
 
 - The public API never talks to the database directly.
 - \`api/\` calls \`services/\`, which call \`db/\`.
@@ -44,6 +43,21 @@ const ARCHITECTURE_MD = `# Payments API architecture
 import { getUser } from '../services/users';
 \`\`\`
 `;
+
+/**
+ * CI-2 fix — this is a FIXED STRING LITERAL equal to what
+ * `wrapUntrusted('docs/architecture.md', ARCHITECTURE_MD)` (reviewer-core)
+ * would produce, written out by hand instead of imported: `db:seed` runs in
+ * the `e2e-web` CI job BEFORE `reviewer-core`'s dependencies are installed,
+ * so this module must not import `@devdigest/reviewer-core` (its
+ * `structured.ts` pulls in the `openai` package). Kept honest by
+ * `server/test/seed-project-context.test.ts`, which imports the real
+ * `wrapUntrusted` (vitest resolves the alias; `db:seed` does not) and
+ * asserts the two are identical.
+ */
+export const ARCHITECTURE_MD_SPECS_BLOCK = `<untrusted source="docs/architecture.md">
+${ARCHITECTURE_MD}
+</untrusted>`;
 
 const RATE_LIMITING_SPEC_MD = `# Rate limiting
 
@@ -110,7 +124,7 @@ export async function seedProjectContextDemo(db: Db, cloneDir: string): Promise<
 
   const tokenizer = new TiktokenTokenizer();
   const tokens = tokenizer.count(ARCHITECTURE_MD);
-  const specsBlock = wrapUntrusted('docs/architecture.md', ARCHITECTURE_MD);
+  const specsBlock = ARCHITECTURE_MD_SPECS_BLOCK;
 
   const contextDocs: ContextDocTrace[] = [
     { path: 'docs/architecture.md', origin: 'agent', tokens, status: 'included' },

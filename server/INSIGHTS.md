@@ -560,6 +560,12 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-04 — `server/src/adapters/mocks.ts` and `db:seed` both broke a CI job that installs fewer deps than `server/`'s own
+**Cause:** two independent CI jobs resolve `server/src/**` modules with a lighter dependency set than `pnpm --dir server install` gives you locally: (1) `reviewer-core.yml`'s `tests` job runs `npm ci` inside `reviewer-core/` only, and `reviewer-core/test/run.test.ts` / `run-project-context.test.ts` import `../../server/src/adapters/mocks.ts` directly — any runtime (non-type, non-relative) import added to `mocks.ts` must resolve from `reviewer-core/node_modules`, which it never does; (2) `e2e-web.yml`'s `browser flows` job runs `pnpm db:seed` in `server/` BEFORE its separate "Install reviewer-core deps" step, so anything `db:seed` imports that transitively pulls in `@devdigest/reviewer-core` (its `structured.ts` imports `openai`) crashes with `ERR_MODULE_NOT_FOUND` mid-seed.
+**Signal:** `Cannot find module './lib/picomatch'` from a `reviewer-core/test/*.test.ts` that only imports `server/src/adapters/mocks.ts`; or `ERR_MODULE_NOT_FOUND: Cannot find package 'openai'` during `pnpm db:seed` pointing at `reviewer-core/src/llm/structured.ts`.
+**Fix:** keep `mocks.ts` free of any runtime third-party import — reimplement the small amount of logic needed locally instead (e.g. a hand-rolled glob matcher instead of `picomatch`, parity-tested against the real `picomatch({ dot: false })` in a server-only test). Keep `src/db/seed-project-context.ts` free of any `@devdigest/reviewer-core` import — build the fixed demo string it needs as a literal, and pin it to the real function's output with a dedicated server test (`vitest` resolves the `@devdigest/reviewer-core` alias; `db:seed` does not).
+**Evidence:** server/src/adapters/mocks.ts:1 (header comment), server/src/db/seed-project-context.ts:33, server/test/mocks-project-docs-matcher-parity.test.ts, server/test/seed-project-context.test.ts, .github/workflows/reviewer-core.yml, .github/workflows/e2e-web.yml:65-80
+
 ### 2026-10-03 - an `*.it.test.ts` error assertion on `res.json().message` can never pass
 **Cause:** the app-wide error handler sends `{ error: { code, message, details } }`; there is no top-level `message`, and `.error` is an object.
 **Signal:** `.toMatch()` throws a TypeError, or the test fails although the route returns the right status and text.

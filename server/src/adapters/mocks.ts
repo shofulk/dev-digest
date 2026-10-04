@@ -37,12 +37,16 @@ import type {
   ProjectDocsListResult,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
-import picomatch from 'picomatch';
 
 /**
  * Deterministic MOCK adapters for tests/dev — NO real network. Each mirrors the
  * adapter interface. The mock LLM returns a caller-supplied fixture (or a default)
  * for completeStructured, so review/grounding flows can be tested end-to-end.
+ *
+ * This file must stay free of runtime third-party imports (type-only and
+ * relative imports are fine): `reviewer-core` tests import it directly and
+ * run in a CI job that installs ONLY `reviewer-core`'s dependencies, with no
+ * `server/node_modules` on the resolution path — see `server/INSIGHTS.md`.
  */
 
 // ---------- Mock LLM ----------
@@ -369,6 +373,81 @@ export class MockSecretsProvider implements SecretsProvider {
   }
 }
 
+// ---------- Dependency-free glob matcher (mirrors picomatch { dot: false }) ----------
+/**
+ * Expands a single level of brace alternation (`{a,b,c}`), recursively, so
+ * the default root `** /{specs,docs,insights}/** /*.md` (no space, written
+ * here with one only to keep this comment block from closing early) becomes
+ * three plain globs. Nested braces are not supported — this feature only
+ * ever uses one level.
+ */
+function expandBraces(pattern: string): string[] {
+  const open = pattern.indexOf('{');
+  if (open === -1) return [pattern];
+  const close = pattern.indexOf('}', open);
+  if (close === -1) return [pattern];
+  const prefix = pattern.slice(0, open);
+  const options = pattern.slice(open + 1, close).split(',');
+  const suffixes = expandBraces(pattern.slice(close + 1));
+  const out: string[] = [];
+  for (const opt of options) {
+    for (const suf of suffixes) out.push(prefix + opt + suf);
+  }
+  return out;
+}
+
+const REGEXP_SPECIAL = /[.+^${}()|[\]\\]/;
+function escapeRegExpChar(ch: string): string {
+  return REGEXP_SPECIAL.test(ch) ? `\\${ch}` : ch;
+}
+
+/** Converts one path-segment glob (`*`/`?`/literal, no `/`) into a RegExp. */
+function segmentPatternToRegExp(segPattern: string): RegExp {
+  let re = '';
+  for (const ch of segPattern) {
+    if (ch === '*') re += '[^/]*';
+    else if (ch === '?') re += '[^/]';
+    else re += escapeRegExpChar(ch);
+  }
+  return new RegExp(`^${re}$`);
+}
+
+/**
+ * Segment-by-segment match of an already-brace-expanded glob against a
+ * path's segments. `**` consumes zero or more whole segments. Reproduces
+ * picomatch's `{ dot: false }` rule: a wildcard (`*`, `**`, `?`) never
+ * matches a path segment that starts with `.` — only a pattern segment that
+ * itself starts with a literal `.` may match one.
+ */
+function matchGlobSegments(patternSegs: string[], pathSegs: string[]): boolean {
+  if (patternSegs.length === 0) return pathSegs.length === 0;
+  const head: string = patternSegs[0] ?? '';
+  const restPattern = patternSegs.slice(1);
+  if (head === '**') {
+    if (matchGlobSegments(restPattern, pathSegs)) return true;
+    for (let i = 0; i < pathSegs.length; i++) {
+      const consumed: string = pathSegs[i] ?? '';
+      if (consumed.startsWith('.')) break; // ** never consumes a dot-segment
+      if (matchGlobSegments(restPattern, pathSegs.slice(i + 1))) return true;
+    }
+    return false;
+  }
+  if (pathSegs.length === 0) return false;
+  const seg: string = pathSegs[0] ?? '';
+  const restPath = pathSegs.slice(1);
+  if (seg.startsWith('.') && head[0] !== '.') return false; // dot:false
+  if (!segmentPatternToRegExp(head).test(seg)) return false;
+  return matchGlobSegments(restPattern, restPath);
+}
+
+/** Dependency-free equivalent of `picomatch(pattern, { dot: false })(relPath)`. */
+function matchesGlob(pattern: string, relPath: string): boolean {
+  const pathSegs = relPath.split('/');
+  return expandBraces(pattern).some((expanded) =>
+    matchGlobSegments(expanded.split('/'), pathSegs),
+  );
+}
+
 // ---------- Mock ProjectDocsSource (Project Context) ----------
 /**
  * Full in-memory `ProjectDocsSource` — no filesystem, deterministic, for
@@ -394,8 +473,10 @@ export class MockProjectDocsSource implements ProjectDocsSource {
   matchesRoots(relPath: string, roots: string[]): boolean {
     // `dot: false` matches the real adapter (`adapters/project-docs/index.ts`)
     // — dotfiles/dot-directories (`.github/…`, `docs/.hidden.md`) never match
-    // a `**` segment, same as the real `picomatch` walk.
-    return roots.some((pattern) => picomatch(pattern, { dot: false })(relPath));
+    // a `**` segment, same as the real `picomatch` walk. Reproduced locally
+    // (`matchesGlob`, above) rather than importing `picomatch`: this file
+    // must stay dependency-free (see header comment).
+    return roots.some((pattern) => matchesGlob(pattern, relPath));
   }
 
   private isSyntacticallyInvalid(relPath: string): boolean {
