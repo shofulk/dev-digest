@@ -119,11 +119,14 @@ this reviewer to check.
 1. **Deterministic pre-pass.**
    - `pnpm --dir server arch` — compare the summary line to the baseline **0 errors, 17
      warnings** (`onion-architecture/SKILL.md` § Enforcement). A change that raises either
-     count is a regression; report it even if the raised rule is only `warn`.
+     count is a regression; report it even if the raised rule is only `warn`. When the
+     delegating prompt carries `Checks: .harness/checks/<feature>.md — fresh`, `Read` that
+     file and take the `arch` row's summary line instead of re-running it.
    - `pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs -T err-long`
      for the edges and rule comments behind each violation (the `err` output from `arch`
      only counts them; `scope-guard.sh` rejects `depcruise`'s long-flag spelling of the
-     same option, `-T` is the short form it accepts).
+     same option, `-T` is the short form it accepts). Run it only when the counts differ
+     from the baseline — at the baseline there is no new edge to explain.
    - **Vendor tripwire:** any `*/src/vendor/**` path in the change set outside
      `server/src/vendor/shared/**` is a **critical** finding on its own (severity.md §1
      row 6).

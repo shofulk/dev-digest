@@ -41,6 +41,7 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 | `e2e/` | deterministic browser flows (`specs/NN-name.flow.json`) |
 | `mcp-server/` | local stdio MCP server — a thin HTTP-API client exposing reviewer agents, PR review runs, findings and conventions to MCP clients (Claude Code) |
 | `docs/agent-prompts/` | built-in reviewer system prompts |
+| `specs/` | cross-module feature specs; its `README.md` is the spec format of record (template, EARS) |
 
 ## Read when
 
@@ -48,8 +49,9 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
   (`server` · `client` · `reviewer-core` · `e2e` · `mcp-server`).
 - **Need architecture, diagrams or data flow** → read `<pkg>/README.md`.
   It is the source of truth; never restate it here.
-- **Implementing a feature** → read `<pkg>/.spec/<feature>.spec.md` first. If no
-  spec exists, ask whether to write one before the code.
+- **Implementing a feature** → read `<pkg>/.spec/<feature>.spec.md` (one package) or
+  `specs/<feature>.spec.md` (two or more packages) first. If no spec exists, ask whether
+  to write one with the `spec-creator` agent before the code.
 - **Debugging anything non-trivial** → read `<pkg>/INSIGHTS.md` first (see
   **Session protocol** below).
 - **Asking "why is it built this way"** → read `<pkg>/.doc/<topic>.md`.
@@ -61,7 +63,9 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 
 - **Before working in a package** → read its `INSIGHTS.md` in full, plus the matching skill
   in `.claude/skills/`, and name the three entries most relevant to the task. An unread
-  `INSIGHTS.md` makes the whole loop worthless.
+  `INSIGHTS.md` makes the whole loop worthless. One exception: an agent executing a lane of
+  a Development Plan reads only the entries the plan's *Constraints* cite, plus an `rg` for
+  its steps' key terms — the planner already did the full read for the whole plan.
 - **When a task ends, or a non-obvious cause is solved** → run `engineering-insights` and
   append what is worth keeping to the `INSIGHTS.md` of the package the work touched
   (repo-wide or cross-package findings go in the root `INSIGHTS.md`). Do not skip this.
@@ -95,7 +99,7 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 - `server/src/db/migrations/**` — generated. Change the schema, run `db:generate`.
 - `.claude/skills/**` — vendored skills, tracked by `skills-lock.json`.
   A skill absent from `skills-lock.json` is first-party (`engineering-insights`,
-  `onion-architecture`, `frontend-ui-architecture`, `pr-self-review`) — edit it here, and
+  `onion-architecture`, `frontend-ui-architecture`, `pr-self-review`, `spec-writing`, `sdd-run`) — edit it here, and
   never add it to the lockfile.
 - `*/pnpm-lock.yaml` — generated, one per package (there is no workspace-root
   lockfile). Never hand-edit and never hoist: change dependencies with

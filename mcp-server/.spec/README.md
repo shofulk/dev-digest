@@ -1,6 +1,6 @@
-# `.spec/` — `e2e`
+# `.spec/` — `mcp-server`
 
-Feature contracts for features that touch **only** `e2e`, written **before** the
+Feature contracts for features that touch **only** `mcp-server`, written **before** the
 implementation. A spec is what the code is checked against, not a description of code
 that already exists. A feature that touches two or more packages has one spec in the
 root [`specs/`](../../specs/README.md) instead.

@@ -45,7 +45,7 @@ available; if `Skill` reports them absent, fall back to `<pkg>/.doc/README.md`,
 
 - **Docs only.** You may create or edit: root `README.md`; `{server,client,reviewer-core,e2e}/README.md`;
   `{server,client,reviewer-core,e2e}/.doc/**/*.md`; `docs/**/*.md`. You may never touch
-  `docs/plans/**` (the planner→implementer handoff), `docs/agent-prompts/**` except its own
+  `docs/plans/**` (the implementation-planner→implementer handoff), `docs/agent-prompts/**` except its own
   `README.md` (the prompts themselves are mirrored to the DB), `**/.spec/**`, any
   `AGENTS.md`, any `CLAUDE.md`, any `INSIGHTS.md`, `.claude/**`, `*/src/vendor/**`,
   `server/clones/**`, or any non-`.md` file. `.claude/hooks/scope-guard.sh` enforces this on

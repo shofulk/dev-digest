@@ -38,6 +38,19 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-03 — summing `usage` over every assistant line of a transcript double-counts tokens: one API response is written as several JSONL lines with the same `usage`
+**Supersedes:** 2026-10-03 entry "implementer runs looked expensive 'because of tests'…" — its numbers (median 24.5M, worst 105M input per implementer run) are the naive per-line sum. Deduplicated by `message.id`, the same 25 runs give median 14.7M and worst 65.7M (`blast-radius`). Its conclusion (cost is turns × context; short lanes are the lever) still holds.
+Claude Code writes each content block (thinking, text, every `tool_use`) of one response as its own `type: "assistant"` line, and each copy carries the full `usage` — one sample session had 158 assistant lines for 82 responses. Count once per `message.id`. Do not hand-roll this again: `node .claude/scripts/harness-usage.mjs` already dedupes and prints per-feature / per-agent / per-run totals.
+**Evidence:** `.claude/scripts/harness-usage.mjs` (`summarise`, the `seen` set)
+
+### 2026-10-03 — "load the skills in the step's Skills column" is an instruction implementers skip: 21 of 25 runs never called `Skill`
+The plan's *Skills* column and the implementer's *Skills applied* report column suggest the skills were applied; the transcripts show 4 runs with any `Skill` call at all (`file-conventions` ×2, `engineering-insights`, `react-best-practices`, `react-testing-library`). Only skills preloaded through an agent's `skills:` frontmatter are reliably in context. Treat a *Skills applied* cell as a claim, and put a skill a lane must follow into frontmatter (or a lane-specific agent), not into a prompt instruction.
+**Evidence:** `.claude/agents/implementer.md` (Procedure 2.1, frontmatter `skills:`)
+
+### 2026-10-03 — implementer runs looked expensive "because of tests", but test output was ~10% of what they read; the cost was one run over the whole plan
+Measured over 25 implementer transcripts: median 161 turns and 24.5M cumulative input tokens per run, worst 410 turns / 400k-token peak context / 105M (`blast-radius`, 28 steps in one run). All tool output in that worst run was ~450 KB, tests ~100 KB of it; a green `vitest` run is ~10 KB. Cost is turns × context, and context only grows — so the levers are short fresh runs (lanes of ≤ 6 steps), a lane brief instead of the ~100 KB plan, and no repeated full reads of `INSIGHTS.md`; quieter test output barely moves it. Measure from `~/.claude/projects/<project>/<session>/subagents/*.jsonl` (`usage` per assistant turn, `agentType` in the `.meta.json`) before optimising.
+**Evidence:** `.claude/scripts/lane-brief.mjs`, `.claude/agents/README.md` (*Lanes and briefs*)
+
 ### 2026-09-27 — `scope-guard.sh`'s bash-checks profile does not know `mcp-server/`, so its `pnpm --dir mcp-server …` verify commands are manual acceptance, not guarded
 
 `ALLOWED_DIRS` and `TESTS_ALLOW` in `.claude/hooks/scope-guard.sh` only name `server`,
@@ -120,6 +133,18 @@ allowlist per head, one path resolver), not by the reported spelling.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-03 — a format check on a freezing state transition must run before the write, not after
+`spec-creator` may edit a spec only while it is `draft` (`scope-guard.sh write spec` reads
+the status from disk). A PostToolUse lint alone would let the `draft → approved` Edit land
+with format errors — and from then on the file is frozen, so nothing can fix it. The
+transition is linted in PreToolUse against the content the tool *would* produce (Write:
+`content`; Edit: the on-disk file with `old_string → new_string` applied), and blocks only
+when that content is `approved`/`implemented`; ordinary draft edits are linted after the
+write (exit 2 feeds the errors back) so an intermediate draft is never blocked. Any guard
+that makes a file read-only by its own content needs the same pre-write check on the
+freezing edit.
+**Evidence:** `.claude/hooks/spec-lint.mjs` (`hookPre`, `hookPost`), `.claude/hooks/scope-guard.sh` (`specDraftOnlyPolicy`)
 
 ### 2026-09-16 — `WEB_PORT` is one variable with two consumers; setting it on one side gives CORS errors
 
@@ -387,6 +412,15 @@ when they differ; the named volume `devdigest_pgdata` is not touched, so the dat
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-03 — spec-lint rejects an `[e2e]` criterion in `specs/` as untagged and not EARS
+
+**Cause:** `acSentence` parses the tag with `^\[([a-z-]+)\]`, which has no digits, so `e2e`
+never matches although `PACKAGES` lists it; the tag stays in the sentence and the EARS check fails too.
+**Signal:** one AC gets both "a cross-module criterion needs a package tag" and "must start with The / WHEN / …".
+**Fix:** tag the AC with the package that owns the behaviour (`[server]`/`[client]`) and keep
+`*Verify: e2e*`; or widen the regex to `[a-z0-9-]` (hook change, not done yet).
+**Evidence:** `.claude/hooks/spec-lint.mjs:27`, `.claude/hooks/spec-lint.mjs:216`
 
 ### 2026-09-16 — `EADDRINUSE` on :3001 right after Ctrl-C, with nothing visibly running
 
