@@ -43,6 +43,8 @@ export const s = {
     fontWeight: 600,
     color: "var(--text-primary)",
     flex: 1,
+    minWidth: 0,
+    overflowWrap: "anywhere",
   } satisfies CSSProperties,
   /* Visually hidden: the kind label (AC-52) is read by assistive tech next to
      the severity-labelled icon, without showing twice on screen. Standard
@@ -80,6 +82,11 @@ export const s = {
     borderRadius: 4,
     padding: "2px 8px",
     cursor: "pointer",
+    /* A file path has no spaces to break at: without these a long ref
+       overflows the card instead of wrapping inside it. */
+    maxWidth: "100%",
+    textAlign: "left",
+    overflowWrap: "anywhere",
   } satisfies CSSProperties,
   toggleButton: {
     background: "transparent",

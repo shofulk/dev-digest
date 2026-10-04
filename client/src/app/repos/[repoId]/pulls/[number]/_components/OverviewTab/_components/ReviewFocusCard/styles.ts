@@ -38,5 +38,6 @@ export const s = {
   path: {
     fontFamily: "var(--font-mono, monospace)",
     color: "var(--accent-text)",
+    overflowWrap: "anywhere",
   } satisfies CSSProperties,
 } as const;
