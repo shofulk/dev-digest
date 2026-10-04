@@ -10,7 +10,7 @@ import type { FindingRecord } from "@devdigest/shared";
 import { commentTargetFor, type CommentThread, type DiffCommentApi, cs } from "../comments";
 import { type DiffFindingApi, findingCardsVisible, maxSeverity } from "../findings";
 import { type Line } from "../helpers";
-import { s, lineRowFor, lineSignFor } from "../styles";
+import { s, lineRowFor, lineSignFor, lineHighlight } from "../styles";
 import { CommentThreadView } from "../CommentThreadView";
 import { InlineComposer } from "../InlineComposer";
 
@@ -21,6 +21,7 @@ export function CodeLine({
   commenting,
   findings,
   findingApi,
+  highlighted,
 }: {
   ln: Line;
   path: string;
@@ -29,9 +30,19 @@ export function CodeLine({
   /** Findings anchored to this line (D4/AC4 — several share the most severe bar/badge). */
   findings?: FindingRecord[];
   findingApi?: DiffFindingApi;
+  /** D4/AC-58 — the Files changed tab's focus target resolved to this line. */
+  highlighted?: boolean;
 }) {
   const [hover, setHover] = React.useState(false);
   const [composing, setComposing] = React.useState(false);
+  const rowRef = React.useRef<HTMLDivElement>(null);
+
+  // D4/AC-58 — the Files changed tab's focus target, once resolved to this
+  // line: scroll the row itself into view, not the file card (FileCard only
+  // scrolls its own card when there is no line to focus on, AC-60).
+  React.useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [highlighted]);
 
   if (ln.kind === "hunk") {
     return (
@@ -46,13 +57,18 @@ export function CodeLine({
   const showAdd = hover && !!target && !composing;
   const lineFindings = findings ?? [];
   const sevMax = lineFindings.length > 0 ? maxSeverity(lineFindings.map((f) => f.severity as Severity)) : undefined;
-  const rowStyle = sevMax ? { ...lineRowFor(ln.kind), borderLeft: `3px solid ${SEV[sevMax].c}` } : lineRowFor(ln.kind);
+  const rowStyle = {
+    ...(sevMax ? { ...lineRowFor(ln.kind), borderLeft: `3px solid ${SEV[sevMax].c}` } : lineRowFor(ln.kind)),
+    ...(highlighted ? lineHighlight : {}),
+  };
 
   return (
     <div
+      ref={rowRef}
       style={cs.rowWrap}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
+      aria-current={highlighted ? "location" : undefined}
     >
       <div style={rowStyle}>
         <span className="mono tnum" style={{ ...s.lineNo, position: "relative" }}>

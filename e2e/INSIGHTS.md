@@ -72,6 +72,19 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-04 — a `find … click` on a below-the-fold control reports `✓ Done` but nothing happens
+
+**Cause:** the app scrolls the nested `<main>` (`overflow:auto`), not the document. agent-browser
+acts by viewport coordinates: `find … click`, top-level `focus <sel>` and `scrollintoview` all return
+`Done` without scrolling `<main>`, so a control below the fold is clicked off-screen and nothing fires.
+`find role button focus` does not exist (`✗ Unknown subaction: focus`).
+**Signal:** the click step passes, the next `wait --url` / `wait --text` times out; in a probe the
+target's `getBoundingClientRect().y` is greater than `innerHeight` and `main.scrollTop` stays `0`.
+**Fix:** add `["set", "viewport", "1280", "1600"]` right after `open` so the control is on-screen,
+then click by role as usual. Flows run in one shared session, so a later flow that needs the default
+size must set its own viewport.
+**Evidence:** `client/src/vendor/ui/shell/AppFrame.tsx:29`, `e2e/specs/12-pr-brief.flow.json:6`
+
 ### 2026-09-28 — `wait --text "Blast radius"` times out while the card is plainly on screen
 
 **Cause:** `agent-browser wait --text` matches the RENDERED text (`innerText`), which applies

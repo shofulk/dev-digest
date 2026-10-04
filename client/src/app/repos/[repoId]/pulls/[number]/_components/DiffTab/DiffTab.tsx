@@ -3,7 +3,13 @@
 import React from "react";
 import { useTranslations } from "next-intl";
 import { SectionLabel, Button, Skeleton, ErrorState } from "@devdigest/ui";
-import { DiffViewer, orderBySmartDiff, type DiffCommentApi, type DiffFindingApi } from "@/components/diff-viewer";
+import {
+  DiffViewer,
+  orderBySmartDiff,
+  resolveDiffFocus,
+  type DiffCommentApi,
+  type DiffFindingApi,
+} from "@/components/diff-viewer";
 import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
 import { notify } from "@/lib/toast";
@@ -22,6 +28,9 @@ interface DiffTabProps {
   headSha: string | null;
   /** Inline commenting is offered only on open PRs (GitHub rejects otherwise). */
   canComment?: boolean;
+  /** Files changed tab `?file=&line=` target (D4, AC-58). */
+  focusFile?: string | null;
+  focusLine?: string | null;
 }
 
 /**
@@ -38,6 +47,8 @@ export function DiffTab({
   repoFullName,
   headSha,
   canComment,
+  focusFile,
+  focusLine,
 }: DiffTabProps) {
   const t = useTranslations("prReview");
   const { data: comments } = usePrComments(prId);
@@ -105,6 +116,12 @@ export function DiffTab({
   const smartLoading = order === "smart" && smartDiffLoading;
   const smartFailed = order === "smart" && smartDiffError;
 
+  // D4/AC-58..61 — the Files changed tab's `?file=&line=` focus target.
+  // `missing` renders a notice above the list and passes no focus down;
+  // `target` is handed to `DiffViewer` to scroll/highlight.
+  const diffFocus = resolveDiffFocus(files, focusFile, focusLine);
+  const viewerFocus = diffFocus.kind === "target" ? { path: diffFocus.path, line: diffFocus.line } : null;
+
   return (
     <section>
       <SectionLabel
@@ -147,12 +164,18 @@ export function DiffTab({
         {t("smartDiff.title")} · {t("smartDiff.summary", { files: filesCount, additions, deletions })}
       </SectionLabel>
 
+      {diffFocus.kind === "missing" && (
+        <div role="status" style={{ marginBottom: 10 }}>
+          {t("smartDiff.focusFileMissing")}
+        </div>
+      )}
+
       {smartLoading ? (
         <Skeleton height={200} />
       ) : smartFailed ? (
         <ErrorState title={t("smartDiff.loadFailed")} onRetry={() => refetchSmartDiff()} />
       ) : (
-        <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} />
+        <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} focus={viewerFocus} />
       )}
     </section>
   );

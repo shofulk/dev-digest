@@ -75,7 +75,8 @@
     "loadFailed": "Couldn't load the reviewer-ordered diff.",
     "showComments": "Show comments",
     "hideComments": "Hide comments",
-    "commentFailed": "Couldn't post the comment to GitHub."
+    "commentFailed": "Couldn't post the comment to GitHub.",
+    "focusFileMissing": "This file is no longer in this PR."
   },
   "list": {
     "breadcrumb": "Pull Requests",

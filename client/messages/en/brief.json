@@ -1,19 +1,74 @@
 {
-  "block": {
-    "intent": "Intent",
-    "blast": "Blast radius",
-    "risks": "Risks",
-    "history": "PR history"
+  "banner": {
+    "title": "PR Brief",
+    "noBrief": "No brief yet",
+    "generate": "Generate",
+    "regenerate": "Regenerate",
+    "outdated": "Outdated",
+    "generatedWithout": "Generated without:",
+    "missingItem": "{input} ({state})",
+    "missingItemDetail": "{input} ({state}: {detail})",
+    "cost": "${cost}",
+    "costUnknown": "cost n/a",
+    "tokens": "{tokensIn} → {tokensOut} tokens",
+    "meta": "{model} · {time}",
+    "phase": {
+      "assembling": "Assembling facts…",
+      "calling_model": "Calling the model…",
+      "grounding": "Checking references…",
+      "saving": "Saving the brief…"
+    },
+    "done": "Brief ready.",
+    "failed": "Brief generation failed: {message}",
+    "streamError": "Lost the connection to the brief generation stream.",
+    "noChangedFiles": "This PR has no changed files to brief.",
+    "rateLimited": "Too many requests — try again in a moment.",
+    "generateFailed": "Couldn't generate the brief. Try again.",
+    "retry": "Retry",
+    "openSettings": "Open Settings"
   },
-  "noRisks": "No notable risks flagged.",
-  "noHistory": "No prior PRs overlap these files.",
-  "overlap": "{count} overlap",
-  "unavailable": "Brief not available yet.",
-  "unavailableHint": "Run a review or open the PR to compute it.",
-  "why": {
-    "title": "git-why",
-    "blame": "blame",
-    "noHistory": "No history available for this line.",
-    "noCommits": "No commits found for this line."
+  "input": {
+    "intent": "intent",
+    "blast": "blast radius",
+    "description": "description",
+    "findings": "review findings",
+    "document": "document",
+    "files": "changed files"
+  },
+  "state": {
+    "missing": "missing",
+    "stale": "stale",
+    "degraded": "degraded",
+    "skipped": "skipped",
+    "trimmed": "trimmed"
+  },
+  "risks": {
+    "title": "Risk areas",
+    "outdated": "Outdated",
+    "error": "Couldn't load risk areas.",
+    "retry": "Retry",
+    "empty": "Generate the brief to see risk areas",
+    "none": "No specific risks identified",
+    "toggle": "Details for {title}",
+    "severity": {
+      "high": "High severity",
+      "medium": "Medium severity",
+      "low": "Low severity"
+    },
+    "kind": {
+      "auth_surface": "Auth surface",
+      "dependency": "Dependency",
+      "performance": "Performance",
+      "data_migration": "Data migration",
+      "api_contract": "API contract",
+      "config_secrets": "Config & secrets",
+      "test_coverage": "Test coverage",
+      "other": "Other"
+    }
+  },
+  "focus": {
+    "title": "Review focus",
+    "count": "{count, plural, one {# item} other {# items}}",
+    "empty": "Generate the brief to see where to start reading"
   }
 }

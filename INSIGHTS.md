@@ -413,6 +413,15 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-04 — an agent's `vitest run "client/src/app/repos/[repoId]/…"` is blocked by scope-guard
+
+**Cause:** `pathArgOk` in the scope-guard hook rejects any operand containing `[` or `]`, quoted or
+not, so Next.js dynamic-segment paths cannot be passed to vitest/rg/ls by subagents.
+**Signal:** a hook block on a test or read command whose only unusual token is `[repoId]` / `[number]`.
+**Fix:** select tests by name (`pnpm --dir client test -t "<describe or it name>"`) or by a
+bracket-free path fragment (`vitest run OverviewTab.brief`); read files with the Read tool.
+**Evidence:** `.claude/hooks/scope-guard.sh:742`
+
 ### 2026-10-03 — spec-lint rejects an `[e2e]` criterion in `specs/` as untagged and not EARS
 
 **Cause:** `acSentence` parses the tag with `^\[([a-z-]+)\]`, which has no digits, so `e2e`

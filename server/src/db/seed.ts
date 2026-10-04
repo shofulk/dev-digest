@@ -10,6 +10,7 @@ import {
 } from './seed-prompts.js';
 import { SEED_SKILLS } from './seed-skills.js';
 import { seedProjectContextDemo } from './seed-project-context.js';
+import { seedBriefDemo } from './seed-brief.js';
 import { loadConfig } from '../platform/config.js';
 
 /** Default provider/model for the built-in reviewer agents. */
@@ -330,6 +331,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       // fixtures (checkout files + the seeded run/trace); `seed()` itself,
       // used by the `*.it.test.ts` suite, stays untouched.
       await seedProjectContextDemo(handle.db, loadConfig().cloneDir);
+      // D10 — PR Brief demo row, inserted only here (never from `seed()`
+      // itself, so the `*.it.test.ts` suite still starts with no brief).
+      await seedBriefDemo(handle.db);
       console.log('✓ seeded', r);
       await handle.close();
       process.exit(0);

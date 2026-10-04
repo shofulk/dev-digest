@@ -10,7 +10,15 @@ import { usePrIntent, useDeriveIntent } from "@/lib/hooks/intent";
 import { confidenceTone, isLowConfidence, isMissingStatus, reasonKey, sourceIcon } from "./helpers";
 import { s } from "./styles";
 
-export function IntentCard({ prId }: { prId: string | null }) {
+export function IntentCard({
+  prId,
+  riskAreas,
+}: {
+  prId: string | null;
+  /** Risk areas section (AC-46) — rendered under In scope / Out of scope.
+   *  Its state comes only from the brief, never from the intent read. */
+  riskAreas?: React.ReactNode;
+}) {
   const t = useTranslations("prReview");
   const { data: intent, isLoading, isError, refetch } = usePrIntent(prId);
   const deriveIntent = useDeriveIntent(prId);
@@ -22,6 +30,7 @@ export function IntentCard({ prId }: { prId: string | null }) {
         <Skeleton height={18} />
         <div style={{ height: 8 }} />
         <Skeleton height={60} />
+        {riskAreas}
       </Card>
     );
   }
@@ -31,6 +40,7 @@ export function IntentCard({ prId }: { prId: string | null }) {
       <Card>
         <SectionLabel icon="Target">{t("intent.title")}</SectionLabel>
         <ErrorState title={t("intent.errorTitle")} onRetry={() => refetch()} />
+        {riskAreas}
       </Card>
     );
   }
@@ -47,6 +57,7 @@ export function IntentCard({ prId }: { prId: string | null }) {
           onCta={() => deriveIntent.mutate()}
           ctaLoading={deriveIntent.isPending}
         />
+        {riskAreas}
       </Card>
     );
   }
@@ -120,6 +131,8 @@ export function IntentCard({ prId }: { prId: string | null }) {
           </ul>
         </div>
       </div>
+
+      {riskAreas}
 
       {intent.sources.length > 0 && (
         <div>
