@@ -36,6 +36,19 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-03 — gating a TanStack Query loading view on `isLoading` renders the "ready" view for a disabled query (`repoId` null/undefined)
+
+`isLoading` is `isPending && isFetching` — a query disabled via `enabled: !!repoId` is
+never fetching, so `isLoading` stays `false` even while it has no data. A component that
+checks only `isLoading` before rendering rows therefore renders the data-shaped branch
+with `data` undefined: in `ContextDocPicker`, that meant every row the caller passed as
+`attached` showed the "Missing" badge and a live Detach button, and one click
+permanently dropped it (F12, round-3 fix list). Gate on `!repoId || query.isPending`
+instead — `isPending` is true whenever there is no data and no error, which also covers
+the disabled case. A mock that hand-rolls `{ isLoading, isError }` for a hook under test
+needs an `isPending` field added too, or the real bug reappears as a false-green test.
+**Evidence:** `client/src/components/context-docs/ContextDocPicker.tsx:57`
+
 ### 2026-09-26 — a test for an ordering function passed while the function used the wrong order, because both used the same order
 
 `orderBySmartDiff`'s original T8 built its `SmartDiff` fixture with each group's
@@ -133,6 +146,11 @@ boots — load one route before calling client work done.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-03 — a nav entry added straight to `vendor/ui/nav.ts` is a deliberate exception, not drift to clean up
+
+`client/src/vendor/ui/nav.ts` is mirrored from `@devdigest/ui` and is otherwise do-not-touch, but `NAV`/`SHORTCUTS` have no other home: they are plain data, not a primitive, so an entry added only here is lost the moment the mirror is re-vendored. The Conventions nav item (`d30ff64`) and the Project Context nav item (`key: "context"`, `gKey: "x"`) are both this deliberate exception. When the mirror is next re-vendored, re-add every such entry by hand instead of treating its presence in `nav.ts` as drift to clean up.
+**Evidence:** `client/src/vendor/ui/nav.ts:40-46,78`
 
 ### 2026-09-20 — an `EventSource` hook that resets its state inside the effect trips `react-hooks/set-state-in-effect`; reset during render instead
 
@@ -241,6 +259,18 @@ behind it, and it would have to be faked server-side.
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-03 — `@devdigest/ui` primitives like `IconBtn` are plain function components, not `forwardRef` — you cannot get a DOM ref from them directly
+
+A control that must hand focus back to itself after closing an overlay (AC-37's "Escape
+returns focus to the row's Preview button") needs a real `HTMLButtonElement` to call
+`.focus()` on. Passing `ref={...}` straight to `IconBtn` (or `Button`, `Checkbox`, etc. —
+none of them call `React.forwardRef`) is silently dropped; React only warns "Function
+components cannot be given refs" in the console, the build and tests stay green. Fix:
+wrap the primitive in a plain `<span ref={(el) => ...el?.querySelector("button")}>` and
+capture the native button that way, since none of these can be edited (`vendor/ui` is
+do-not-touch).
+**Evidence:** `client/src/components/context-docs/ContextDocPicker.tsx` (the `registerPreviewButton` wrapper), `client/src/vendor/ui/primitives/IconBtn.tsx:4`
 
 ### 2026-09-28 — `MonoLink` with `href` unset renders a `<button>`, not a link — passing it a possibly-`undefined` href for a "should be plain text" case silently ships a clickable no-op button
 

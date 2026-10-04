@@ -252,13 +252,45 @@ export const PrCommentInput = z.object({
 export type PrCommentInput = z.infer<typeof PrCommentInput>;
 
 // ---- Project Context ----
+/** Which search-root bucket a document was found under (`docTypeFor`). */
+export const ContextDocType = z.enum(['specs', 'docs', 'insights']);
+export type ContextDocType = z.infer<typeof ContextDocType>;
+
 export const SpecFile = z.object({
   path: z.string(),
   content: z.string().nullish(),
   size: z.number().int().nullish(),
   updated_at: z.string().nullish(),
+  type: ContextDocType.nullish(),
+  tokens: z.number().int().nullish(),
+  used_by: z.number().int().nullish(),
 });
 export type SpecFile = z.infer<typeof SpecFile>;
+
+/** `GET /repos/:id/context` — every `.md` document found under the search roots. */
+export const ContextDocList = z.object({
+  files: z.array(SpecFile),
+  roots: z.array(z.string()),
+  count: z.number().int(),
+  total_tokens: z.number().int(),
+  scanned_at: z.string(),
+  truncated: z.boolean(),
+});
+export type ContextDocList = z.infer<typeof ContextDocList>;
+
+/** `GET /repos/:id/context/file?path=` — one document's content. */
+export const ContextDocContent = z.object({
+  path: z.string(),
+  content: z.string(),
+  tokens: z.number().int().nullable(),
+});
+export type ContextDocContent = z.infer<typeof ContextDocContent>;
+
+/** `PUT /agents/:id/context-docs` and `PUT /skills/:id/context-docs` — request body and response. */
+export const ContextDocsUpdate = z.object({
+  context_docs: z.array(z.string().min(1).max(512)).max(100),
+});
+export type ContextDocsUpdate = z.infer<typeof ContextDocsUpdate>;
 
 export const IndexStatus = z.object({
   status: z.enum(['idle', 'cloning', 'parsing', 'embedding', 'done', 'error']),

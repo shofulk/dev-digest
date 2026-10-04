@@ -4,9 +4,10 @@ import { ConfigTab, type ConfigTabProps } from "./_components/ConfigTab";
 import { PreviewTab, type PreviewTabProps } from "./_components/PreviewTab";
 import { StatsTab } from "./_components/StatsTab";
 import { VersionsTab, type VersionsTabProps } from "./_components/VersionsTab";
+import { ContextTab } from "./_components/ContextTab";
 
 /** Tab keys in display order. Adding the (out-of-scope) evals tab later is one entry here. */
-export const SKILL_TABS = ["config", "preview", "stats", "versions"] as const;
+export const SKILL_TABS = ["config", "preview", "context", "stats", "versions"] as const;
 export type SkillTab = (typeof SKILL_TABS)[number];
 
 export const DEFAULT_SKILL_TAB: SkillTab = "config";
@@ -15,6 +16,7 @@ export const DEFAULT_SKILL_TAB: SkillTab = "config";
 export const TAB_DEFS: readonly { key: SkillTab; labelKey: string; icon: IconName }[] = [
   { key: "config", labelKey: "editor.tabs.config", icon: "Settings" },
   { key: "preview", labelKey: "editor.tabs.preview", icon: "Eye" },
+  { key: "context", labelKey: "editor.tabs.context", icon: "FileText" },
   { key: "stats", labelKey: "editor.tabs.stats", icon: "BarChart" },
   { key: "versions", labelKey: "editor.tabs.versions", icon: "History" },
 ];
@@ -26,6 +28,7 @@ export type EditorTabProps = ConfigTabProps & PreviewTabProps & VersionsTabProps
 export const TAB_COMPONENTS: Record<SkillTab, React.ComponentType<EditorTabProps>> = {
   config: ConfigTab,
   preview: PreviewTab,
+  context: ContextTab,
   stats: StatsTab,
   versions: VersionsTab,
 };

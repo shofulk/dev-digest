@@ -9,6 +9,8 @@ import {
   TEST_QUALITY_REVIEWER_PROMPT,
 } from './seed-prompts.js';
 import { SEED_SKILLS } from './seed-skills.js';
+import { seedProjectContextDemo } from './seed-project-context.js';
+import { loadConfig } from '../platform/config.js';
 
 /** Default provider/model for the built-in reviewer agents. */
 const DEFAULT_PROVIDER = 'openrouter' as const;
@@ -324,6 +326,10 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const handle = createDb(url);
   seed(handle.db)
     .then(async (r) => {
+      // D10 — only the CLI entrypoint writes the Project Context demo
+      // fixtures (checkout files + the seeded run/trace); `seed()` itself,
+      // used by the `*.it.test.ts` suite, stays untouched.
+      await seedProjectContextDemo(handle.db, loadConfig().cloneDir);
       console.log('✓ seeded', r);
       await handle.close();
       process.exit(0);

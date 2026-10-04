@@ -31,8 +31,13 @@ import type {
   AuthWorkspace,
   SecretsProvider,
   SecretKey,
+  ProjectDocsSource,
+  ProjectDocEntry,
+  ProjectDocRead,
+  ProjectDocsListResult,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
+import picomatch from 'picomatch';
 
 /**
  * Deterministic MOCK adapters for tests/dev — NO real network. Each mirrors the
@@ -361,5 +366,70 @@ export class MockSecretsProvider implements SecretsProvider {
   constructor(private secrets: Partial<Record<string, string>> = {}) {}
   async get(key: SecretKey): Promise<string | undefined> {
     return this.secrets[key as string];
+  }
+}
+
+// ---------- Mock ProjectDocsSource (Project Context) ----------
+/**
+ * Full in-memory `ProjectDocsSource` — no filesystem, deterministic, for
+ * hermetic tests. Follows the same D6/D2 semantics as the real adapter:
+ * `..`/absolute paths and paths outside `roots` are `invalid_path`; an unknown
+ * path is `missing`; over `maxBytes` is `too_large`.
+ */
+export class MockProjectDocsSource implements ProjectDocsSource {
+  private files: Map<string, { content: string; size: number; mtimeMs: number }>;
+  /** When set, `list` answers `{ status: 'root_missing' }` (AC-35), ignoring `files`. */
+  private rootMissing: boolean;
+
+  constructor(files: Record<string, string> = {}, opts: { rootMissing?: boolean } = {}) {
+    this.files = new Map(
+      Object.entries(files).map(([path, content]) => [
+        path,
+        { content, size: Buffer.byteLength(content, 'utf8'), mtimeMs: 0 },
+      ]),
+    );
+    this.rootMissing = opts.rootMissing ?? false;
+  }
+
+  matchesRoots(relPath: string, roots: string[]): boolean {
+    // `dot: false` matches the real adapter (`adapters/project-docs/index.ts`)
+    // — dotfiles/dot-directories (`.github/…`, `docs/.hidden.md`) never match
+    // a `**` segment, same as the real `picomatch` walk.
+    return roots.some((pattern) => picomatch(pattern, { dot: false })(relPath));
+  }
+
+  private isSyntacticallyInvalid(relPath: string): boolean {
+    return (
+      relPath.startsWith('/') ||
+      /^[A-Za-z]:/.test(relPath) ||
+      relPath.includes('\\') ||
+      relPath.split('/').includes('..')
+    );
+  }
+
+  async list(_root: string, roots: string[], maxFiles: number): Promise<ProjectDocsListResult> {
+    if (this.rootMissing) return { status: 'root_missing' };
+    const matched = [...this.files.entries()]
+      .filter(([path]) => this.matchesRoots(path, roots))
+      .sort(([a], [b]) => a.localeCompare(b));
+    const truncated = matched.length > maxFiles;
+    const files: ProjectDocEntry[] = matched
+      .slice(0, maxFiles)
+      .map(([path, f]) => ({ path, size: f.size, mtimeMs: f.mtimeMs }));
+    return { status: 'ok', files, truncated };
+  }
+
+  async read(
+    _root: string,
+    relPath: string,
+    opts: { roots: string[]; maxBytes: number },
+  ): Promise<ProjectDocRead> {
+    if (this.isSyntacticallyInvalid(relPath) || !this.matchesRoots(relPath, opts.roots)) {
+      return { status: 'invalid_path' };
+    }
+    const file = this.files.get(relPath);
+    if (!file) return { status: 'missing' };
+    if (file.size > opts.maxBytes) return { status: 'too_large', size: file.size };
+    return { status: 'ok', content: file.content, size: file.size };
   }
 }
