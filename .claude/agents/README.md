@@ -31,7 +31,7 @@ like any other unmet item — see [*The fix loop*](#flow).
 ```
 request ─► spec-creator (⇄ researcher ×N) ─► .spec / specs (approved) ─► implementation-planner ─► docs/plans/<feature>.plan.md
      ▲                                                                        │
-     │ Clarification needed: requirements + exec mode (→ AskUserQuestion)    ▼   one lane = one fresh agent, ≤ 6 steps,
+     │ Plan blocked: spec gap → spec-creator · exec mode → user              ▼   one lane = one fresh agent, ≤ 6 steps,
      │                                                                        │   dispatched with its Lane brief (lane-brief.mjs)
      │                                        L1 implementer — interface skeleton (contracts, signatures, 501 routes)
      │                                                                        │
@@ -70,6 +70,8 @@ The retro/analysis lifecycle runs alongside the loop above, on the user's own sc
 retro-writer ─► .harness/retros/*.retro.md ─(user launches)─► harness-analyst ─►
   .harness/analysis/<date>.md + Decision JSON ─► AskUserQuestion ─► main session:
   record ## User decision · apply (direct | implementation-planner → implementer) · rm consumed retro files
+
+/sdd-run Phase 6 ─► docs/retros/<feature>.md + one row in docs/retros/ledger.md (committed, read by harness-analyst)
 ```
 
 **`/sdd-run`** (`.claude/skills/sdd-run/`) runs this flow from the first lane to the
@@ -114,13 +116,16 @@ architecture-reviewer, which cite it instead of re-running typecheck, lint, test
 themselves — `scope-guard.sh`'s `bash checks` profile does not admit it — so the freshness
 line is the main session's to give, and a fix round makes it stale.
 
-**Requirements and execution mode.** The implementation-planner does not write specs: it
-plans only from requirements that already exist — `<pkg>/.spec/<feature>.spec.md` or
-numbered acceptance criteria in the request. Before planning it reviews them against the
-code and returns *Clarification needed* with every blocking requirement question plus the
-execution-mode question (`multi-agent` or `single-agent`, with its recommendation) in one
-JSON block; the main session asks once and re-invokes it with `Answers:` and
-`Execution mode: <mode>`. The plan records the mode in its header and assigns every step
+**Requirements and execution mode.** Clarifying requirements is `spec-creator`'s job,
+not the planner's: an open point stays in the draft spec as `[NEEDS CLARIFICATION: Q-n]`
+next to a `Q-n (blocking)`, and `spec-lint` keeps the spec from being approved while one is
+left. The implementation-planner plans only from settled requirements — an `approved` spec
+with no marker and no blocking question, or numbered acceptance criteria in the request —
+plus the `Execution mode: multi-agent | single-agent` line the main session got from the
+user (`AskUserQuestion`) before invoking it. It no longer reviews requirements or asks
+questions: a gap, a contradiction or a missing mode returns *Plan blocked* with one route
+per row (`spec-creator` for the spec, the user for criteria or the mode, with the planner's
+recommended mode). The plan records the mode in its header and assigns every step
 to a lane in its `## Execution` table: in single-agent mode the main session dispatches the
 lanes one after another; in multi-agent mode it dispatches them in parallel only where the
 table marks them parallel (disjoint files).
@@ -186,6 +191,15 @@ retro's `Retro:` feed-forward line, plus `Sign-off:` when there is one, goes to 
 implementation-planner — never the whole retro file. The retro file itself is local, gitignored raw
 material for harness improvement, not a feature doc: it lives at
 `.harness/retros/<feature>.retro.md`.
+
+**Run retro and ledger.** The per-round retro files are local and short-lived; what a whole
+run taught is committed. At the end of every `/sdd-run` (Phase 6) the main session writes
+`docs/retros/<feature>.md` — outcome, what went well, what went wrong by class, harness
+changes taken or pending — and appends one row to `docs/retros/ledger.md`: lanes, fix
+rounds against the budget, the first and final verifier runs, subagent runs and tokens from
+`harness-usage.mjs`, what stayed unverified. One row per run makes runs comparable, so an
+applied harness change shows up (or not) in the next row. Both cite committed evidence
+only; `harness-analyst` reads them alongside the retro files.
 
 **Harness analysis.** At any time, the user can launch `harness-analyst` manually — never
 automatically, never inside a fix loop — to read every `.harness/retros/*.retro.md` and
@@ -307,8 +321,8 @@ happens inside implementation.
 | Agent | Input | Output |
 |-------|-------|--------|
 | researcher | A question with type, scope and a done criterion | *Repo Research Report* and/or *External Research Report* — findings with confidence, evidence (`path:line`, sha, URL), *Not found* table, **Answer status** line |
-| spec-creator | Feature request + design sources (image paths, Figma URL, live-app URL, code paths), `User language:`, then `Research:` / `Answers:` per round, finally `Approval: yes` for a draft path | *Research needed* (table of researcher questions, run in parallel) — or *Clarification needed* (findings table + `AskUserQuestion` JSON) — or a spec file (`<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md`, `Status: draft`, lint-clean) and a *Spec report* — counts, decisions, self-check table, open questions, proposed edits outside scope |
-| implementation-planner | Feature request + `<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md` (or numbered acceptance criteria), `Execution mode: multi-agent \| single-agent` and `Answers:` once asked — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification, plus the `Retro:` line and `Sign-off:` when there is one. The retro fallback is `.harness/retros/<feature>.retro.md`; a missing file means no retro signal, not a block | *Development Plan* — Goal, AC (copied, never authored), Requirements review, Recommendations, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills and lane per step, Execution (lanes → agents, dependencies, parallelism), Test plan, Review hand-off, `**Execution mode:**`, `**Revision:**` + `## Revisions`, **Plan status** — or *Clarification needed* (requirements review, recommendations and the `AskUserQuestion` JSON, always including the execution-mode question until it is answered). Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
+| spec-creator | Feature request + design sources (image paths, Figma URL, live-app URL, code paths), `User language:`, then `Research:` / `Answers:` per round, finally `Approval: yes` for a draft path | *Research needed* (table of researcher questions, run in parallel) — or *Clarification needed* (findings table + `AskUserQuestion` JSON) — or a spec file (`<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md`, `Status: draft`, lint-clean, every open point marked `[NEEDS CLARIFICATION: Q-n]` in place) and a *Spec report* — counts, marker count, decisions, self-check table, open questions, proposed edits outside scope |
+| implementation-planner | Feature request + `<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md` with `Status: approved` and no `[NEEDS CLARIFICATION` marker (or numbered acceptance criteria), and `Execution mode: multi-agent \| single-agent` — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification, plus the `Retro:` line and `Sign-off:` when there is one. The retro fallback is `.harness/retros/<feature>.retro.md`; a missing file means no retro signal, not a block | *Development Plan* — Goal, AC (copied, never authored), Recommendations, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills and lane per step, Execution (lanes → agents, dependencies, parallelism), Test plan, Review hand-off, `**Execution mode:**`, `**Revision:**` + `## Revisions`, **Plan status** — or *Plan blocked* (table of blocking cases, each with its route: spec-creator or the user; a recommended mode when the mode is missing). Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
 | implementer | Path to an approved `docs/plans/<feature>.plan.md` (`Plan status: Ready`) | Working-tree changes (uncommitted), appended `INSIGHTS.md` entries, *Implementation Report* — steps, deviations, verification table, skipped checks, self-check, reviewer hand-off, open issues |
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
@@ -464,10 +478,11 @@ and reviewers).
   *Limits* naming the command, never a retry with a different spelling; the main session
   re-invokes it once the cwd is right.
 
-- **The implementation-planner returns *Clarification needed*.** Answer the questions (the main session
-  passes the JSON to `AskUserQuestion`) and re-invoke it with `Answers:` and
-  `Execution mode: <mode>`. When the requirements are missing, run spec-creator first (or
-  give numbered acceptance criteria) — the implementation-planner never drafts a spec itself.
+- **The implementation-planner returns *Plan blocked*.** Follow each row's route: a spec
+  problem goes to spec-creator (finish the draft, or a new spec with `Supersedes:` when the
+  spec is approved), a missing mode or criteria to the user via `AskUserQuestion` (the
+  planner's recommended mode first). Then re-invoke the planner with the settled spec and
+  `Execution mode: <mode>` — it never drafts or clarifies a spec itself.
 - **spec-creator returns *Clarification needed*.** Pass the JSON to `AskUserQuestion` (at
   most 4 questions per dialog — split into several, in the given order) and re-invoke it
   with `Answers:`. After the user read the draft and said yes, re-invoke it with

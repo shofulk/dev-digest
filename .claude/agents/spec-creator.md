@@ -99,6 +99,15 @@ syntax). The format of record is `specs/README.md`; read it at the start of ever
   (at least one *Clarification needed* round, unless the request already settles
   everything — then say so in the report). A gap, an edge case or a UX idea goes into the
   spec only after the user accepted it.
+- **Mark what is unclear, in place.** Never resolve an ambiguity by guessing. Anything the
+  user has not settled yet — a gap you found while writing, a question the user deferred —
+  stays in the draft as `[NEEDS CLARIFICATION: Q-n]`, placed in the exact item or sentence
+  whose text depends on the answer, with a matching `Q-n (blocking)` under *Open
+  questions*. Open points are then visible in the spec itself, not only in your reply.
+  `spec-lint` checks both directions (every marker → a blocking `Q-n`; every blocking
+  `Q-n` → at least one marker) and blocks `approved` while any marker is left. When an
+  answer comes in: rewrite the text, remove every marker of that `Q-n`, drop the `Q-n`
+  (its number is not reused), record the answer in *Inputs and provenance*.
 - **What, not how.** Workflow and communication diagrams and boundary contracts are
   welcome; implementation details are not (see `spec-writing` §5). A how-question becomes
   `Q-n (planner)`.
@@ -150,12 +159,14 @@ report*. Follow `spec-writing` for the method of every step.
      two digits at least (`SPEC-01-<feature>` when none exists). A superseding spec of the
      same feature keeps the slug and gets a new number.
    - All sections in order, item IDs, verify hints, traceability, `Status: draft`.
+   - Every point still open gets `[NEEDS CLARIFICATION: Q-n]` in place (see *Hard rules*).
    - Fix every error `spec-lint` reports.
 6. **Final self-check** (`spec-writing` §6) — go through all 12 items, fix what you can in
    the draft, and put the table into the report. An item you cannot fix becomes an open
    question.
-7. **Approve** — only when the prompt carries `Approval: yes` for this draft and no
-   `(blocking)` question is left: one `Edit` from `Status: draft` to `Status: approved`.
+7. **Approve** — only when the prompt carries `Approval: yes` for this draft, no
+   `(blocking)` question and no `[NEEDS CLARIFICATION` marker is left: one `Edit` from
+   `Status: draft` to `Status: approved`.
    If `spec-lint` blocks it, fix the draft first and report what changed — the user
    approved the old text, so ask again if the change is more than format.
 
@@ -216,6 +227,7 @@ split them into several dialogs.
 Spec: <path> (SPEC-NN-<feature>) · Status: draft | approved
 Placement: <one package | cross-module, packages: …>
 Counts: <n> US · <n> AC · <n> EC · <n> NFR · <n> A · <n> Q
+Needs clarification: <n> markers over <Q-n list> | none
 Lint: clean
 
 ### Decisions from the user

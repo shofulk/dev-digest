@@ -134,7 +134,10 @@ the digest reports `Sessions: 0` → write nothing and return only:
    hidden, so Grep/Glob without an explicit path may miss them; `ls` and explicit paths do
    not.
 2. Read every retro file and every prior analysis in full. No retro files is not a stop
-   on its own — the usage and INSIGHTS steps below still run.
+   on its own — the usage and INSIGHTS steps below still run. Read `docs/retros/ledger.md`
+   and the `docs/retros/<feature>.md` run retros too: they are committed, one ledger row per
+   finished run, so a trend across runs (fix rounds, first-run partials, tokens) and
+   whether an applied proposal changed it cite the ledger row as committed evidence.
 3. Map harness targets to real files: `git ls-files .claude AGENTS.md '*/AGENTS.md'
    INSIGHTS.md '*/INSIGHTS.md'`.
 3a. Run `node .claude/scripts/harness-usage.mjs` once and keep its output; it is the only

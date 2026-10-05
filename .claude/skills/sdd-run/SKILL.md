@@ -141,8 +141,14 @@ fix list, so the next reviewer round sees why.
 4. `engineering-insights` wrap-up for the touched packages, and the graduation candidates
    retro-writer listed.
 5. Write `summary.md` and print it short: lanes, rounds, findings fixed / rejected /
-   accepted, open minors, what is not verified, the PR draft path. Then ask whether to
-   commit and open the PR — never do either unasked.
+   accepted, open minors, what is not verified, the PR draft path.
+6. **Run retro and ledger row.** Run `node .claude/scripts/harness-usage.mjs` once; write
+   `docs/retros/<feature>.md` (outcome table, what went well, what went wrong by class,
+   harness changes taken or pending, notes for the next run — format of
+   `docs/retros/pr-brief.md`) and append one row to `docs/retros/ledger.md` per its header.
+   Both are committed, so cite only committed evidence (plan, verification, shas, the
+   digest with its run date), never a `.harness/` path. Then ask whether to commit and open
+   the PR — never do either unasked.
 
 ## Stop rules
 
