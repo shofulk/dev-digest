@@ -3,7 +3,9 @@ import type { CSSProperties } from "react";
 export const s = {
   header: {
     display: "flex",
-    alignItems: "center",
+    // `SectionLabel` carries its own bottom margin, so `center` would sit the
+    // count badge below the title; align on the text baseline instead.
+    alignItems: "baseline",
     gap: 10,
     marginBottom: 14,
   } satisfies CSSProperties,
