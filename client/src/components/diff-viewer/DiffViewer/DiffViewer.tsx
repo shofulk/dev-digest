@@ -22,17 +22,25 @@ export function DiffViewer({
   commenting,
   groups,
   findings,
+  focus,
 }: {
   files: PrFile[];
   commenting?: DiffCommentApi;
   /** Smart order (AC1) when set and non-empty; flat GitHub order otherwise. */
   groups?: SmartDiffFileGroup[] | null;
   findings?: DiffFindingApi;
+  /** Files changed tab `?file=&line=` target (D4, AC-58). */
+  focus?: { path: string; line: number | null } | null;
 }) {
   const t = useTranslations("shell");
   if (!files || files.length === 0) {
     return <div style={s.empty}>{t("diffViewer.noChangedFiles")}</div>;
   }
+
+  // D4 — the group containing the target path gets the focus key so it
+  // force-opens; the matching FileCard gets the focus itself (scroll +
+  // highlight). Every other group/card gets `undefined`/`null`.
+  const focusKey = focus ? `${focus.path}:${focus.line ?? ""}` : null;
 
   if (groups && groups.length > 0) {
     return (
@@ -41,10 +49,23 @@ export function DiffViewer({
           const findingFilesCount = findings
             ? g.files.filter((f) => findingsForFile(findings.findings, f.path).some(isOpenFinding)).length
             : 0;
+          const groupFocusKey = focus && g.files.some((f) => f.path === focus.path) ? focusKey : null;
           return (
-            <FileGroup key={g.role} role={g.role} filesCount={g.files.length} findingFilesCount={findingFilesCount}>
+            <FileGroup
+              key={g.role}
+              role={g.role}
+              filesCount={g.files.length}
+              findingFilesCount={findingFilesCount}
+              focusKey={groupFocusKey}
+            >
               {g.files.map((f) => (
-                <FileCard key={f.path} file={f} commenting={commenting} findings={findings} />
+                <FileCard
+                  key={f.path}
+                  file={f}
+                  commenting={commenting}
+                  findings={findings}
+                  focus={focus && f.path === focus.path ? { line: focus.line } : null}
+                />
               ))}
             </FileGroup>
           );
@@ -56,7 +77,13 @@ export function DiffViewer({
   return (
     <div style={s.list}>
       {files.map((f) => (
-        <FileCard key={f.path} file={f} commenting={commenting} findings={findings} />
+        <FileCard
+          key={f.path}
+          file={f}
+          commenting={commenting}
+          findings={findings}
+          focus={focus && f.path === focus.path ? { line: focus.line } : null}
+        />
       ))}
     </div>
   );

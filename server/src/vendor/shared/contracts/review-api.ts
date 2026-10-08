@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
-import { BlastRadius, Intent, IntentConfidence, IntentSource, SmartDiff } from './brief.js';
+import { BlastRadius, BriefPhase, Intent, IntentConfidence, IntentSource, PrBrief, SmartDiff } from './brief.js';
 
 /**
  * A2 — Review-Core API surface contracts. These extend the core
@@ -85,3 +85,33 @@ export type SmartDiffResponse = z.infer<typeof SmartDiffResponse>;
 /** Blast-radius response for a PR (the BlastRadius). */
 export const BlastRadiusResponse = BlastRadius;
 export type BlastRadiusResponse = z.infer<typeof BlastRadiusResponse>;
+
+// ---- PR Brief API ----
+
+/** The job currently generating a brief for a PR (D2). */
+export const PrBriefJob = z.object({ id: z.string(), phase: BriefPhase });
+export type PrBriefJob = z.infer<typeof PrBriefJob>;
+
+/** Response of `GET /pulls/:id/brief` — no model call, ever (AC-26). */
+export const PrBriefResponse = z.object({
+  brief: PrBrief.nullable(),
+  current_head_sha: z.string(),
+  outdated: z.boolean(),
+  job: PrBriefJob.nullable(),
+});
+export type PrBriefResponse = z.infer<typeof PrBriefResponse>;
+
+/** Body of `POST /pulls/:id/brief/generate`. */
+export const GenerateBriefBody = z.object({ force: z.boolean().optional() }).default({});
+export type GenerateBriefBody = z.infer<typeof GenerateBriefBody>;
+
+/** A generation job was started (or is already running) in the background. */
+export const GenerateBriefAccepted = z.object({ job_id: z.string(), reused: z.boolean() });
+export type GenerateBriefAccepted = z.infer<typeof GenerateBriefAccepted>;
+
+/** No generation was needed: the stored brief already describes the PR's head. */
+export const GenerateBriefCurrent = z.object({ brief: PrBrief });
+export type GenerateBriefCurrent = z.infer<typeof GenerateBriefCurrent>;
+
+export const GenerateBriefResponse = z.union([GenerateBriefAccepted, GenerateBriefCurrent]);
+export type GenerateBriefResponse = z.infer<typeof GenerateBriefResponse>;

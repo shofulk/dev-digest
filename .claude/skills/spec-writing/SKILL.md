@@ -122,6 +122,12 @@ Ask the questions that change scope first.
 - **Assumptions** — every belief you did not verify, with its risk if wrong.
 - **Traceability** — one row per `AC-n`: stories, edge cases, NFRs, verify. A user story
   without a criterion, or a criterion nobody needs, is a smell — fix or ask.
+- **Unsettled text** — never guess to fill a gap. Write the best current reading, put
+  `[NEEDS CLARIFICATION: Q-n]` right where it depends on the open answer, and add the
+  `Q-n (blocking)` item. Each blocking question has at least one marker; each marker
+  cites a blocking question (the lint checks both). A reader of the draft then sees every
+  open point in place. On the answer: rewrite the text, remove the markers, drop the
+  `Q-n`, record the answer in *Inputs and provenance*.
 
 ## 6. Final self-check (before returning a draft or approving)
 
@@ -139,7 +145,9 @@ cannot see any of it. Report the result as a table (item → ok / fixed / open).
 7. Diagrams match the criteria and the contracts table; no node the text does not know.
 8. *Untrusted inputs* lists every outside value the feature reads and the rule for it.
 9. NFR numbers are realistic and sourced (or listed as assumptions).
-10. Every open question is classified; no `(blocking)` one is left before `approved`.
+10. Every open question is classified; every `(blocking)` one is marked in place with
+    `[NEEDS CLARIFICATION: Q-n]`; no `(blocking)` question and no marker is left before
+    `approved`.
 11. Terms are the same everywhere (one name per concept), and the text is B1.
 12. The Spec ID number is new, its slug equals the file name, and `Supersedes:` points to
     the right spec.

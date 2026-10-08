@@ -1,0 +1,17 @@
+{
+  "name": "Review focus item opens the Files changed tab at the cited file",
+  "description": "From PR #482's Overview tab, confirm the seeded PR Brief's Review focus card renders its first item and that activating it (AC-57) navigates to the Files changed tab with ?tab=diff&file=<path> and shows that file's card (AC-58, AC-71). The seeded first focus item has no line, so no &line= param is asserted. The item sits below the fold inside the app's nested `<main>` scroll container (client/src/vendor/ui/shell/AppFrame.tsx), which agent-browser's viewport-coordinate `click`/`focus`/`scrollintoview` cannot reach — so this flow sets a tall viewport right after load to bring the item on-screen, then clicks it by role (`find role button click`) rather than keyboard-activating a focused element (`find … focus` is not a valid agent-browser subaction). Read-only seeded data (seedBriefDemo, D10) — no model call. Assumes a freshly-seeded DB with the full seed CLI run (see e2e/README.md and e2e/INSIGHTS.md: seedBriefDemo only runs from seed.ts's CLI entrypoint, not from seed()).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["set", "viewport", "1280", "1600"], "label": "the Review focus card sits below the fold inside the nested <main> scroll container, which agent-browser cannot scroll into view; a tall viewport brings it on-screen instead" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["wait", "--text", "REVIEW FOCUS"], "label": "the Review focus card renders on the Overview tab (SectionLabel is CSS-uppercased; wait --text matches rendered text)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "src/middleware/ratelimit.ts — Start here: the new token-bucket limiter that every public route now depends on"], "label": "AC-57: click the first seeded Review focus item (now on-screen thanks to the tall viewport)" },
+    { "cmd": ["wait", "--url", "tab=diff"], "label": "AC-57: the URL switches to the Files changed tab" },
+    { "cmd": ["wait", "--url", "file=src"], "label": "AC-57: the URL carries the cited file path" },
+    { "cmd": ["wait", "--text", "src/middleware/ratelimit.ts"], "label": "AC-58/AC-71: the Files changed tab shows the file card of the cited item" }
+  ]
+}

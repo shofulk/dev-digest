@@ -93,7 +93,11 @@ Run every collected `manual acceptance:` line the session can run: reuse a healt
 (Phase 0 step 4), never start a second one on top of it. With `design:` inputs and a stack
 up, open the touched pages with the browser tools and compare them with the designs —
 missing states, copy, layout. Record each result as the command or action plus its key
-output line in `NN-manual-acceptance.md`. What cannot be run stays *cannot verify*.
+output line in `NN-manual-acceptance.md`. What the session could run with a stack, Docker
+or a probe but did not stays *cannot verify*. An item only the user or an absent browser
+channel can run (visual check, axe/keyboard, an e2e flow with no `agent-browser`) is written
+as `awaiting manual: <item> — <what to run> — <why it could not run>`; plan-verifier counts
+it separately, and it reaches the user through `summary.md`.
 
 ## Phase 4 — Review round
 
@@ -137,8 +141,14 @@ fix list, so the next reviewer round sees why.
 4. `engineering-insights` wrap-up for the touched packages, and the graduation candidates
    retro-writer listed.
 5. Write `summary.md` and print it short: lanes, rounds, findings fixed / rejected /
-   accepted, open minors, what is not verified, the PR draft path. Then ask whether to
-   commit and open the PR — never do either unasked.
+   accepted, open minors, what is not verified, the PR draft path.
+6. **Run retro and ledger row.** Run `node .claude/scripts/harness-usage.mjs` once; write
+   `docs/retros/<feature>.md` (outcome table, what went well, what went wrong by class,
+   harness changes taken or pending, notes for the next run — format of
+   `docs/retros/pr-brief.md`) and append one row to `docs/retros/ledger.md` per its header.
+   Both are committed, so cite only committed evidence (plan, verification, shas, the
+   digest with its run date), never a `.harness/` path. Then ask whether to commit and open
+   the PR — never do either unasked.
 
 ## Stop rules
 

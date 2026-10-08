@@ -36,6 +36,25 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
+`brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
+finding title/file, file headers) and never counted the system prompt, the injection guard, the
+`## <heading>` lines or any `<untrusted source="…">…</untrusted>` wrapper — all of which
+`renderBriefMessages` adds afterwards. The fix passes `renderBriefMessages` itself into
+`fitToBudget` as a `render` callback and measures tokens on its actual output, which is strictly
+more accurate — but a frozen red test (`brief-facts.test.ts`'s two AC-14 cases) was written
+against the OLD, under-counting math: its fixture sizes were tuned so exactly one document/one
+severity class needed dropping under the raw-field total, and the corrected (larger) total now
+needs more dropped to fit the same 8,000-token budget. Fixing a real budget-accuracy bug can make
+a frozen test fail even though nothing about the SPEC changed — the test's specific "which item
+survives" assertions were implementation-coupled, not requirement-coupled. The same applies to
+`SEVERITY_DROP_ORDER`: production findings carry `Severity` (`CRITICAL`/`WARNING`/`SUGGESTION`,
+`contracts/findings.ts`), never `low`/`medium`/`high` (that vocabulary belongs to
+`PrBriefDraft.risks[].severity`, the MODEL's own output schema) — a frozen test using
+`low`/`medium`/`high` for a *finding* fixture was exercising a vocabulary no real data ever
+produces.
+**Evidence:** server/src/modules/brief/facts.ts (`fitToBudget`, `SEVERITY_DROP_ORDER`), server/test/brief-facts.test.ts:330-394, server/test/brief-fixes.test.ts
+
 ### 2026-10-03 - a containment check alone lets an in-checkout symlink read the clone's `.git/config` (GitHub token)
 Every clone stores the token in its remote URL (`withGitHubToken`), so `.git/config` inside the
 checkout is a secret. `realpath` containment passes a symlink like `docs/x.md → ../.git/config`.
@@ -467,6 +486,20 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-04 — `MockLLMProvider.completeStructured` hardcodes `attempts: 1` and never throws — a test asserting retries or a model failure needs its own fake provider
+
+`server/src/adapters/mocks.ts:98-114`'s `MockLLMProvider.completeStructured` always resolves
+with `attempts: 1` from a fixed fixture and has no path that rejects. A test for AC-12
+(schema-repair attempts counted into the one request) or AC-32/AC-65 (timeout/failure ends
+the job `failed`, no retry) cannot express either case through `MockLLMProvider` — asserting
+`attempts: 2` or a thrown error against it just asserts the mock's own constant back at
+itself. `server/test/brief-model.test.ts`'s `fakeLlm()` is the pattern: a small hand-rolled
+object satisfying `LLMProvider`, with `completeStructured` scripted per test (`impl: (req) =>
+Promise<...>`, can resolve with any `attempts` or `throw`), while `listModels`/`complete`/
+`embed` stay stubs. Reach for this whenever a test's assertion is ABOUT what
+`completeStructured` returns or throws, not just about what request it was called with.
+**Evidence:** server/src/adapters/mocks.ts:98-114, server/test/brief-model.test.ts:84-98
+
 ### 2026-09-26 — `tsc --noEmit -p tsconfig.json` never sees `test/*.ts`, so a type error injected only into a test file is invisible to `pnpm typecheck`
 
 `server/tsconfig.json` is `"include": ["src/**/*.ts"]` — `test/` is out of scope for the
@@ -559,6 +592,12 @@ skill.
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-04 — an `*.it.test.ts` that destructures `job_id` from a non-202 response and then awaits `runBus.onDone(job_id, …)` hangs for the full 120s test timeout
+**Cause:** a detached-job route (`POST /pulls/:id/brief/generate`) can answer 202 `{job_id, reused}` or, on a different branch, something else entirely (409/500/200 `{brief}`) with no `job_id` field — `res.json().job_id` is then `undefined`, and `bus.onDone(undefined, cb)` waits on a run id nothing will ever call `complete()` on. The test then runs to `vitest.config.ts`'s `testTimeout: 120_000` before failing, instead of failing fast on the real assertion.
+**Signal:** a brief/job test takes ~120s to fail (or times out) instead of failing in milliseconds on a wrong status code; the stack trace points at the `onDone` `await`, not at the response assertion.
+**Fix:** assert `res.statusCode` (and, for a 202, that `job_id` is a string) BEFORE destructuring and awaiting `onDone` — every `brief.it.test.ts` case does `expect(res.statusCode).toBe(202)` first.
+**Evidence:** server/test/brief.it.test.ts:117 (AC-64/AC-62 cases assert the status and return before touching any job id), server/vitest.config.ts:16
 
 ### 2026-10-04 — `server/src/adapters/mocks.ts` and `db:seed` both broke a CI job that installs fewer deps than `server/`'s own
 **Cause:** two independent CI jobs resolve `server/src/**` modules with a lighter dependency set than `pnpm --dir server install` gives you locally: (1) `reviewer-core.yml`'s `tests` job runs `npm ci` inside `reviewer-core/` only, and `reviewer-core/test/run.test.ts` / `run-project-context.test.ts` import `../../server/src/adapters/mocks.ts` directly — any runtime (non-type, non-relative) import added to `mocks.ts` must resolve from `reviewer-core/node_modules`, which it never does; (2) `e2e-web.yml`'s `browser flows` job runs `pnpm db:seed` in `server/` BEFORE its separate "Install reviewer-core deps" step, so anything `db:seed` imports that transitively pulls in `@devdigest/reviewer-core` (its `structured.ts` imports `openai`) crashes with `ERR_MODULE_NOT_FOUND` mid-seed.

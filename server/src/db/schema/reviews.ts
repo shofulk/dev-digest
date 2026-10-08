@@ -88,4 +88,13 @@ export const prBrief = pgTable('pr_brief', {
     .primaryKey()
     .references(() => pullRequests.id, { onDelete: 'cascade' }),
   json: jsonb('json').notNull(),
+  /** Head SHA this brief describes — compared to the PR's CURRENT head_sha at
+   *  read time to derive `outdated`, never trusted as a stored boolean (D1). */
+  headSha: text('head_sha'),
+  /** Provider/model that produced this brief, stored as `<provider>/<model>`
+   *  (the `pr_intent.model` precedent); split at the first `/` on read. */
+  model: text('model'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Tokens/cost/attempts/duration for the generation that produced this brief. */
+  stats: jsonb('stats'),
 });

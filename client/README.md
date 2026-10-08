@@ -33,7 +33,7 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /findings/:id/(accept|dismiss)"| API
+  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss)<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/file<br/>POST /repos/:id/context/reindex"| API
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs"| API
   SKILLS -->|"/skills · /skills/:id/(versions|stats|restore) · /skills/:id/context-docs · /skills/import[/preview] · /skills/tokens"| API
@@ -43,6 +43,23 @@ flowchart TD
 Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
 `g`-then-key shortcuts). Pages are thin; feature logic sits in colocated
 `_components/<Name>/` folders, each with its own `*.test.tsx`.
+
+The PR detail route's **Overview tab** (`OverviewTab.tsx`) renders, in order,
+the **PR Brief banner** (verdict/score of the latest review plus the brief's
+summary, cost and tokens, a Generate/Regenerate action and live job phase via
+`useBriefJob`'s SSE subscription), a row with the **Intent card** — now
+carrying a **Risk areas** section fed only by the brief — and the **Blast
+radius card**, then the **Review focus card**, then the existing Description.
+Activating a Review focus item or a risk's file reference calls
+`onOpenFile(path, line)` (`page.tsx`), which sets the URL to
+`?tab=diff&file=<path>&line=<n>`. The **Files changed tab** (`DiffTab.tsx`)
+resolves that target with `resolveDiffFocus` (`src/components/diff-viewer/focus.ts`):
+an unknown `file` shows a "no longer in this PR" notice instead of scrolling;
+a known file expands its group/card and, when the new-side `line` is actually
+shown in the diff, marks that row with `aria-current="location"` plus a
+visible highlight style (`lineHighlight`, `styles.ts`) and scrolls the row
+itself (`CodeLine.tsx`) into view; with no matching line, it falls back to
+scrolling the file card instead.
 
 ## Testing
 

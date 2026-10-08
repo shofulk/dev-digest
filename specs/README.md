@@ -57,9 +57,9 @@ contracts; the plan decides files, modules, step order and code.
   otherwise `none`.
 
 `.claude/hooks/scope-guard.sh write spec` enforces this for `spec-creator`: a new spec is
-born `draft`, and only a `draft` file can be edited. `.claude/hooks/spec-lint.sh` checks
-the format below on every spec it writes, and blocks the switch to `approved` while the
-spec has a format error.
+born `draft`, and only a `draft` file can be edited. `.claude/hooks/spec-lint.mjs` checks
+the format below on every spec it writes — including the `[NEEDS CLARIFICATION: Q-n]`
+markers — and blocks the switch to `approved` while the spec has a format error.
 
 ## Template
 
@@ -121,6 +121,14 @@ Every item has a stable ID. IDs never change and are never reused inside one spe
   `IF … THEN` criterion. Every ID in the table exists in its section.
 - **Open questions** — `blocking` must be answered before `approved`; `non-blocking` may
   stay; `planner` is a how-question left for `implementation-planner`.
+- **`[NEEDS CLARIFICATION: Q-n]`** — the inline marker of an unsettled point. A draft
+  puts it in the exact item (`AC-n`, `EC-n`, `NFR-n`, a contract row, a sentence) whose
+  text depends on the answer, so an open question is visible where it matters, not only
+  in *Open questions*. Every marker cites a `(blocking)` `Q-n`, and every `(blocking)`
+  `Q-n` has at least one marker. When the user answers, the text is rewritten, every
+  marker of that question is removed, the `Q-n` item goes (its number is not reused) and
+  the answer is recorded in *Inputs and provenance*. An `approved` spec has no marker;
+  the `implementation-planner` refuses to plan from a spec that still has one.
 
 ## Acceptance criteria: EARS
 

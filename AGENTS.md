@@ -41,6 +41,7 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 | `e2e/` | deterministic browser flows (`specs/NN-name.flow.json`) |
 | `mcp-server/` | local stdio MCP server — a thin HTTP-API client exposing reviewer agents, PR review runs, findings and conventions to MCP clients (Claude Code) |
 | `docs/agent-prompts/` | built-in reviewer system prompts |
+| `docs/retros/` | committed run retros (`<feature>.md`) and `ledger.md`, one row per `/sdd-run` |
 | `specs/` | cross-module feature specs; its `README.md` is the spec format of record (template, EARS) |
 
 ## Read when

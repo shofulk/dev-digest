@@ -73,6 +73,7 @@ flowchart TB
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
     blast["blast<br/>/pulls/:id/blast"]
+    brief["brief<br/>/pulls/:id/brief · /pulls/:id/brief/generate<br/>/pulls/:id/brief/jobs/:jobId/events"]
   end
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
@@ -102,6 +103,26 @@ PR's changed files, so `degraded`/`reason` reflect the index's own state
 (`flag_off`, `index_failed`, `index_partial`, `repo_too_large`, `no_data`)
 rather than the facade's ripgrep-fallback semantics, which stay unchanged for
 every other consumer of `getBlastRadius`. The response's `indexed_sha` is the commit the index (and so every caller line) was read from, and it is null when the map did not come from the index; the UI links callers to it and falls back to the PR head.
+
+`brief` (`src/modules/brief/`) generates one grounded **PR Brief** per pull
+request — a summary, up to 6 risk areas and up to 5 review-focus items — with
+exactly one model call per generation (feature model `risk_brief`,
+`resolveUsableFeatureModel`). `GET /pulls/:id/brief` only ever reads the
+stored `pr_brief` row plus the PR's current `head_sha` (never calls the
+model) and returns the brief or `null`, an `outdated` flag, and any running
+generation job. `POST /pulls/:id/brief/generate` (rate-limited 10/min, like
+intent derive) starts a **detached background job** keyed by a `randomUUID()`
+on `container.runBus` — not `JobRunner`, so the paid call is never retried
+(`server/src/modules/brief/service.ts`); a second request for the same PR
+while a job runs gets back the running job's id instead of starting another
+one. `GET /pulls/:id/brief/jobs/:jobId/events` (SSE, no rate limit) streams
+the job's `assembling` → `calling_model` → `grounding` → `saving` phases, then
+one `done` (with the brief) or `failed` (with an error code/message) event,
+replaying earlier events to a late subscriber. Every file reference and line
+the model returns is checked against the PR's changed-file hunk ranges and
+blast-caller lines before it is stored — a reference that does not check out
+is dropped, never rewritten (`src/modules/brief/grounding.ts`). See
+[`.doc/pr-brief.md`](.doc/pr-brief.md) for why the module is shaped this way.
 
 ## Environment
 

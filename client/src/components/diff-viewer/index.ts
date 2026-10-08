@@ -5,3 +5,4 @@ export { DiffViewer } from "./DiffViewer";
 export type { DiffCommentApi } from "./comments";
 export type { DiffFindingApi } from "./findings";
 export { orderBySmartDiff, type SmartDiffFileGroup } from "./helpers";
+export { resolveDiffFocus, type DiffFocus } from "./focus";

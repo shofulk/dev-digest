@@ -120,6 +120,13 @@
       "when": 1791046155333,
       "tag": "0016_melted_doctor_spectrum",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1791114729111,
+      "tag": "0017_useful_living_lightning",
+      "breakpoints": true
     }
   ]
 }

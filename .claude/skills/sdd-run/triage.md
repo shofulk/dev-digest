@@ -8,6 +8,8 @@ in writing (`NN-fix-list.md`), before the retro and before any fix is dispatched
 One row per item: every architecture finding, every security finding (HIGH confidence;
 the *needs verification* list is item 4 below), every plan-verifier row that is `not met`,
 `partial` or `cannot verify`, every *Unplanned changes* line and every `bypass-candidate`.
+Plan-verifier rows marked `awaiting manual` are not fix items: they are collected once into
+the user's list, get no F ID, and are not re-raised in later rounds.
 
 ## 2. Decide, per item
 
@@ -19,6 +21,7 @@ the *needs verification* list is item 4 below), every plan-verifier row that is 
 | plan item `not met` / `partial` — code missing or wrong | `implementer` fix | yes |
 | plan item `partial` — only the test is missing or weaker than the Test-plan row | `test-writer` after | yes |
 | plan item `cannot verify` — needs a stack, a probe, Docker | Phase 3 manual acceptance, then plan-verifier re-run | yes, as evidence |
+| plan item `awaiting manual` — only the user or an absent browser channel can run it (visual check, axe/keyboard) | the user: listed in `summary.md` under what is not verified (`SKILL.md` Phase 6 step 5), with what to run and the expected result | no: not a fix item, does not keep the round from being clean, and is not re-raised; a later `Manual acceptance:` block with the user's result re-judges it |
 | *Unplanned changes* line | revert in `implementer` fix, or the user accepts it | ask when it is not clearly noise |
 | red test edited (hash mismatch) | `implementer` fix: restore the file, fix the code | yes |
 | item says the **plan** is wrong (the AC, a step, a Verify) | stop → `implementation-planner` Update mode, input: the report path | no |

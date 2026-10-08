@@ -82,6 +82,8 @@ export const s = {
   sourceRef: {
     fontFamily: "var(--font-mono, monospace)",
     fontSize: 12,
+    minWidth: 0,
+    overflowWrap: "anywhere",
   } satisfies CSSProperties,
   footer: {
     marginTop: 16,

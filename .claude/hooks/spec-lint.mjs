@@ -188,6 +188,26 @@ export function lint(content, rel, root) {
     }
   }
 
+  // -- [NEEDS CLARIFICATION: Q-n] markers: an open question shown where the text depends on it --
+  const qBody = body["Open questions"];
+  const inQ = i => qBody && i >= qBody.start && i < qBody.start + qBody.plain.length;
+  const isBlocking = id => has(id) && /^\(blocking\)/.test(items[id].text);
+  const marked = new Set();
+  plain.forEach((l, i) => {
+    if (inQ(i)) return;
+    for (const mk of l.replace(/`[^`]*`/g, "").matchAll(/\[NEEDS CLARIFICATION\b[^\]]*\]?/g)) {
+      const q = mk[0].match(/^\[NEEDS CLARIFICATION: (Q-\d+)\]$/);
+      if (!q) { errs.push(`line ${i + 1}: write the marker as \`[NEEDS CLARIFICATION: Q-n]\``); continue; }
+      if (status && status !== "draft") { errs.push(`line ${i + 1}: \`${mk[0]}\` is not allowed in an ${status} spec`); continue; }
+      if (!has(q[1])) errs.push(`line ${i + 1}: \`${mk[0]}\` points to unknown \`${q[1]}\``);
+      else if (!isBlocking(q[1])) errs.push(`line ${i + 1}: \`${q[1]}\` is not (blocking) — settle the text and remove the marker`);
+      marked.add(q[1]);
+    }
+  });
+  for (const id of ids) {
+    if (isBlocking(id) && !marked.has(id)) errs.push(`${id}: a (blocking) question needs at least one \`[NEEDS CLARIFICATION: ${id}]\` marker where the spec text depends on it`);
+  }
+
   // -- traceability --
   const tb = body["Traceability"];
   if (tb) {
@@ -360,8 +380,16 @@ function selfTest() {
   run("NFR without number", R, sub("within 300 ms at p95", "within a short time at peak"), false);
   run("Assumption without risk", R, sub("Risk if wrong: the server needs a\n  contract change first.", "That is all."), false);
   run("Q without kind", R, sub("**Q-1** (non-blocking) Should", "**Q-1** Should"), false);
-  run("blocking Q in draft is fine", R, sub("**Q-1** (non-blocking)", "**Q-1** (blocking)"), true);
-  run("blocking Q in approved", R, sub("**Q-1** (non-blocking)", "**Q-1** (blocking)").replace("Status: draft", "Status: approved"), false);
+  const blockingQ = sub("**Q-1** (non-blocking)", "**Q-1** (blocking)");
+  const markedQ = blockingQ.replace("above the Description. *Verify: e2e*", "above the Description [NEEDS CLARIFICATION: Q-1]. *Verify: e2e*");
+  run("blocking Q with a marker in draft is fine", R, markedQ, true);
+  run("blocking Q without a marker", R, blockingQ, false);
+  run("blocking Q in approved", R, markedQ.replace("Status: draft", "Status: approved"), false);
+  run("marker in approved", R, sub("above the Description. *Verify: e2e*", "above the Description [NEEDS CLARIFICATION: Q-1]. *Verify: e2e*").replace("Status: draft", "Status: approved"), false);
+  run("marker on a non-blocking Q", R, sub("above the Description. *Verify: e2e*", "above the Description [NEEDS CLARIFICATION: Q-1]. *Verify: e2e*"), false);
+  run("marker to unknown Q", R, markedQ.replace("[NEEDS CLARIFICATION: Q-1]", "[NEEDS CLARIFICATION: Q-9] [NEEDS CLARIFICATION: Q-1]"), false);
+  run("malformed marker", R, markedQ.replace("[NEEDS CLARIFICATION: Q-1]", "[NEEDS CLARIFICATION: Q-1] [NEEDS CLARIFICATION]"), false);
+  run("marker inside inline code is ignored", R, sub("above the Description. *Verify: e2e*", "above the Description `[NEEDS CLARIFICATION]`. *Verify: e2e*"), true);
   run("Traceability row missing", R, sub("| AC-11 | — | EC-4 | — | unit |\n", ""), false);
   run("Traceability unknown ID", R, sub("| AC-2 | US-1 | — | — | unit |", "| AC-2 | US-9 | — | — | unit |"), false);
   run("Traceability Verify differs", R, sub("| AC-3 | US-2 | — | NFR-1 | it |", "| AC-3 | US-2 | — | NFR-1 | unit |"), false);

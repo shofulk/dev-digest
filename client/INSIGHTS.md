@@ -36,6 +36,52 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-04 — a job-stream hook keyed only on the job id never recovers when the server hands back the SAME running job id
+After `onerror` marks the job `failed`, Retry/Generate can resolve with the id of the
+job that is still running (`POST /brief/generate` → `{job_id: <same>, reused: true}`,
+by design: D2/AC-31). A render-time reset and an effect keyed on `jobId` alone see no
+change, so `failed` sticks, no new `EventSource` opens and the finished brief never
+appears until a reload. Key the reset and the subscription on the job id **plus** a
+per-mutation attempt counter (bumped in `onSuccess`), never on the id text alone.
+Applies to any SSE job hook over a deduping endpoint.
+**Evidence:** server/src/modules/brief/service.ts:108-109; client/src/lib/hooks/brief.ts:56 (`attempt`), brief.ts:4-6 (reset keyed on `(jobId, attempt)`); client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.retrySameJob.test.tsx
+
+### 2026-10-04 — a "stays true until X" `useState` latch (`canRetry`) enumerates exits, and misses one
+
+**Cause:** `BriefBanner`'s `canRetry` (F22) was set `true` on `job.failed` and cleared only
+on `job.done`. A Retry/Generate click can also resolve with `GenerateBriefCurrent`
+(`{brief}`, no `job_id`) — `useGenerateBrief`'s `onSuccess` (`brief.ts`) then writes
+`job: null` into the query cache, so `jobId` goes `null` and `job.done` can never become
+`true` for that resolution. The latch stayed `true` forever next to a freshly rendered
+brief, and clicking it sent `{force: true}` — a paid regeneration nobody asked for (F22b).
+**Signal:** a derived boolean driven by a `useState` latch that only clears on ONE named
+terminal event; any other way the same async flow can resolve bypasses the clear.
+**Fix:** stopped naming the terminal case and instead cleared on the absence of the start
+case: `else if (!isGenerating && !job.failed && canRetry) setCanRetry(false)` — "no longer
+failed and nothing in flight" covers `job.done`, `GenerateBriefCurrent`, and any future
+resolution shape, without enumerating each one.
+**Evidence:** `client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.tsx:43-55`,
+`client/src/lib/hooks/brief.ts:60-69` (the `job: null` write that breaks a `job.done`-only clear).
+
+### 2026-10-04 — an EventSource hook's `onerror` that only `close()`s leaves derived `running` stuck `true` forever
+
+**Cause:** a native `onerror` fires when the stream itself drops (API restart, an evicted
+job) — it is never followed by a `done`/`failed` event on that same connection. A hook that
+derives `running` from "not done and not failed" (e.g. `useBriefJob`, round 1) and whose
+`onerror` handler only calls `es.close()` never reaches a terminal state: `running` stays
+`true` across the API's process lifetime, and any UI gated on it (Generate/Regenerate/Retry
+buttons) stays disabled forever after a single dropped connection.
+**Signal:** `onerror = () => { es.close(); }` with nothing else in the handler body, next to
+a `running` derived as `!done && !failed`.
+**Fix:** `onerror` must reach the same terminal state a `failed` SSE event would (set
+`failed`/`ended`, whichever the hook's terminal flag is) AND invalidate the TanStack query
+key so the server's own state takes over on refetch — `useConventionScan`
+(`client/src/lib/hooks/conventions.ts:189-193`) already does both; it was the correct
+reference during the F12 fix, not a second instance of the bug. `useBriefJob` was the one
+hook missing it (`client/src/lib/hooks/brief.ts`, fix-list F12, round 2).
+**Evidence:** `client/src/lib/hooks/brief.ts:115-128`, `client/src/lib/hooks/conventions.ts:189-193`,
+`client/src/lib/hooks/brief.onerror.test.ts`.
+
 ### 2026-10-03 — gating a TanStack Query loading view on `isLoading` renders the "ready" view for a disabled query (`repoId` null/undefined)
 
 `isLoading` is `isPending && isFetching` — a query disabled via `enabled: !!repoId` is
@@ -146,6 +192,15 @@ boots — load one route before calling client work done.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-04 — a data hook reports failure as a stable `code` only; the component maps code → `t()` key
+`client/AGENTS.md` says "no literal copy in components", which reads as if hooks were
+exempt — they are not: user-facing strings live in `messages/<locale>/*.json`. Hooks are
+tested without `NextIntlClientProvider`, so copy put in a hook escapes `next-intl`
+entirely (one round shipped an English `STREAM_ERROR_MESSAGE` and a dead
+`banner.streamError` key). The hook sets e.g. `{ code: "stream_error", message: "" }`;
+the rendering component owns the only code → key mapping.
+**Evidence:** client/src/lib/hooks/brief.ts:155; client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.tsx:71; client/src/lib/hooks/conventions.ts:208-212 (same shape)
 
 ### 2026-10-03 — a nav entry added straight to `vendor/ui/nav.ts` is a deliberate exception, not drift to clean up
 
@@ -260,6 +315,12 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-04 — `@testing-library/user-event` is not installed; component tests use `fireEvent`
+Only `@testing-library/react` and `jest-dom` are dependencies, so the RTL skill's
+"prefer `userEvent`" advice does not apply here without adding a package (a lockfile
+change). A reviewer flagging `fireEvent` as an anti-pattern is a false positive.
+**Evidence:** client/package.json:30-31
+
 ### 2026-10-03 — `@devdigest/ui` primitives like `IconBtn` are plain function components, not `forwardRef` — you cannot get a DOM ref from them directly
 
 A control that must hand focus back to itself after closing an overlay (AC-37's "Escape
@@ -290,6 +351,60 @@ fallback to represent "no link".
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-04 - an absence assertion in `waitFor` passes trivially right after a raw `FakeEventSource.emit()`
+**Cause:** `waitFor` runs its callback once synchronously before polling. A test-double
+`emit()`/`triggerError()` called outside `act`/`fireEvent` has not flushed its React
+update yet, so `expect(queryByRole(...)).toBeNull()` (or a flipped negative control)
+can pass on that first check before the code under test ever reacted.
+**Signal:** a negative control (assertion flipped) still passes; `not wrapped in act(...)`
+warnings on stderr.
+**Fix:** after a raw emit, first `waitFor` a real async signal the reaction produces
+(e.g. the brief GET counter rising after `invalidateQueries`, or new status text), then
+assert presence/absence.
+**Evidence:** client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.retryExits.test.tsx:192-193
+
+### 2026-10-04 - Do not override `notifyManager`'s scheduler globally to fix a test; assert `mutateAsync`'s resolved value instead
+**Supersedes:** 2026-10-04 entry "`useMutation().data` is stale right after `await
+mutateAsync(...)`, flaky even alone" — the fix below (module-scope
+`notifyManager.setScheduler((cb) => queueMicrotask(cb))` in `client/src/lib/hooks/brief.ts`)
+was rejected on review: `notifyManager` is process-wide, so it changed notification timing
+for every query and mutation in the app to stabilise one test's assertion style.
+**Cause:** the underlying race was real (query-core defers the store-change notification
+that updates `.data` through a real `setTimeout(cb, 0)`), but the fix belonged in the test,
+not in app code: `mutateAsync(...)`'s own resolved promise already carries the mutation's
+result with no timer involved, so there is never a reason for a caller — test or component
+— to read a mutation hook's `.data` synchronously right after `await mutateAsync(...)`.
+**Signal:** a `notifyManager.setScheduler(...)` call anywhere outside a test setup file, or
+a `.data` read immediately after `await mutateAsync(...)`.
+**Fix:** assert on `mutateAsync`'s resolved value (`const result = await
+mutateAsync(...)`), or consume the result inside the mutation's own `onSuccess`, never
+`result.current.data` read right after the await. Leave `notifyManager`'s scheduler at its
+default everywhere.
+**Evidence:** client/src/lib/hooks/brief.ts (scheduler override removed);
+client/src/lib/hooks/brief.test.ts:140-149 (asserts `mutateAsync`'s resolved value).
+
+### 2026-10-04 - `useMutation().data` is stale right after `await mutateAsync(...)`, flaky even alone
+**Cause:** `@tanstack/query-core`'s `notifyManager` is a process-wide singleton whose
+default scheduler defers every store-change notification through a real
+`setTimeout(cb, 0)` (`timeoutManager.js` → `systemSetTimeoutZero`) — including the one
+that makes `useMutation()`'s `.data` reflect a just-settled mutation. `mutation.execute()`
+sets `this.state.data` synchronously and resolves the promise `mutateAsync` awaits
+*before* that timer fires, so a test (or component) that reads `.data` immediately after
+`await mutateAsync(...)` races a real macrotask that `await` does not wait for — `act()`
+only flushes microtasks. This is **not** cross-test pollution: it reproduced failing in
+isolation (`vitest run brief.test.ts` alone, 3 of 5 runs failed) as often as "in a full
+run", despite how it first looked.
+**Signal:** `expected undefined to deeply equal {...}` on a `useMutation` result read
+synchronously after `await mutateAsync(...)`, passing most but not all runs of the same
+single test file.
+**Fix:** `notifyManager.setScheduler((cb) => queueMicrotask(cb))` once, at module scope
+(`client/src/lib/hooks/brief.ts`) — routes notifications through the same microtask queue
+`await` already drains, instead of a real timer. Safe to set globally: it only changes
+*when* a React Query update flushes (microtask vs. next real tick), not whether updates
+are batched. Confirmed with 8 standalone runs + 3 consecutive full `pnpm --dir client
+test` runs, all green.
+**Evidence:** client/src/lib/hooks/brief.ts:11-28; client/node_modules/@tanstack/query-core/build/modern/notifyManager.js; client/node_modules/@tanstack/query-core/build/modern/timeoutManager.js (`systemSetTimeoutZero`); client/node_modules/@tanstack/react-query/build/modern/useMutation.js (`notifyManager.batchCalls(onStoreChange)`).
 
 ## Session Notes
 
