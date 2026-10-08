@@ -140,6 +140,17 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-08 — `e2e/node_modules/.modules.yaml` says `pnpm@10.34.5`, but the right package manager for `e2e` is npm: decide by the tracked lockfile, never by the installer
+
+`e2e/` was installed with pnpm (its `node_modules/.modules.yaml` records `packageManager:
+pnpm@10.34.5`) while its tracked lockfile is `package-lock.json`. Any tool that picks the manager
+from `node_modules` (the dependencies-checker collector's `packageManager` field does record it)
+would suggest `pnpm --dir e2e add|remove`, which writes the stray `pnpm-lock.yaml` described
+above. `npm outdated --json` still works on that pnpm-shaped tree (top-level symlinks into
+`.pnpm`), so the lockfile-keyed choice costs nothing. `reviewer-core/` is the consistent case:
+npm-locked and npm-installed.
+**Evidence:** `.claude/skills/dependencies-checker/collect.mjs:512`, `e2e/node_modules/.modules.yaml`
+
 ### 2026-09-28 — `e2e/` is npm-locked, not pnpm: `pnpm --dir e2e install` writes a stray `e2e/pnpm-lock.yaml`, and a live `e2e` run also needs the separate `agent-browser` binary
 
 `e2e/` is the one package whose tracked lockfile is `e2e/package-lock.json` (npm), and
