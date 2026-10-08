@@ -57,8 +57,11 @@ export interface ReviewInput {
   skills?: string[];
   /** Curated memory items. */
   memory?: string[];
-  /** Project-context spec chunks (untrusted; delimiter-wrapped downstream). */
-  specs?: string[];
+  /**
+   * Attached Project Context documents (untrusted; delimiter-wrapped
+   * downstream), in resolved order.
+   */
+  specs?: { path: string; content: string }[];
   /**
    * Optional callers-of-changed-symbols digest (T1.3). Untrusted; rendered
    * before the diff section. Empty/undefined → section omitted.

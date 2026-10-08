@@ -41,7 +41,9 @@ Flows target **read-only seeded data** (the demo repo `acme/payments-api`, PR
 > Your local dev DB usually has other imported repos, so running `npm test`
 > straight against it makes flows 02/04/05 land on the wrong repo and fail.
 > **Use the hermetic runner below** — it spins up its own isolated, freshly-seeded
-> stack and leaves your dev DB untouched.
+> stack and leaves your dev DB untouched. It also points `DEVDIGEST_CLONE_DIR` at a
+> fresh temp dir per run (see below),
+> so the D10 demo checkout never lands in your real clone dir.
 >
 > ⚠️ **Never `docker compose down -v` to "reset" your dev DB** — `-v` deletes the
 > `devdigest_pgdata` volume along with every real repo and review you've imported.
@@ -66,7 +68,11 @@ npm i -g agent-browser && agent-browser install
 
 The isolated Postgres is ephemeral (no persistent volume), so it's empty every
 run and the seeded demo repo `acme/payments-api` is the only one — which is
-exactly what flows 02/04/05 need.
+exactly what flows 02/04/05 need. `scripts/e2e.sh` also exports
+`DEVDIGEST_CLONE_DIR` set to a fresh `mktemp -d` temp dir, created before
+`db:seed` runs and removed on teardown — so `db:seed`'s D10 demo checkout
+(`server/src/db/seed-project-context.ts`)
+writes into an isolated tree instead of your real clone dir.
 
 ### Against your own running stack
 

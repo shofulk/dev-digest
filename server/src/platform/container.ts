@@ -7,6 +7,7 @@ import type {
   CodeIndex,
   Embedder,
   LLMProvider,
+  ProjectDocsSource,
 } from '@devdigest/shared';
 import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
@@ -31,6 +32,10 @@ import { RepoIntelService } from '../modules/repo-intel/service.js';
 import { RepoRepository } from '../modules/repos/repository.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
+import { FsProjectDocsSource } from '../adapters/project-docs/index.js';
+import { ProjectContextRepository } from '../modules/project-context/repository.js';
+import type { AgentSkillsPort } from '../modules/_shared/agent-skills.js';
+import { AgentSkillsRepository } from '../modules/_shared/repository/agent-skills-port.repo.js';
 
 /**
  * DI container. One per app instance. Holds config, db, the JobRunner,
@@ -53,6 +58,8 @@ export interface ContainerOverrides {
   /** repo-intel T3 adapters — only the indexer pipeline reads these. */
   depgraph?: DepGraph;
   tokenizer?: Tokenizer;
+  /** Project Context file search/read (server-controlled checkout, not the network). */
+  projectDocs?: ProjectDocsSource;
 }
 
 /** The secret each LLM provider is built from — see `Container.buildLlm`. */
@@ -86,6 +93,9 @@ export class Container {
   private _depgraph?: DepGraph;
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
+  private _projectDocs?: ProjectDocsSource;
+  private _projectContextRepo?: ProjectContextRepository;
+  private _agentSkills?: AgentSkillsPort;
 
   constructor(config: AppConfig, db: Db, private overrides: ContainerOverrides = {}) {
     this.config = config;
@@ -148,6 +158,28 @@ export class Container {
     if (this.overrides.tokenizer) return this.overrides.tokenizer;
     this._tokenizer ??= new TiktokenTokenizer();
     return this._tokenizer;
+  }
+
+  /** Project Context document search/read over a repo's synced checkout. */
+  get projectDocs(): ProjectDocsSource {
+    if (this.overrides.projectDocs) return this.overrides.projectDocs;
+    this._projectDocs ??= new FsProjectDocsSource();
+    return this._projectDocs;
+  }
+
+  /** The `agents`/`skills` `context_docs` columns — Project Context attachments. */
+  get projectContextRepo(): ProjectContextRepository {
+    return (this._projectContextRepo ??= new ProjectContextRepository(this.db));
+  }
+
+  /**
+   * An agent's resolved skill set (gate/order applied) and its own batched
+   * form — the seam ring-1 services (`run-executor.ts`, `project-context/
+   * service.ts`) resolve in their constructor instead of keeping `this.db`
+   * and calling it through `this.container` at call time.
+   */
+  get agentSkills(): AgentSkillsPort {
+    return (this._agentSkills ??= new AgentSkillsRepository(this.db));
   }
 
   /**

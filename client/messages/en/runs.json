@@ -33,6 +33,16 @@
       "provider": "Provider",
       "memoryPulled": "Memory pulled",
       "specsRead": "Specs read",
+      "specsSkipped": "Specs skipped",
+      "specTokens": "{path} (≈ {tokens} tokens)",
+      "specSkipped": "{path} — {reason}",
+      "skipReason": {
+        "included": "included",
+        "missing": "not found",
+        "budget": "over budget",
+        "invalid_path": "invalid path",
+        "too_large": "too large"
+      },
       "items": "{count, plural, one {# item} other {# items}}",
       "none": "none"
     },
@@ -47,7 +57,7 @@
       "skills": "Skills (dynamic)",
       "memory": "Memory (dynamic)",
       "repoMap": "Repo skeleton — repo-intel (dynamic)",
-      "specs": "Project context (dynamic)",
+      "specs": "Project context — attached specs (untrusted)",
       "callers": "Callers of changed symbols — repo-intel (dynamic)",
       "user": "User / diff (dynamic)",
       "copy": "Copy",

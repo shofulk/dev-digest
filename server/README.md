@@ -81,6 +81,9 @@ flowchart TB
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
   end
+  subgraph ProjectContext["Project context"]
+    projectContext["project-context<br/>/repos/:id/context[/file] · /repos/:id/context/reindex<br/>/agents/:id/context-docs · /skills/:id/context-docs"]
+  end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
     workspace["workspace<br/>/workspace"]
@@ -169,6 +172,24 @@ What the reviewer actually sends to the model is assembled in
   same PR share one in-flight map instead of racing two LLM calls. All
   derivation logging (stats + per-source warnings) lives in `IntentService`,
   never in `intent/routes.ts` itself.
+- **Project Context is injected as a read, not a model call.** Before
+  `reviewPullRequest` runs, `run-executor.ts` resolves the agent's own
+  `context_docs` plus each included skill's own `context_docs`
+  (`modules/_shared/project-context/resolve.ts`), reading every path from the
+  repo's **default-branch checkout** (`repos.clone_path`), never the PR head —
+  so an attacker can't rewrite the rule a PR is being checked against. Each
+  document is read via `ProjectDocsSource` (`src/adapters/project-docs/`,
+  ring 2), token-counted and budget-trimmed (`PROJECT_CONTEXT_BUDGET_TOKENS`),
+  then passed to `reviewPullRequest` as `specs` and rendered as a
+  path-labelled, delimiter-wrapped `## Project context` block
+  (`reviewer-core/prompt.ts`) — omitted entirely when nothing resolves, so the
+  prompt stays byte-identical to a no-project-context run. Every resolved
+  document (included, missing, invalid path, over budget, too large) is
+  recorded in the run trace's `context_docs`, and the injected paths in
+  `specs_read`. The five routes (`modules/project-context/routes.ts`) are
+  workspace-scoped through `getContext` and serve the Project Context page:
+  listing/scanning a repo's checkout, reading one document, and attaching
+  documents to an agent or a skill.
 - **Source-fetch caps and residual SSRF risk (R1).** Every reference the
   classifier resolves goes only through `GitHubClient` — no generic URL
   fetcher exists. Each GitHub call is bounded to 5 s

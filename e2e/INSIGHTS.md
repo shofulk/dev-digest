@@ -36,11 +36,29 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-03 - the hermetic stack isolated only the DB and ports, not the seed's files on disk
+`db:seed` also writes the Project Context demo checkout into `DEVDIGEST_CLONE_DIR`, and only when
+that folder is absent. Without its own per-run value, a hermetic run wrote into the developer's
+real clone dir and could read stale fixtures. `scripts/e2e.sh` now exports a fresh `mktemp -d`
+clone dir after its cleanup trap; any new seed write outside the DB needs the same treatment.
+**Evidence:** scripts/e2e.sh:98, server/src/db/seed-project-context.ts:69
+
 ## Codebase Patterns
 
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-03 — a flow that opens a run trace needs `seed-project-context.ts`, not just `seed()`
+
+`server/src/db/seed.ts`'s `seed()` writes PR #482's demo review straight to `reviews` /
+`findings`; it never inserts an `agent_runs` row. The only place an `agent_runs` row (with a
+matching `run_traces` document) gets created is `seedProjectContextDemo` (fixed
+`DEMO_RUN_ID`), called only from `seed.ts`'s CLI entrypoint (`pnpm db:seed`), not from
+`seed()` itself. A flow that opens the run trace drawer therefore depends on running the full
+seed CLI, not on calling `seed()` directly (as some server tests do) — check which one a
+fixture setup actually calls before assuming a run trace exists.
+**Evidence:** `server/src/db/seed.ts`, `server/src/db/seed-project-context.ts:24`
 
 ## Tool & Library Notes
 

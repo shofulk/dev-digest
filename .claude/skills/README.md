@@ -18,6 +18,8 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [typescript-expert](typescript-expert/SKILL.md) | Full-stack | Type-level programming, performance, tooling, migrations |
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
+| [spec-writing](spec-writing/SKILL.md) | Process | Writing and reviewing feature specs — context, research, design review, EARS + verify + traceability, final self-check; format of record is `specs/README.md` |
+| [sdd-run](sdd-run/SKILL.md) | Process | `/sdd-run <spec-or-plan>` — runs an existing plan through lanes, checks gate, review round and fix rounds to a PR draft; user-invoked only, never runs spec-creator or the planner |
 | [pr-self-review](pr-self-review/SKILL.md) | Process | Pre-PR gate — routes these skills onto the diff, blocks a PR with a critical finding |
 
 ## What Are Skills?

@@ -106,6 +106,19 @@ request)`, the plan's own `## Acceptance criteria` section is the spec.
    + unstaged + untracked, same union `pr-self-review` step 1 uses. Map every changed file
    to the item(s) that named it in the plan's *Files* column; a changed file matching no
    item goes to *Unplanned changes*.
+2a. **Reuse the checks record.** When the delegating prompt carries `Checks:
+    .harness/checks/<feature>.md — fresh` (the main session ran `.claude/scripts/checks.sh
+    status <feature>` just before dispatching you), `Read` that file and cite its rows —
+    command, exit, summary line, `Fingerprint` — as the evidence for the package-wide
+    checks (typecheck, lint, arch, unit and `*.it.test.ts` suites). Do not re-run them. Run
+    only what the record does not hold: a step's own *Verify* command, and a Test-plan row
+    by its file. Without that line, or when the record's `Result` is not `pass`, run the
+    checks yourself as below.
+2b. **Red tests stay frozen.** When the prompt carries a `Red tests:` block (the red
+    lane's *Red proof* table: file and `git hash-object`), run `git hash-object <file>` for
+    each and compare. A different hash means the implementer edited a red test: that `T*`
+    row is **not met**, evidence both hashes, unless the prompt also carries the main
+    session's resolution of a `red-test dispute` for that file.
 3. **Fill the matrix, per item:**
    - Structural claim (a file exists, a function is defined, a route is registered) →
      `Read`/`Grep` the location, cite `file:line`.

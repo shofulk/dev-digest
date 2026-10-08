@@ -10,15 +10,16 @@ the matching row here.
 | Agent | Responsibility | Model | Writes | Preloaded skills |
 |-------|----------------|-------|--------|-------------------|
 | [researcher](researcher.md) | Answers one concrete question with evidence — in-repo (A), external docs (B), or both | `sonnet` | no | — |
-| [planner](planner.md) | Turns a spec or feature request into a Development Plan bound to the modules, skills, INSIGHTS and architecture rules; given an existing plan's path plus a change, revises it in place (Update mode) | `opus` | no | `onion-architecture`, `frontend-ui-architecture` |
-| [implementer](implementer.md) | Executes an approved plan in server/, client/, reviewer-core/, e2e/; runs the package checks; self-checks its own diff | `sonnet` | code + tests | `engineering-insights`, `onion-architecture`, `frontend-ui-architecture` |
-| [test-writer](test-writer.md) | Writes client RTL, server hermetic and `*.it.test.ts`, reviewer-core and e2e flow tests for code the implementer (or a plan step) left untested; never touches production code | `sonnet` | tests only | `engineering-insights` |
+| [spec-creator](spec-creator.md) | Turns a feature request and its designs (images, Figma, live app, client code) into one spec: reads only the INSIGHTS of touched packages, asks for parallel researcher runs through the main session, analyses missing states, edge cases, module interactions and UX improvements, asks about each, then writes a draft in the `specs/README.md` template — EARS criteria with verify hints, measurable NFRs, assumptions, traceability (English B1) — runs a final self-check, and flips it to `approved` only on the user's yes. May include workflow and service-communication diagrams and boundary contracts, not implementation details; its approved spec is the implementation-planner's input | `opus` | spec files only (`<pkg>/.spec/*.spec.md`, `specs/*.spec.md`; draft-only, format checked by `spec-lint.mjs`) | `spec-writing`, `mermaid-diagram` |
+| [implementation-planner](implementation-planner.md) | Reviews existing requirements (a spec or numbered criteria) against the code, asks about anything unclear, recommends improvements, asks multi-agent vs single-agent, then writes a Development Plan bound to the modules, skills, INSIGHTS, architecture rules and agent lanes; given an existing plan's path plus a change, revises it in place (Update mode). Never writes or edits specs | `opus` | no | `onion-architecture`, `frontend-ui-architecture` |
+| [implementer](implementer.md) | Executes one lane (≤ 6 steps) of an approved plan in server/, client/, reviewer-core/, e2e/ from its lane brief; turns the red tests green, never edits them; runs narrow tests per step and `checks.sh --quick` once; self-checks its own diff | `sonnet` | code + tests | `engineering-insights`, `onion-architecture`, `frontend-ui-architecture` |
+| [test-writer](test-writer.md) | Red mode: before the code, writes the plan's acceptance tests from the spec and the interface skeleton and proves each red on an assertion (hashes frozen). After mode: client RTL, server hermetic and `*.it.test.ts`, reviewer-core and e2e flow tests for code the implementer left untested; never touches production code | `sonnet` | tests only | `engineering-insights` |
 | [architecture-reviewer](architecture-reviewer.md) | Checks a change set against onion rings, frontend-ui-architecture, reviewer-core purity, vendor mirrors, the DI-container rule and package independence; reuses `pnpm --dir server arch` | `opus` | no | `onion-architecture`, `frontend-ui-architecture` |
 | [security-reviewer](security-reviewer.md) | Checks a change set for exploitable vulnerabilities — prompt injection past `wrapUntrusted`/`INJECTION_GUARD`, secrets leaving `LocalSecretsProvider`, clone/command/path handling, SSRF, unvalidated Fastify routes, raw SQL, client XSS; HIGH-confidence findings only, traced source → sink | `opus` | no | `security` |
-| [plan-verifier](plan-verifier.md) | Builds a per-item traceability matrix over every plan item and spec AC — verdict + evidence, never generic advice | `opus` | no | — |
+| [plan-verifier](plan-verifier.md) | Builds a per-item traceability matrix over every plan item and spec AC — verdict + evidence, never generic advice; cites a fresh checks record instead of re-running package checks; checks red tests were not edited | `opus` | no | — |
 | [doc-writer](doc-writer.md) | Documents a shipped feature — turns a plan or code into README/`.doc`/root-README material, with Mermaid diagrams checked against the code | `sonnet` | docs only | `mermaid-diagram` |
 | [retro-writer](retro-writer.md) | After a non-clean reviewer round, records why the loop has not converged — findings by class label, one root cause each, point-fix/class-fix, one Decision sentence, a hard non-convergence gate — into `.harness/retros/`, raw material for harness-analyst | `opus` | retro file only | — |
-| [harness-analyst](harness-analyst.md) | Launched manually, never in a fix loop: reads every retro file and prior analysis, clusters recurring class labels and harness targets across features, proposes concrete harness changes with evidence | `opus` | analysis file only | — |
+| [harness-analyst](harness-analyst.md) | Launched manually, never in a fix loop: reads every retro file, prior analysis and `INSIGHTS.md` plus the transcript digest (`harness-usage.mjs`: tokens per feature/agent/run, skills invoked, repeated actions, cost outliers), clusters recurring class labels, harness targets, actions and anomalies across features, proposes concrete harness changes with evidence | `opus` | analysis file only | — |
 
 Security review belongs to security-reviewer; it complements, not replaces, the `security`
 bucket of the pre-PR gate [`pr-self-review`](../skills/pr-self-review/SKILL.md). A
@@ -28,18 +29,23 @@ like any other unmet item — see [*The fix loop*](#flow).
 ## Flow
 
 ```
-request / .spec ─► planner ─► Development Plan ─► user approves ─► docs/plans/<feature>.plan.md
+request ─► spec-creator (⇄ researcher ×N) ─► .spec / specs (approved) ─► implementation-planner ─► docs/plans/<feature>.plan.md
      ▲                                                                        │
-     │ Clarification needed (JSON → AskUserQuestion)                         ▼
-     │                                                        implementer ─► code + tests + INSIGHTS entries
-     │                                                             │
-     │                                                             ▼
-     │                                                test-writer? ─► tests + INSIGHTS entries (proposed)
-     │                                                             │
-     │                                            main session: manual acceptance
-     │                                                             │
+     │ Clarification needed: requirements + exec mode (→ AskUserQuestion)    ▼   one lane = one fresh agent, ≤ 6 steps,
+     │                                                                        │   dispatched with its Lane brief (lane-brief.mjs)
+     │                                        L1 implementer — interface skeleton (contracts, signatures, 501 routes)
+     │                                                                        │
+     │                                        L2 test-writer, red mode — acceptance tests from the spec, red on an assertion
+     │                                                                        │   (Red proof: file + git hash-object)
+     │                                        L3…Ln implementer — turn red tests green + unit tests of internals
+     │                                              (parallel only in multi-agent mode, disjoint files)
+     │                                                                        │
+     │                                        test-writer, after mode? — Phase: after rows (client UI, e2e)
+     │                                                                        │
+     │                                        main session: checks.sh run <feature> <pkgs> (full, once) + manual acceptance
+     │                                                                        │
      │                                   ┌── architecture-reviewer ┤
-     │                                   ├── security-reviewer ────┤  (run in parallel)
+     │                                   ├── security-reviewer ────┤  (in parallel; given Checks: … — fresh, Red tests: …)
      │                                   └── plan-verifier ────────┘
      │                                                             │
      │                    clean / all items met ◄──────────────────┴──────────► critical finding / item not met / reproduced bypass
@@ -50,9 +56,9 @@ request / .spec ─► planner ─► Development Plan ─► user approves ─�
      │                                                              converging ◄────────────────────────────► not converging
      │                                                                   │                                            │
      │                                                                   ▼                                            ▼
-     │                                                   (fix loop, max 2 rounds, then ask user)      ask user (sign-off with changed approach)
+     │                                                   (fix loop, max 3 rounds, then ask user)      ask user (sign-off with changed approach)
      │                                                   implementer (code) · test-writer (tests)                     │
-     └── plan itself needs to change ── planner, Update mode ◄── change request / Implementation Report /   Sign-off: <option> · date
+     └── plan changes ── implementation-planner, Update mode ◄── change request / Implementation Report /   Sign-off: <option> · date
                                                                   Plan Verification / Retro (Retro: line + Sign-off:)
 
 researcher — called on demand by any step that needs evidence before a decision.
@@ -63,13 +69,61 @@ The retro/analysis lifecycle runs alongside the loop above, on the user's own sc
 ```
 retro-writer ─► .harness/retros/*.retro.md ─(user launches)─► harness-analyst ─►
   .harness/analysis/<date>.md + Decision JSON ─► AskUserQuestion ─► main session:
-  record ## User decision · apply (direct | planner → implementer) · rm consumed retro files
+  record ## User decision · apply (direct | implementation-planner → implementer) · rm consumed retro files
 ```
+
+**`/sdd-run`** (`.claude/skills/sdd-run/`) runs this flow from the first lane to the
+PR draft for a plan that already exists: lanes, the checks gate, manual acceptance, the
+review round, triage into a fix list, retro, fix rounds with delta re-reviews, doc-writer
+and `/pr-self-review`. spec-creator and implementation-planner stay manual: when a phase
+needs either, the command stops and names the input.
 
 The main session is the orchestrator: subagents cannot ask the user, so a *Clarification
 needed* block comes back to the main session, which asks and re-invokes the agent. The
-planner cannot write, so the main session saves the approved plan to
+implementation-planner cannot write, so the main session saves the approved plan to
 `docs/plans/<feature>.plan.md` and gives the implementer that path.
+
+**Lanes and briefs.** Every plan is cut into lanes of at most 6 steps, in both modes
+(implementation-planner *Lanes*); the mode only decides whether lanes may run at the same
+time. Each lane is one **fresh** agent run: an agent's cost is its turn count times its
+context, and one implementer that ran a 28-step plan in a single pass reached a 400k-token
+context over 410 turns. The main session dispatches a lane with `Lane: L<n>` and its brief —
+the output of `node .claude/scripts/lane-brief.mjs docs/plans/<feature>.plan.md L<n>`
+pasted as a `Lane brief:` block — never the whole plan (`--lanes` lists the lanes with
+their agents). It dispatches a lane only after every lane under its *Depends on* reported
+`Done`, and says so in the prompt.
+
+**Test-first.** Unless the plan says why not (3 steps or fewer), an interface lane lands
+the contract and a compiling skeleton, then `test-writer` in **red mode** writes the
+`Phase: red` acceptance tests from the spec alone and proves each fails on an assertion.
+Its *Red proof* table (file and `git hash-object`) goes to every later implementer as the
+target and to plan-verifier as a `Red tests:` block; the implementer never edits those
+files. A `red-test dispute` in an Implementation Report is decided by the main session —
+re-run test-writer to fix the test, or the planner in Update mode to fix the spec reading —
+never by the implementer.
+
+**Checks run once.** Package checks run in two places only: each implementer lane ends with
+`.claude/scripts/checks.sh run <feature> --quick <pkgs>`, and before the reviewers the main
+session runs the full gate `.claude/scripts/checks.sh run <feature> <pkgs>` (adds
+`*.it.test.ts`; reuses the record when nothing changed). The record
+`.harness/checks/<feature>.md` carries a fingerprint of the tree outside `*.md`. The main
+session runs `.claude/scripts/checks.sh status <feature>` and, when it prints `fresh`,
+passes `Checks: .harness/checks/<feature>.md — fresh` to plan-verifier and
+architecture-reviewer, which cite it instead of re-running typecheck, lint, tests and
+`arch`; `/pr-self-review` reuses the same record. Reviewers cannot run the script
+themselves — `scope-guard.sh`'s `bash checks` profile does not admit it — so the freshness
+line is the main session's to give, and a fix round makes it stale.
+
+**Requirements and execution mode.** The implementation-planner does not write specs: it
+plans only from requirements that already exist — `<pkg>/.spec/<feature>.spec.md` or
+numbered acceptance criteria in the request. Before planning it reviews them against the
+code and returns *Clarification needed* with every blocking requirement question plus the
+execution-mode question (`multi-agent` or `single-agent`, with its recommendation) in one
+JSON block; the main session asks once and re-invokes it with `Answers:` and
+`Execution mode: <mode>`. The plan records the mode in its header and assigns every step
+to a lane in its `## Execution` table: in single-agent mode the main session dispatches the
+lanes one after another; in multi-agent mode it dispatches them in parallel only where the
+table marks them parallel (disjoint files).
 
 **Reply language.** Every agent answers in the language the user started the conversation
 in, so every delegating prompt carries a `User language: <language>` line (without it, the
@@ -78,16 +132,18 @@ command output and the section headings of each agent's skeleton stay verbatim, 
 written to the repo stay in English.
 
 **The fix loop.** architecture-reviewer, security-reviewer and plan-verifier run in
-parallel after the implementer (and test-writer, when one ran). A critical architecture or
+parallel after the last implementer lane, the after-mode test-writer (when one ran) and the
+main session's full checks gate — never before the tests exist: plan-verifier scores an
+untested item `partial`, so running it earlier spends an opus run on known gaps. A critical architecture or
 security finding or a plan item verified "not met"/"partial" goes back to the implementer
 for a code fix, or to
 test-writer for a test gap; if the finding means the *plan* was wrong, the main session
-re-invokes the planner in **Update mode** with the Implementation Report or Plan
+re-invokes the implementation-planner in **Update mode** with the Implementation Report or Plan
 Verification as the change input, and the corrected plan flows through implementer →
-reviewers again. After 2 re-verify rounds with no clean result, the main session stops
+reviewers again. After 3 re-verify rounds with no clean result (`/sdd-run --rounds N` sets another budget), the main session stops
 looping and asks the user. doc-writer runs once both reviewers are clean, then
 `/pr-self-review` gates the PR. Updating a plan is not only a fix-loop step: any time an
-approved plan needs to change, the main session hands the planner that plan's path plus
+approved plan needs to change, the main session hands the implementation-planner that plan's path plus
 the change (a request in words, an Implementation Report, or a Plan Verification), and
 gets back the whole revised plan to save over the same file.
 
@@ -100,7 +156,7 @@ the fix loop, fixed by class invariant, not by the reported spelling. A candidat
 not reproduced is recorded — the payload and exit code — and does not fail the round. A
 malformed probe that fails open proves nothing; it is not a reproduced bypass.
 
-**Manual acceptance.** Between the implementer (and test-writer, when one ran) and the
+**Manual acceptance.** Between the last implementer lane (and test-writer, when one ran) and the
 reviewers, the main session runs or delegates every `manual acceptance:` line from the
 Implementation Report's *Open issues*. An implementer `Partial` whose only open items are
 `manual acceptance:` lines routes to this step, not a fix round. For a running stack it
@@ -114,21 +170,24 @@ passes each result (the command or action plus the key output line) to plan-veri
 round and before the fix round starts — this is an explicit main-session step, not a hook
 trigger. When a class label recurs across two consecutive entries, retro-writer reports
 `Converging: no` and a sign-off proposal; the main session then starts **no further fix
-round of any kind** — planner Update mode, an implementer or test-writer fix, or an
+round of any kind** — implementation-planner Update mode, an implementer or test-writer fix, or an
 in-place main-session fix — until the user signs off, because an earlier in-place fix once
-bypassed both the planner and the reviewers entirely and a narrower gate would leave that
-path open. This complements, not replaces, the 2-round rule above: the 2-round rule is a
+bypassed both the implementation-planner and the reviewers entirely and a narrower gate would leave that
+path open. This complements, not replaces, the round budget above: the budget is a
 *budget* that catches whack-a-mole across different classes, while the retro's class gate
 is a *diagnosis* that can fire as early as round 2, on a single repeated class. Only the
 retro's `Retro:` feed-forward line, plus `Sign-off:` when there is one, goes to the
-planner — never the whole retro file. The retro file itself is local, gitignored raw
+implementation-planner — never the whole retro file. The retro file itself is local, gitignored raw
 material for harness improvement, not a feature doc: it lives at
 `.harness/retros/<feature>.retro.md`.
 
 **Harness analysis.** At any time, the user can launch `harness-analyst` manually — never
 automatically, never inside a fix loop — to read every `.harness/retros/*.retro.md` and
-every prior `.harness/analysis/*.md`, cluster recurring class labels and harness targets
-**across features**, and propose concrete harness changes (a prompt, a hook, a skill, the
+every prior `.harness/analysis/*.md` and every `INSIGHTS.md`, run
+`node .claude/scripts/harness-usage.mjs` (a digest of the local Claude Code transcripts:
+tokens per feature, agent type and run, skills invoked, repeated launches and commands,
+cost outliers — the only Bash beyond `readonly` it may run), cluster recurring class
+labels, harness targets, actions and anomalies **across features**, and propose concrete harness changes (a prompt, a hook, a skill, the
 plan template, the README flow, an `AGENTS.md`/`INSIGHTS.md`), each with evidence and a
 route. This whole lifecycle — write → analyse → apply → delete — is a **main-session
 process rule** (C7 of `docs/plans/harness-retros.plan.md`), not a hook rule: no hook holds
@@ -136,22 +195,22 @@ process rule** (C7 of `docs/plans/harness-retros.plan.md`), not a hook rule: no 
 because the main session has no agent frontmatter for a hook to bind. After the user
 answers the analyst's `AskUserQuestion` JSON, the main session appends a `## User decision`
 section to the analysis file, applies each picked proposal (directly for one file, through
-planner → implementer for more than one), and deletes each consumed retro file. The
+implementation-planner → implementer for more than one), and deletes each consumed retro file. The
 analyst itself never applies or deletes anything.
 
 **Gate enforcement.** The convergence gate is a main-session process rule, not a hook
 rule: the main session has no agent frontmatter for `.claude/settings.json` to bind, so no
-`PreToolUse` hook can hold it directly. Its one mechanical backstop is the planner's own
+`PreToolUse` hook can hold it directly. Its one mechanical backstop is the implementation-planner's own
 refusal to apply a change while the retro signal says `Converging: no` and the input
 carries no `Sign-off:` (Update mode step 1a/7) — an in-place main-session fix that skips
-the planner is held by the process rule alone.
+the implementation-planner is held by the process rule alone.
 
 ## Permissions
 
 | Agent | Allowed tools | Denied tools | Mode | Extra guard |
 |-------|---------------|--------------|------|-------------|
 | researcher | Read, Grep, Glob, Bash (read-only commands), WebSearch, WebFetch, AskUserQuestion | Write, Edit, NotebookEdit, Skill | default | — |
-| planner | Read, Grep, Glob, Bash (read-only commands) | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `plan` | — |
+| implementation-planner | Read, Grep, Glob, Bash (read-only commands) | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `plan` | — |
 | implementer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`implementer-guard.sh`](../hooks/implementer-guard.sh) |
 | test-writer | Read, Grep, Glob, Edit, Write, Bash, Skill | Agent, NotebookEdit, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write tests` + `bash checks` |
 | architecture-reviewer | Read, Grep, Glob, Bash | Write, Edit, NotebookEdit, Agent, Skill, WebSearch, WebFetch | `default` | [`scope-guard.sh`](../hooks/scope-guard.sh) `bash checks` (no write tool at all) |
@@ -234,7 +293,7 @@ each agent's *Hard rules*. Hard enforcement exists only where a hook backs it:
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
 
-No agent here may spawn subagents (`Agent` is denied on all ten), so review never
+No agent here may spawn subagents (`Agent` is denied on all eleven), so review never
 happens inside implementation.
 
 ## Artifacts
@@ -242,7 +301,8 @@ happens inside implementation.
 | Agent | Input | Output |
 |-------|-------|--------|
 | researcher | A question with type, scope and a done criterion | *Repo Research Report* and/or *External Research Report* — findings with confidence, evidence (`path:line`, sha, URL), *Not found* table, **Answer status** line |
-| planner | Feature request + `<pkg>/.spec/<feature>.spec.md` (or numbered acceptance criteria) — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification, plus the `Retro:` line and `Sign-off:` when there is one. The retro fallback is `.harness/retros/<feature>.retro.md`; a missing file means no retro signal, not a block | *Development Plan* — Goal, AC, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills per step, Test plan, Review hand-off, `**Revision:**` + `## Revisions`, **Plan status** — or *Clarification needed*. Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
+| spec-creator | Feature request + design sources (image paths, Figma URL, live-app URL, code paths), `User language:`, then `Research:` / `Answers:` per round, finally `Approval: yes` for a draft path | *Research needed* (table of researcher questions, run in parallel) — or *Clarification needed* (findings table + `AskUserQuestion` JSON) — or a spec file (`<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md`, `Status: draft`, lint-clean) and a *Spec report* — counts, decisions, self-check table, open questions, proposed edits outside scope |
+| implementation-planner | Feature request + `<pkg>/.spec/<feature>.spec.md` or `specs/<feature>.spec.md` (or numbered acceptance criteria), `Execution mode: multi-agent \| single-agent` and `Answers:` once asked — **or**, in Update mode, an existing `docs/plans/<feature>.plan.md` path plus a change request / Implementation Report / Plan Verification, plus the `Retro:` line and `Sign-off:` when there is one. The retro fallback is `.harness/retros/<feature>.retro.md`; a missing file means no retro signal, not a block | *Development Plan* — Goal, AC (copied, never authored), Requirements review, Recommendations, Constraints (incl. 3 INSIGHTS entries per package), Steps table with skills and lane per step, Execution (lanes → agents, dependencies, parallelism), Test plan, Review hand-off, `**Execution mode:**`, `**Revision:**` + `## Revisions`, **Plan status** — or *Clarification needed* (requirements review, recommendations and the `AskUserQuestion` JSON, always including the execution-mode question until it is answered). Update mode returns the whole revised plan (stable IDs, `*(rev N)*` markers, refreshed `Base`, a new `## Revisions` line), never a diff |
 | implementer | Path to an approved `docs/plans/<feature>.plan.md` (`Plan status: Ready`) | Working-tree changes (uncommitted), appended `INSIGHTS.md` entries, *Implementation Report* — steps, deviations, verification table, skipped checks, self-check, reviewer hand-off, open issues |
 | test-writer | A plan path, or a named target (files, seams, AC) plus a done criterion | New test files only, *Test Report* — tests written, negative control per test, skills applied, verification, bugs found, production changes needed (not made), insights proposed |
 | architecture-reviewer | A base ref (default `git merge-base HEAD origin/main`), a file list, or the implementer's *Hand-off to reviewers* | *Architecture Review* — deterministic checks table (with baseline delta), findings (rule, `file:line`, edge, severity, evidence), checked-no-finding, pre-existing context, `**Review status:**` |
@@ -250,10 +310,10 @@ happens inside implementation.
 | plan-verifier | A plan path (`Plan status: Ready`) + optional `Manual acceptance:` block | *Plan Verification* — per-item traceability matrix (verdict + evidence) over every AC/S/T/C/O item, commands run, unplanned changes, handed-off (not judged) items, `**Verification status:**` |
 | doc-writer | Source material (plan path, spec, files or feature name) + audience/doc kind | Doc files per the Diátaxis home table, *Documentation Report* — files written, diagrams, claims checked against code, proposed edits outside scope, conventions notes, `**Docs status:**` |
 | retro-writer | Plan path + inline reviewer report(s) + `HEAD` sha + clean-round flag, or a backfill instruction — plus the retro file's existing labels and newest entries, when one exists | `.harness/retros/<feature>.retro.md` entry (via marker-line `Edit`, `Write` only on first create), *Retro Report* — entry table, why the loop is (not) converging, feed-forward line, sign-off JSON when not converging, graduation candidates, `**Retro status:**` |
-| harness-analyst | `User language:` + `Date:` (+ optional retro-file subset or focus) | `.harness/analysis/<date>.md` (`Write`, once), *Harness Analysis Report* — inputs, clusters, proposals, not-proposed, per-retro-file consume recommendation, `AskUserQuestion` decision JSON, limits, `**Analysis status:**` |
+| harness-analyst | `User language:` + `Date:` (+ optional retro-file subset or focus) | `.harness/analysis/<date>.md` (`Write`, once), *Harness Analysis Report* — inputs, usage, recurring actions, anomalies, clusters, proposals, not-proposed, per-retro-file consume recommendation, `AskUserQuestion` decision JSON, limits, `**Analysis status:**` |
 
-The link between planner and implementer is the **Skills** column of the plan: the
-planner routes every step's files through
+The link between implementation-planner and implementer is the **Skills** column of the plan: the
+implementation-planner routes every step's files through
 [`pr-self-review/routing.md`](../skills/pr-self-review/routing.md), and the implementer
 loads exactly those skills (plus any bucket its real files hit). The same table later
 drives `/pr-self-review`, so planning, implementation and the pre-PR gate judge a file by
@@ -261,11 +321,11 @@ the same skills.
 
 ## Sources
 
-The planner and implementer rules were derived from a `researcher` report (2026-09-24)
+The implementation-planner and implementer rules were derived from a `researcher` report (2026-09-24)
 over these sources, plus the repo's own conventions. The test-writer, architecture-reviewer,
-plan-verifier and doc-writer rules (and the planner's Update mode) were derived from three
-further `researcher` reports plus the planner itself (2026-09-24), covering the sources
-below. The retro-writer rules (and the planner's `Retro:`/`Sign-off:` handling) were
+plan-verifier and doc-writer rules (and the implementation-planner's Update mode) were derived from three
+further `researcher` reports plus the implementation-planner itself (2026-09-24), covering the sources
+below. The retro-writer rules (and the implementation-planner's `Retro:`/`Sign-off:` handling) were
 derived from a further `researcher` report (2026-09-25), covering the additional sources
 below.
 
@@ -273,10 +333,10 @@ below.
 
 | Practice | Where it shows up | Source |
 |----------|-------------------|--------|
-| `description` drives automatic delegation; state scope and what the agent does *not* do | all ten descriptions | [Subagents][s1] |
+| `description` drives automatic delegation; state scope and what the agent does *not* do | all eleven descriptions | [Subagents][s1] |
 | Least privilege via `tools` allowlist + `disallowedTools` denylist | Permissions table | [Subagents][s1] |
-| Subagents can nest by default — deny `Agent` to keep review out of implementation | all ten | [Subagents][s1] |
-| Fresh context per subagent — the plan must be self-contained | planner output, plan file handoff | [Subagents][s1] |
+| Subagents can nest by default — deny `Agent` to keep review out of implementation | all eleven | [Subagents][s1] |
+| Fresh context per subagent — the plan must be self-contained | implementation-planner output, plan file handoff | [Subagents][s1] |
 | Return a concise structured summary, not raw logs | all output formats | [Subagents][s1] |
 | Agent-scoped `hooks`, `permissionMode`, `model`, `skills` frontmatter; `disallowedTools` with a specifier still removes the whole tool | implementer/scope-guard hooks, modes | [Subagents][s1] |
 | `skills:` preloads the full skill body; other skills load on demand via `Skill` | preload only the architecture skills, route the rest per step | [Skills][s2] |
@@ -290,7 +350,7 @@ below.
 | Verification vs validation terminology | plan-verifier verdicts (met / partial / not met) | [ISTQB glossary][s9] |
 | Evaluator-optimizer pattern — a judge agent scores another agent's output | architecture-reviewer / plan-verifier as evaluators of the implementer | [Building effective agents][s10] |
 | Evaluator-optimizer pattern, applied to the loop itself — a separate evaluator judges *why* the implementer/reviewer pair did not converge | retro-writer as a second-order evaluator over a whole review round, not one output | [Building effective agents][s10] |
-| A short verbal evaluator signal fed into the next attempt, instead of the whole trace | retro-writer's one-line `Retro:` feed-forward, read by the planner via `rg -m1` only | [Reflexion][s24] |
+| A short verbal evaluator signal fed into the next attempt, instead of the whole trace | retro-writer's one-line `Retro:` feed-forward, read by the implementation-planner via `rg -m1` only | [Reflexion][s24] |
 | Iterative feedback and refinement, with explicit stopping criteria | retro-writer's clean-round stop, and the hard convergence gate as a stronger stop that needs a changed approach, not another attempt | [Self-Refine][s25] |
 | Blameless, evidence-based postmortems; action items over narrative | retro-writer's "no blame" rule and its one-sentence Decision requirement | [Postmortem Culture][s26] |
 | A single causal chain hides independent causes | retro-writer's "≥ 2 independent causes → ≥ 2 finding rows" rule | 5 Whys limitations (title only, as cited in the 2026-09-25 researcher report — no URL given there) |
@@ -398,25 +458,40 @@ and reviewers).
   *Limits* naming the command, never a retry with a different spelling; the main session
   re-invokes it once the cwd is right.
 
-- **The planner returns *Clarification needed*.** Answer the questions (the main session
-  passes the JSON to `AskUserQuestion`) and re-invoke it with the answers, or write the
-  spec first.
-- **A plan needs to change after it was approved.** Re-invoke the planner with the
+- **The implementation-planner returns *Clarification needed*.** Answer the questions (the main session
+  passes the JSON to `AskUserQuestion`) and re-invoke it with `Answers:` and
+  `Execution mode: <mode>`. When the requirements are missing, run spec-creator first (or
+  give numbered acceptance criteria) — the implementation-planner never drafts a spec itself.
+- **spec-creator returns *Clarification needed*.** Pass the JSON to `AskUserQuestion` (at
+  most 4 questions per dialog — split into several, in the given order) and re-invoke it
+  with `Answers:`. After the user read the draft and said yes, re-invoke it with
+  `Approval: yes` and the spec path.
+- **spec-creator returns *Research needed*.** Launch one `researcher` per row, in parallel
+  (one message, several Agent calls), passing Question / Type / Scope / Done when and
+  `User language:`. Re-invoke spec-creator with all reports under `Research:`.
+- **spec-creator is blocked on an Edit.** The spec is no longer `draft` — approved specs
+  are frozen. Ask it for a new spec with `Supersedes:` instead.
+- **spec-lint blocks the switch to `approved`.** The draft still has format errors; the
+  agent fixes them first. If the fix changes meaning, show the user the new text before
+  approving again. Check any spec by hand with `node .claude/hooks/spec-lint.mjs check <file>`.
+- **A feature shipped.** After `plan-verifier` reports every `AC-n` of the spec as met, the
+  main session sets `Status: implemented` (spec-creator never does).
+- **A plan needs to change after it was approved.** Re-invoke the implementation-planner with the
   existing plan's path plus the change (a request in words, an Implementation Report, or a
   Plan Verification) — Update mode returns the whole revised plan, IDs unchanged, save it
   over the same `docs/plans/<feature>.plan.md`.
 - **retro-writer is blocked on a Write.** The retro file already exists — use `Edit` on one
   of the two marker lines (`<!-- newest first: class-labels -->` or `<!-- newest first:
   retro-entries -->`) instead of `Write`.
-- **The planner returns Blocked: not converging.** Get the user's sign-off on the
+- **The implementation-planner returns Blocked: not converging.** Get the user's sign-off on the
   retro-writer's proposed changed approach, then pass `Sign-off: <option> · YYYY-MM-DD` in
-  the next planner or implementer prompt — the planner refuses to apply a change while the
+  the next implementation-planner or implementer prompt — the implementation-planner refuses to apply a change while the
   retro signal says `Converging: no` and no `Sign-off:` is present (Update mode step 7).
 - **harness-analyst is blocked on a Write.** That date's analysis file already exists —
   analysis files are write-once, so the analyst chooses `<date>-<n>.md` instead of editing
   the existing one.
-- **The planner finds no retro signal.** Expected once `.harness/retros/<feature>.retro.md`
-  has been consumed and deleted by a prior harness-analyst decision — the planner proceeds
+- **The implementation-planner finds no retro signal.** Expected once `.harness/retros/<feature>.retro.md`
+  has been consumed and deleted by a prior harness-analyst decision — the implementation-planner proceeds
   with no retro input, it does not block.
 - **Grep/Glob do not find files under `.harness/`.** The directory is gitignored and
   hidden, so a repo-wide Grep/Glob skips it; use `ls` or an explicit `.harness/…` path

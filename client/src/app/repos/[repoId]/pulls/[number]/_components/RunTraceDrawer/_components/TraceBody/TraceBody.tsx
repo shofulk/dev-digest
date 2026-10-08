@@ -8,7 +8,7 @@ import { Badge } from "@devdigest/ui";
 import type { RunTrace, FindingRecord } from "@devdigest/shared";
 import { PROMPT_COLORS } from "../../constants";
 import { formatCost } from "@/lib/format-cost";
-import { formatSeconds, formatTokens } from "../../helpers";
+import { formatSeconds, formatTokens, specsReadRows, specsSkippedRows } from "../../helpers";
 import { s } from "../../styles";
 import { TraceSection } from "../TraceSection";
 import { ToolCallRow } from "../ToolCallRow";
@@ -19,6 +19,8 @@ import { Row, Stat } from "../atoms";
 export function TraceBody({ trace, findings }: { trace: RunTrace; findings: FindingRecord[] }) {
   const t = useTranslations("runs");
   const stats = trace.stats;
+  const readRows = specsReadRows(trace);
+  const skippedRows = specsSkippedRows(trace);
   return (
     <>
       <TraceSection icon="Settings" title={t("trace.configuration")}>
@@ -38,17 +40,28 @@ export function TraceBody({ trace, findings }: { trace: RunTrace; findings: Find
           </Row>
           <Row label={t("trace.config.specsRead")}>
             <div style={s.specsWrap}>
-              {trace.specs_read.length === 0 ? (
+              {readRows.length === 0 ? (
                 <span style={s.specsNone}>{t("trace.config.none")}</span>
               ) : (
-                trace.specs_read.map((sp, i) => (
+                readRows.map((row, i) => (
                   <span key={i} className="mono" style={s.spec}>
-                    {sp}
+                    {row.tokens != null ? t("trace.config.specTokens", { path: row.path, tokens: row.tokens }) : row.path}
                   </span>
                 ))
               )}
             </div>
           </Row>
+          {skippedRows.length > 0 && (
+            <Row label={t("trace.config.specsSkipped")}>
+              <div style={s.specsWrap}>
+                {skippedRows.map((row, i) => (
+                  <span key={i} className="mono" style={s.spec}>
+                    {t("trace.config.specSkipped", { path: row.path, reason: t(`trace.config.skipReason.${row.status}`) })}
+                  </span>
+                ))}
+              </div>
+            </Row>
+          )}
         </div>
       </TraceSection>
 

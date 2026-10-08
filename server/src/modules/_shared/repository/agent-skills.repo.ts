@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import type { Db } from '../../../db/client.js';
 import * as t from '../../../db/schema.js';
 
@@ -17,11 +17,32 @@ export interface AgentSkillRow {
   linkEnabled: boolean;
   /** `skills.enabled` — the skill's own global flag. */
   skillEnabled: boolean;
+  /** Repository-relative paths of the skill's own attached Project Context documents. */
+  contextDocs: string[];
+}
+
+/**
+ * Own row type for the batched query: it joins several agents' rows together,
+ * so (unlike {@link AgentSkillRow}) it must carry `agentId` to group by — and
+ * does so as a required field, never a non-null-asserted optional one.
+ */
+export interface BatchedAgentSkillRow extends AgentSkillRow {
+  agentId: string;
 }
 
 export async function linkedSkillRowsForAgent(db: Db, agentId: string): Promise<AgentSkillRow[]> {
+  return linkedSkillRowsForAgents(db, [agentId]);
+}
+
+/** Batched form: one query for every id in `agentIds` instead of one per agent. */
+export async function linkedSkillRowsForAgents(
+  db: Db,
+  agentIds: string[],
+): Promise<BatchedAgentSkillRow[]> {
+  if (agentIds.length === 0) return [];
   return db
     .select({
+      agentId: t.agentSkills.agentId,
       id: t.skills.id,
       name: t.skills.name,
       version: t.skills.version,
@@ -29,8 +50,9 @@ export async function linkedSkillRowsForAgent(db: Db, agentId: string): Promise<
       order: t.agentSkills.order,
       linkEnabled: t.agentSkills.enabled,
       skillEnabled: t.skills.enabled,
+      contextDocs: t.skills.contextDocs,
     })
     .from(t.agentSkills)
     .innerJoin(t.skills, eq(t.agentSkills.skillId, t.skills.id))
-    .where(eq(t.agentSkills.agentId, agentId));
+    .where(inArray(t.agentSkills.agentId, agentIds));
 }

@@ -26,6 +26,8 @@ export interface AgentSkillSet {
   skills: ResolvedSkill[];
   /** Every skill the agent links, enabled or not (the `m` of "k of m linked enabled"). */
   linkedCount: number;
+  /** Each included skill's own attached Project Context documents, in the same order. */
+  docSources: { name: string; contextDocs: string[] }[];
 }
 
 /** Apply the two-gate rule and the (order, name) ordering to an agent's linked rows. */
@@ -34,6 +36,20 @@ export function selectIncludedSkills(rows: AgentSkillRow[]): ResolvedSkill[] {
     .filter((r) => r.linkEnabled && r.skillEnabled)
     .sort((a, b) => a.order - b.order || cmp(a.name, b.name) || cmp(a.id, b.id))
     .map(({ id, name, version, body }) => ({ id, name, version, body }));
+}
+
+/**
+ * The included skills' own attached documents (D7), gated and ordered exactly
+ * like {@link selectIncludedSkills} — a skill disabled on the agent or
+ * globally contributes nothing here either.
+ */
+export function selectIncludedSkillDocs(
+  rows: AgentSkillRow[],
+): { name: string; contextDocs: string[] }[] {
+  return rows
+    .filter((r) => r.linkEnabled && r.skillEnabled)
+    .sort((a, b) => a.order - b.order || cmp(a.name, b.name) || cmp(a.id, b.id))
+    .map(({ name, contextDocs }) => ({ name, contextDocs }));
 }
 
 /** A skill's prompt block: `### <name>` so the assembled section stays attributable. */
@@ -50,14 +66,34 @@ export function skillsForPrompt(skills: ResolvedSkill[]): string[] | undefined {
   return skills.length > 0 ? skills.map(formatSkillBlock) : undefined;
 }
 
+/** Grouping/selection only — pure over rows, no `Db`, usable from ring 2 as-is. */
+export function toSkillSet(rows: AgentSkillRow[]): AgentSkillSet {
+  return {
+    skills: selectIncludedSkills(rows),
+    linkedCount: rows.length,
+    docSources: selectIncludedSkillDocs(rows),
+  };
+}
+
 export async function resolveAgentSkillSet(db: Db, agentId: string): Promise<AgentSkillSet> {
   const rows = await linkedSkillRowsForAgent(db, agentId);
-  return { skills: selectIncludedSkills(rows), linkedCount: rows.length };
+  return toSkillSet(rows);
 }
 
 /** The included skills of one agent, ordered — see {@link selectIncludedSkills}. */
 export async function resolveAgentSkills(db: Db, agentId: string): Promise<ResolvedSkill[]> {
   return (await resolveAgentSkillSet(db, agentId)).skills;
+}
+
+/**
+ * The port `run-executor.ts` and `project-context/service.ts` depend on,
+ * resolved once in `platform/container.ts` (`onion-architecture`'s DI seam) —
+ * neither service keeps a raw `Db` or reaches `resolveAgentSkillSet` through
+ * `this.container` inside a method body.
+ */
+export interface AgentSkillsPort {
+  resolveAgentSkillSet(agentId: string): Promise<AgentSkillSet>;
+  resolveAgentSkillSets(agentIds: string[]): Promise<Map<string, AgentSkillSet>>;
 }
 
 function cmp(a: string, b: string): number {

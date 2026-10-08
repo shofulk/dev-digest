@@ -27,6 +27,7 @@ the wrong reason.
 | **types** | any `**/*.ts`, `**/*.tsx` outside `vendor/`, `dist/`, `migrations/` | `typescript-expert` | per-package `typecheck` |
 | **repo-hygiene** | always runs | root `AGENTS.md` + each touched `<pkg>/AGENTS.md` | all tripwires (severity.md §1) |
 | **docs** | `**/*.md` (excluding `INSIGHTS.md`, which is append-only) | `doc-standards`, `file-conventions` | — |
+| **specs** | `specs/*.spec.md`, `*/.spec/*.spec.md` | `spec-writing` | `node .claude/hooks/spec-lint.mjs check <each changed spec>` (old-format specs without `Spec ID:` are skipped) |
 
 ## Notes that decide the edge cases
 

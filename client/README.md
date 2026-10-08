@@ -26,15 +26,17 @@ flowchart TD
   ROOT["/"] -->|"useRepos → GET /repos"| PULLS["/repos/:repoId/pulls<br/>PR list"]
   ONB["/onboarding<br/>add repo"] -->|"POST /repos"| API[("Fastify API")]
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
+  ROOT --> CONTEXT["/repos/:repoId/context<br/>Project Context: grouped list + preview"]
 
-  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills)"]
-  SKILLS["/skills<br/>Skills Lab: list + editor<br/>?skill=&tab=config|preview|stats|versions"]
+  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context)"]
+  SKILLS["/skills<br/>Skills Lab: list + editor<br/>?skill=&tab=config|preview|context|stats|versions"]
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
   PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /findings/:id/(accept|dismiss)"| API
-  AGENTS -->|"/agents · /agents/:id · /agents/:id/skills"| API
-  SKILLS -->|"/skills · /skills/:id/(versions|stats|restore) · /skills/import[/preview] · /skills/tokens"| API
+  CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/file<br/>POST /repos/:id/context/reindex"| API
+  AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs"| API
+  SKILLS -->|"/skills · /skills/:id/(versions|stats|restore) · /skills/:id/context-docs · /skills/import[/preview] · /skills/tokens"| API
   SETTINGS -->|"/settings · /providers"| API
 ```
 
