@@ -1,0 +1,163 @@
+# Harness evals — skills, subagents and the workflow tier, on OpenRouter.
+#
+# evals/scripts/ci-detect.mjs maps the PR's changed files onto suites:
+#   .claude/skills/<name>/**  → evals/skills/<name>   (content tier, direct OpenRouter call)
+#   .claude/agents/<name>.md  → evals/agents/<name>   (tool tier, via the LiteLLM proxy)
+#   CLAUDE.md / AGENTS.md / .claude/settings.json / any agent → evals/workflow
+#   evals/src/** (the engine) or a manual run → everything that has evals
+# An artifact with no evals is logged as "SKIP <name> (no evals)" — never a failure.
+#
+# Models are the three env lines below — change one line to switch. The workflow tier stays on
+# Gemini Flash: it asserts on subagent dispatch, which the README measured only Gemini doing.
+# The workflow tier is informational (continue-on-error) until the model is proven on its cases.
+#
+# Needs the Actions secret OPENROUTER_API_KEY. Fork PRs get no secrets → the job skips, green.
+name: evals
+
+on:
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - '.claude/agents/**'
+      - '.claude/settings.json'
+      - '.claude/CLAUDE.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - '*/AGENTS.md'
+      - '*/CLAUDE.md'
+      - 'evals/**'
+      - '.github/workflows/evals.yml'
+  workflow_dispatch: # manual run = every suite that has evals
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EVAL_BACKEND: openrouter
+  EVAL_MODEL: deepseek/deepseek-v4-flash          # skills + agents under test
+  EVAL_JUDGE_MODEL: google/gemini-2.5-flash       # judge: another family than the model under test
+  EVAL_WORKFLOW_MODEL: google/gemini-2.5-flash    # workflow tier: needs reliable subagent dispatch
+  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  PROXY_URL: http://localhost:4000
+
+jobs:
+  evals:
+    name: harness evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: evals
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed artifacts
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVAL_RUN_ALL: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          else
+            CHANGED_FILES=""
+          fi
+          export CHANGED_FILES
+          node scripts/ci-detect.mjs
+
+      - name: Check OpenRouter key
+        id: key
+        if: steps.detect.outputs.anything == 'true'
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "SKIP: OPENROUTER_API_KEY unavailable (fork PR or secret not set) — evals not run"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: pnpm/action-setup@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+
+      - name: Install
+        if: steps.key.outputs.ok == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        if: steps.key.outputs.ok == 'true'
+        run: pnpm typecheck
+
+      - name: Start LiteLLM proxy
+        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.needs_proxy == 'true'
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+
+      # Content tier talks to OpenRouter directly — no proxy.
+      - name: Skill evals
+        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.skills != '[]'
+        env:
+          NAMES: ${{ steps.detect.outputs.skills }}
+        run: |
+          # Trailing slash keeps one name from prefix-matching another (dependency-checker vs dependencies-checker).
+          mapfile -t FILTERS < <(echo "$NAMES" | jq -r '.[] | "skills/\(.)/"')
+          echo "running: ${FILTERS[*]}"
+          pnpm exec vitest run "${FILTERS[@]}"
+
+      # Tool tier rides the Agent SDK → proxy. Sequential: OpenRouter throttles parallel tool loops.
+      - name: Agent evals
+        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.agents != '[]'
+        env:
+          NAMES: ${{ steps.detect.outputs.agents }}
+          OPENROUTER_BASE_URL: ${{ env.PROXY_URL }}
+        run: |
+          # Trailing slash keeps architecture-reviewer from also matching architecture-reviewer-lite.
+          mapfile -t FILTERS < <(echo "$NAMES" | jq -r '.[] | "agents/\(.)/"')
+          echo "running: ${FILTERS[*]}"
+          pnpm exec vitest run --no-file-parallelism "${FILTERS[@]}"
+
+      - name: Workflow evals (informational)
+        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.run_workflow == 'true'
+        continue-on-error: true
+        env:
+          EVAL_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
+          EVAL_JUDGE_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
+          OPENROUTER_BASE_URL: ${{ env.PROXY_URL }}
+        run: pnpm exec vitest run --no-file-parallelism workflow/
+
+      - name: Proxy logs
+        if: failure() && steps.detect.outputs.needs_proxy == 'true'
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100 || true
+
+      - name: Stop LiteLLM proxy
+        if: always() && steps.detect.outputs.needs_proxy == 'true'
+        run: docker compose -f proxy/docker-compose.yml down || true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || 'unused' }}
+
+      - name: Upload eval outputs
+        if: always() && steps.key.outputs.ok == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-outputs
+          path: |
+            evals/results/outputs/
+            evals/results/records.jsonl
+            evals/results/history.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
