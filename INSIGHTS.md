@@ -165,6 +165,27 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-11 — a vitest path filter is a substring match: `vitest run agents/architecture-reviewer` also runs `architecture-reviewer-lite`
+
+Positional args to `vitest run` filter by substring of the file path, so one artifact name that
+prefixes another (`architecture-reviewer` / `architecture-reviewer-lite`) silently runs both —
+on CI that is a second paid model suite. End every filter with a slash
+(`agents/architecture-reviewer/`); confirm with `pnpm exec vitest list <filter>`, which collects
+without calling a model. Related: CI triggers keyed on `CLAUDE.md` alone miss instruction changes —
+every `CLAUDE.md` here is an `@AGENTS.md` shell, so trigger on `AGENTS.md` too.
+**Evidence:** `.github/workflows/evals.yml` (Skill/Agent evals steps), `evals/scripts/ci-detect.mjs` (`runWorkflow`)
+
+### 2026-10-08 — `e2e/node_modules/.modules.yaml` says `pnpm@10.34.5`, but the right package manager for `e2e` is npm: decide by the tracked lockfile, never by the installer
+
+`e2e/` was installed with pnpm (its `node_modules/.modules.yaml` records `packageManager:
+pnpm@10.34.5`) while its tracked lockfile is `package-lock.json`. Any tool that picks the manager
+from `node_modules` (the dependencies-checker collector's `packageManager` field does record it)
+would suggest `pnpm --dir e2e add|remove`, which writes the stray `pnpm-lock.yaml` described
+above. `npm outdated --json` still works on that pnpm-shaped tree (top-level symlinks into
+`.pnpm`), so the lockfile-keyed choice costs nothing. `reviewer-core/` is the consistent case:
+npm-locked and npm-installed.
+**Evidence:** `.claude/skills/dependencies-checker/collect.mjs:512`, `e2e/node_modules/.modules.yaml`
+
 ### 2026-09-28 — `e2e/` is npm-locked, not pnpm: `pnpm --dir e2e install` writes a stray `e2e/pnpm-lock.yaml`, and a live `e2e` run also needs the separate `agent-browser` binary
 
 `e2e/` is the one package whose tracked lockfile is `e2e/package-lock.json` (npm), and

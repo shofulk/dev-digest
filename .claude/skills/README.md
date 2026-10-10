@@ -21,6 +21,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [spec-writing](spec-writing/SKILL.md) | Process | Writing and reviewing feature specs — context, research, design review, EARS + verify + traceability, final self-check; format of record is `specs/README.md` |
 | [sdd-run](sdd-run/SKILL.md) | Process | `/sdd-run <spec-or-plan>` — runs an existing plan through lanes, checks gate, review round and fix rounds to a PR draft; user-invoked only, never runs spec-creator or the planner |
 | [pr-self-review](pr-self-review/SKILL.md) | Process | Pre-PR gate — routes these skills onto the diff, blocks a PR with a critical finding |
+| [dependencies-checker](dependencies-checker/SKILL.md) | Process | Read-only dependency analysis of the five packages (sizes, Mermaid, P0–P2 advice) |
 
 ## What Are Skills?
 

@@ -1,0 +1,255 @@
+# Harness evals — skills, subagents and the workflow tier, on OpenRouter.
+#
+# One `detect` job, then one job per tier. Each tier is its own PR check and fails on its own:
+# a red skill suite never hides the agent results, and a proxy that won't start fails only the
+# jobs that need it.
+#
+# evals/scripts/ci-detect.mjs maps the PR's changed files onto suites:
+#   .claude/skills/<name>/**  → evals/skills/<name>   (content tier, direct OpenRouter call)
+#   .claude/agents/<name>.md  → evals/agents/<name>   (tool tier, via the LiteLLM proxy)
+#   CLAUDE.md / AGENTS.md / .claude/settings.json / any agent → evals/workflow
+#   evals/src/** (the engine) or a manual run → everything that has evals
+# An artifact with no evals is logged as "SKIP <name> (no evals)" — never a failure. A tier with
+# nothing to run is a skipped job, not a red one.
+#
+# Models are the three env lines below — change one line to switch. The workflow tier stays on
+# Gemini Flash: it asserts on subagent dispatch, which the README measured only Gemini doing.
+# The workflow job is informational (continue-on-error) until the model is proven on its cases.
+#
+# Needs the Actions secret OPENROUTER_API_KEY. Fork PRs get no secrets → every tier skips, green.
+name: evals
+
+on:
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - '.claude/agents/**'
+      - '.claude/settings.json'
+      - '.claude/CLAUDE.md'
+      - 'CLAUDE.md'
+      - 'AGENTS.md'
+      - '*/AGENTS.md'
+      - '*/CLAUDE.md'
+      - 'evals/**'
+      - '.github/workflows/evals.yml'
+  workflow_dispatch: # manual run = every suite that has evals
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evals-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EVAL_BACKEND: openrouter
+  EVAL_MODEL: deepseek/deepseek-v4-flash          # skills + agents under test
+  EVAL_JUDGE_MODEL: google/gemini-2.5-flash       # judge: another family than the model under test
+  EVAL_WORKFLOW_MODEL: google/gemini-2.5-flash    # workflow tier: needs reliable subagent dispatch
+
+jobs:
+  detect:
+    name: detect changed artifacts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: evals
+    outputs:
+      skills: ${{ steps.detect.outputs.skills }}
+      agents: ${{ steps.detect.outputs.agents }}
+      run_workflow: ${{ steps.detect.outputs.run_workflow }}
+      has_key: ${{ steps.key.outputs.ok }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed artifacts
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVAL_RUN_ALL: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            CHANGED_FILES="$(git diff --name-only "$BASE_SHA"...HEAD)"
+          else
+            CHANGED_FILES=""
+          fi
+          export CHANGED_FILES
+          node scripts/ci-detect.mjs
+
+      # Job-level `if:` cannot read secrets, so the key's presence is passed on as an output.
+      - name: Check OpenRouter key
+        id: key
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "SKIP: OPENROUTER_API_KEY unavailable (fork PR or secret not set) — evals not run"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            # Shape + a live auth probe, never the value: a key pasted with quotes, a "Bearer "
+            # prefix or a trailing newline reads as a 401 deep inside the eval runs otherwise.
+            TRIMMED="$(printf '%s' "$OPENROUTER_API_KEY" | tr -d '[:space:]')"
+            echo "key length: ${#OPENROUTER_API_KEY} (trimmed ${#TRIMMED}), sk-or- prefix: $([[ "$OPENROUTER_API_KEY" == sk-or-* ]] && echo yes || echo NO)"
+            CODE=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $OPENROUTER_API_KEY" https://openrouter.ai/api/v1/key)
+            echo "OpenRouter /api/v1/key → HTTP $CODE"
+            if [ "$CODE" != "200" ]; then
+              echo "::error::OPENROUTER_API_KEY is rejected by OpenRouter (HTTP $CODE) — fix the Actions secret"
+              exit 1
+            fi
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Content tier talks to OpenRouter directly — no proxy.
+  skills:
+    name: skill evals
+    needs: detect
+    if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.skills != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Skill evals
+        if: ${{ !cancelled() }}
+        env:
+          NAMES: ${{ needs.detect.outputs.skills }}
+        run: |
+          # Trailing slash keeps one name from prefix-matching another.
+          mapfile -t FILTERS < <(echo "$NAMES" | jq -r '.[] | "skills/\(.)/"')
+          echo "running: ${FILTERS[*]}"
+          pnpm exec vitest run "${FILTERS[@]}"
+
+      - name: Upload eval outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-outputs-skills
+          path: |
+            evals/results/outputs/
+            evals/results/records.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Tool tier rides the Agent SDK → proxy. Sequential: OpenRouter throttles parallel tool loops.
+  agents:
+    name: agent evals
+    needs: detect
+    if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.agents != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_BASE_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start LiteLLM proxy
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+
+      - name: Agent evals
+        env:
+          NAMES: ${{ needs.detect.outputs.agents }}
+        run: |
+          # Trailing slash keeps architecture-reviewer from also matching architecture-reviewer-lite.
+          mapfile -t FILTERS < <(echo "$NAMES" | jq -r '.[] | "agents/\(.)/"')
+          echo "running: ${FILTERS[*]}"
+          pnpm exec vitest run --no-file-parallelism "${FILTERS[@]}"
+
+      - name: Proxy logs
+        if: failure()
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100 || true
+
+      - name: Upload eval outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-outputs-agents
+          path: |
+            evals/results/outputs/
+            evals/results/records.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
+
+  workflow:
+    name: workflow evals (informational)
+    needs: detect
+    if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.run_workflow == 'true'
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: evals
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_BASE_URL: http://localhost:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: evals/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+
+      - name: Start LiteLLM proxy
+        run: |
+          docker compose -f proxy/docker-compose.yml up -d
+          pnpm proxy:wait
+
+      - name: Workflow evals
+        env: # job-level env cannot read the workflow env, so the switch is applied per step
+          EVAL_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
+          EVAL_JUDGE_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
+        run: pnpm exec vitest run --no-file-parallelism workflow/
+
+      - name: Proxy logs
+        if: failure()
+        run: docker compose -f proxy/docker-compose.yml logs --tail 100 || true
+
+      - name: Upload eval outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-outputs-workflow
+          path: |
+            evals/results/outputs/
+            evals/results/records.jsonl
+          if-no-files-found: ignore
+          retention-days: 14
