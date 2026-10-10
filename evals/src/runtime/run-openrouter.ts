@@ -16,6 +16,10 @@ import { EVAL_MODEL } from "../config.js";
 import type { Result, RunOptions } from "./run-claude.js";
 
 const BASE_URL = (process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1").replace(/\/$/, "");
+// Without max_tokens OpenRouter reserves the model's full output window (65535 for DeepSeek V4
+// Flash) against the account balance, so a low-credit key gets a 402 on every call even though a
+// case answers in a few hundred tokens.
+const MAX_OUTPUT_TOKENS = Number(process.env.EVAL_MAX_OUTPUT_TOKENS ?? "4096");
 
 /** Run one content-only turn against an OpenAI-compatible endpoint and shape it as a Result. */
 export async function runOpenRouter(prompt: string, opts: RunOptions = {}): Promise<Result> {
@@ -39,6 +43,7 @@ export async function runOpenRouter(prompt: string, opts: RunOptions = {}): Prom
     const res = await client.chat.completions.create({
       model: opts.model ?? EVAL_MODEL,
       temperature: 0,
+      max_tokens: MAX_OUTPUT_TOKENS,
       messages: [
         { role: "system", content: system },
         { role: "user", content: prompt },
