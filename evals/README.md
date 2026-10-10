@@ -189,8 +189,10 @@ workflow cases:
 
 ### GitHub Actions — `.github/workflows/evals.yml`
 
-The engine is wired into CI as **one job** on every PR that touches the harness. It runs only the
-suites the change can affect — `scripts/ci-detect.mjs` maps changed files onto suites:
+The engine is wired into CI on every PR that touches the harness: a `detect` job, then one job per
+tier — `skill evals`, `agent evals`, `workflow evals (informational)` — each its own PR check that
+fails on its own. Only the suites the change can affect run — `scripts/ci-detect.mjs` maps changed
+files onto suites (a tier with nothing to run is a skipped job):
 
 | Changed | Runs |
 |---------|------|
@@ -200,8 +202,7 @@ suites the change can affect — `scripts/ci-detect.mjs` maps changed files onto
 | `evals/src/**`, `evals/package.json`, lockfile, `vitest.config.ts`, or a manual *Run workflow* | every suite that has evals |
 
 An artifact with **no** evals is not a failure: the detect step logs `SKIP <name> (no evals)`, and
-when nothing is left to run it logs `nothing to evaluate` and stops before installing anything or
-starting the proxy. A PR from a fork gets no secrets, so it logs
+when nothing is left to run every tier job is skipped. A PR from a fork gets no secrets, so it logs
 `SKIP: OPENROUTER_API_KEY unavailable` and stays green.
 
 **Models** are three `env` lines at the top of the workflow — change one line to switch:
@@ -212,7 +213,7 @@ starting the proxy. A PR from a fork gets no secrets, so it logs
 | `EVAL_JUDGE_MODEL` | `google/gemini-2.5-flash` | another family than the model under test (self-preference) |
 | `EVAL_WORKFLOW_MODEL` | `google/gemini-2.5-flash` | the workflow tier asserts on subagent dispatch, which only Gemini Flash did reliably (table above) |
 
-Skill and agent evals **block** the PR. The workflow tier runs with `continue-on-error` — it is
+Skill and agent evals **block** the PR. The workflow job runs with `continue-on-error` — it is
 informational until its `activation` cases are proven on the CI model. Agent and workflow evals
 run sequentially (`--no-file-parallelism`) because OpenRouter throttles parallel tool loops.
 `results/outputs/` and the jsonl records are uploaded as the `eval-outputs` artifact, so a red
