@@ -95,22 +95,27 @@ jobs:
           cache-dependency-path: evals/pnpm-lock.yaml
 
       - name: Install
+        id: install
         if: steps.key.outputs.ok == 'true'
         run: pnpm install --frozen-lockfile
 
+      # Every step below runs on its own: `!cancelled()` overrides the default "skip after a
+      # failure", so a red typecheck or a proxy that won't start never hides the other suites'
+      # results. Any failed step still fails the job.
       - name: Typecheck
-        if: steps.key.outputs.ok == 'true'
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm typecheck
 
       - name: Start LiteLLM proxy
-        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.needs_proxy == 'true'
+        id: proxy
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.detect.outputs.needs_proxy == 'true' }}
         run: |
           docker compose -f proxy/docker-compose.yml up -d
           pnpm proxy:wait
 
       # Content tier talks to OpenRouter directly — no proxy.
       - name: Skill evals
-        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.skills != '[]'
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && steps.detect.outputs.skills != '[]' }}
         env:
           NAMES: ${{ steps.detect.outputs.skills }}
         run: |
@@ -121,7 +126,7 @@ jobs:
 
       # Tool tier rides the Agent SDK → proxy. Sequential: OpenRouter throttles parallel tool loops.
       - name: Agent evals
-        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.agents != '[]'
+        if: ${{ !cancelled() && steps.proxy.outcome == 'success' && steps.detect.outputs.agents != '[]' }}
         env:
           NAMES: ${{ steps.detect.outputs.agents }}
           OPENROUTER_BASE_URL: ${{ env.PROXY_URL }}
@@ -132,7 +137,7 @@ jobs:
           pnpm exec vitest run --no-file-parallelism "${FILTERS[@]}"
 
       - name: Workflow evals (informational)
-        if: steps.key.outputs.ok == 'true' && steps.detect.outputs.run_workflow == 'true'
+        if: ${{ !cancelled() && steps.proxy.outcome == 'success' && steps.detect.outputs.run_workflow == 'true' }}
         continue-on-error: true
         env:
           EVAL_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
@@ -141,8 +146,12 @@ jobs:
         run: pnpm exec vitest run --no-file-parallelism workflow/
 
       - name: Proxy logs
-        if: failure() && steps.detect.outputs.needs_proxy == 'true'
-        run: docker compose -f proxy/docker-compose.yml logs --tail 100 || true
+        if: ${{ failure() && steps.proxy.outcome != 'skipped' && steps.detect.outputs.needs_proxy == 'true' }}
+        run: |
+          if [ "${{ steps.proxy.outcome }}" = "failure" ]; then
+            echo "SKIP agent + workflow evals: the LiteLLM proxy did not start (log below)"
+          fi
+          docker compose -f proxy/docker-compose.yml logs --tail 100 || true
 
       - name: Stop LiteLLM proxy
         if: always() && steps.detect.outputs.needs_proxy == 'true'
