@@ -114,7 +114,7 @@ jobs:
         env:
           NAMES: ${{ steps.detect.outputs.skills }}
         run: |
-          # Trailing slash keeps one name from prefix-matching another (dependency-checker vs dependencies-checker).
+          # Trailing slash keeps one name from prefix-matching another.
           mapfile -t FILTERS < <(echo "$NAMES" | jq -r '.[] | "skills/\(.)/"')
           echo "running: ${FILTERS[*]}"
           pnpm exec vitest run "${FILTERS[@]}"

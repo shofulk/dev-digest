@@ -140,6 +140,16 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-11 — a vitest path filter is a substring match: `vitest run agents/architecture-reviewer` also runs `architecture-reviewer-lite`
+
+Positional args to `vitest run` filter by substring of the file path, so one artifact name that
+prefixes another (`architecture-reviewer` / `architecture-reviewer-lite`) silently runs both —
+on CI that is a second paid model suite. End every filter with a slash
+(`agents/architecture-reviewer/`); confirm with `pnpm exec vitest list <filter>`, which collects
+without calling a model. Related: CI triggers keyed on `CLAUDE.md` alone miss instruction changes —
+every `CLAUDE.md` here is an `@AGENTS.md` shell, so trigger on `AGENTS.md` too.
+**Evidence:** `.github/workflows/evals.yml` (Skill/Agent evals steps), `evals/scripts/ci-detect.mjs` (`runWorkflow`)
+
 ### 2026-10-08 — `e2e/node_modules/.modules.yaml` says `pnpm@10.34.5`, but the right package manager for `e2e` is npm: decide by the tracked lockfile, never by the installer
 
 `e2e/` was installed with pnpm (its `node_modules/.modules.yaml` records `packageManager:

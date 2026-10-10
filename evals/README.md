@@ -186,62 +186,45 @@ workflow cases:
 > checkout is disposable); locally, prefer the Anthropic path or a throwaway clone for the workflow
 > tier.
 
-### Wiring it into GitHub Actions (per-PR)
+### GitHub Actions — `.github/workflows/evals.yml`
 
-The engine is CI-ready: bring the proxy up as a step, wait for it, run the tier, tear it down. Put
-the OpenRouter key in the repo's **Actions secrets** as `OPENROUTER_API_KEY` (Settings → Secrets and
-variables → Actions). Create `.github/workflows/<name>.yml` in your repo:
+The engine is wired into CI as **one job** on every PR that touches the harness. It runs only the
+suites the change can affect — `scripts/ci-detect.mjs` maps changed files onto suites:
 
-```yaml
-name: evals
-on:
-  pull_request:
-    paths: ['evals/**', '.claude/**', 'CLAUDE.md']   # only when the harness/artifacts change
+| Changed | Runs |
+|---------|------|
+| `.claude/skills/<name>/**` or `evals/skills/<name>/**` | `evals/skills/<name>/` (content tier, direct OpenRouter, no proxy) |
+| `.claude/agents/<name>.md` or `evals/agents/<name>/**` | `evals/agents/<name>/` (tool tier, via the proxy) **and** the workflow tier |
+| `CLAUDE.md`, `AGENTS.md` (root or any package), `.claude/settings.json`, `evals/workflow/**` | the workflow tier |
+| `evals/src/**`, `evals/package.json`, lockfile, `vitest.config.ts`, or a manual *Run workflow* | every suite that has evals |
 
-permissions:
-  contents: read
+An artifact with **no** evals is not a failure: the detect step logs `SKIP <name> (no evals)`, and
+when nothing is left to run it logs `nothing to evaluate` and stops before installing anything or
+starting the proxy. A PR from a fork gets no secrets, so it logs
+`SKIP: OPENROUTER_API_KEY unavailable` and stays green.
 
-jobs:
-  workflow-evals:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: evals
-    env:
-      EVAL_BACKEND: openrouter
-      OPENROUTER_BASE_URL: http://localhost:4000
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}   # repo Actions secret
-      EVAL_MODEL: google/gemini-2.5-flash
-      EVAL_JUDGE_MODEL: google/gemini-2.5-flash
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: evals/pnpm-lock.yaml
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
+**Models** are three `env` lines at the top of the workflow — change one line to switch:
 
-      # --- the engine ---
-      - run: docker compose -f proxy/docker-compose.yml up -d   # OPENROUTER_API_KEY from job env
-      - run: pnpm proxy:wait                                     # block until the proxy answers
-      - run: pnpm eval:workflow                                  # or eval:agents / eval:skills / eval
-      - if: failure()
-        run: docker compose -f proxy/docker-compose.yml logs --tail 100
-      - if: always()
-        run: docker compose -f proxy/docker-compose.yml down
+| Variable | Default | Why |
+|----------|---------|-----|
+| `EVAL_MODEL` | `deepseek/deepseek-v4-flash` | skills + agents under test — cheapest capable model |
+| `EVAL_JUDGE_MODEL` | `google/gemini-2.5-flash` | another family than the model under test (self-preference) |
+| `EVAL_WORKFLOW_MODEL` | `google/gemini-2.5-flash` | the workflow tier asserts on subagent dispatch, which only Gemini Flash did reliably (table above) |
+
+Skill and agent evals **block** the PR. The workflow tier runs with `continue-on-error` — it is
+informational until its `activation` cases are proven on the CI model. Agent and workflow evals
+run sequentially (`--no-file-parallelism`) because OpenRouter throttles parallel tool loops.
+`results/outputs/` and the jsonl records are uploaded as the `eval-outputs` artifact, so a red
+case can be read without re-running it.
+
+Setup: add the Actions secret `OPENROUTER_API_KEY` (Settings → Secrets and variables → Actions).
+
+Test the detector locally without spending tokens:
+
+```bash
+CHANGED_FILES=$'.claude/agents/architecture-reviewer.md\n.claude/skills/security/SKILL.md' \
+  node scripts/ci-detect.mjs
 ```
-
-Notes:
-- ubuntu runners ship Docker + `docker compose`, so no extra setup is needed.
-- The proxy container reads `OPENROUTER_API_KEY` straight from the job `env` (which is fed by the
-  secret) — you don't pass it to `docker compose` explicitly.
-- Because tool tiers cost real tokens, gate on `paths:` (only when the harness/artifacts change) and
-  keep the case count small. For a stricter gate, split into a required `eval:agents`/`eval:skills`
-  job and a non-blocking `eval:workflow` job (activation flakiness, above).
 
 ## Module layout — `src/` (the engine)
 
