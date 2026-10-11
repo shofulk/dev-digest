@@ -19,7 +19,7 @@ import {
 } from "@devdigest/ui";
 import type { FindingRecord, FindingActionKind } from "@devdigest/shared";
 import { SEV_COLOR, SEV_COLOR_FALLBACK } from "./constants";
-import { lineLabel } from "./helpers";
+import { evalCaseTypeOf, lineLabel } from "./helpers";
 import { githubBlobUrl } from "../../../../../../../lib/github-urls";
 import { s } from "./styles";
 
@@ -29,6 +29,8 @@ export function FindingCard({
   defaultExpanded,
   onAction,
   pending,
+  onEvalCase,
+  evalPending,
   repoFullName,
   headSha,
 }: {
@@ -37,6 +39,9 @@ export function FindingCard({
   defaultExpanded?: boolean;
   onAction?: (action: FindingActionKind, reply?: string) => void;
   pending?: boolean;
+  /** Freeze this finding into an eval case; the parent owns the mutation. */
+  onEvalCase?: () => void;
+  evalPending?: boolean;
   repoFullName?: string | null;
   headSha?: string | null;
 }) {
@@ -50,6 +55,7 @@ export function FindingCard({
   const accepted = !!f.accepted_at;
   const dismissed = !!f.dismissed_at;
   const muted = accepted || dismissed;
+  const evalType = evalCaseTypeOf(f);
 
   return (
     <div data-finding-id={f.id} style={s.card(!!focused, sevColor, muted)}>
@@ -109,6 +115,17 @@ export function FindingCard({
               onClick={() => onAction?.("dismiss")}
             >
               {t("finding.dismiss")}
+            </Button>
+            <Button
+              kind="ghost"
+              size="sm"
+              icon="FlaskConical"
+              disabled={evalType === null || evalPending}
+              title={evalType === null ? t("finding.evalCaseNeedsTriage") : undefined}
+              onClick={() => onEvalCase?.()}
+            >
+              {t("finding.evalCase")}
+              {evalType && ` ${t(evalType === "must_find" ? "finding.evalCaseMustFind" : "finding.evalCaseMustNotFlag")}`}
             </Button>
           </div>
         </div>

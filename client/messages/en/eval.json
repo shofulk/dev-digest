@@ -12,7 +12,8 @@
     "metrics": {
       "recall": "RECALL",
       "precision": "PRECISION",
-      "citationAccuracy": "CITATION ACCURACY"
+      "citationAccuracy": "CITATION ACCURACY",
+      "passed": "PASSED"
     },
     "legend": {
       "recall": "Recall",
@@ -28,7 +29,20 @@
       "cost": "Cost"
     },
     "pass": "pass",
-    "fail": "fail"
+    "fail": "fail",
+    "subtitle": "Recall, precision and citation accuracy per agent, scored by code",
+    "agents": "Agents",
+    "empty": "No agent has eval cases yet.",
+    "loadFailed": "Could not load the eval dashboard",
+    "columns": {
+      "agent": "Agent",
+      "version": "Version",
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation",
+      "passed": "Passed",
+      "trend": "Recall trend"
+    }
   },
   "caseEditor": {
     "newCase": "New eval case",
@@ -80,5 +94,57 @@
     "crumbEvals": "Evals",
     "crumbNewCase": "New case",
     "crumbEvalCase": "Eval case"
+  },
+  "suite": {
+    "runEvals": "Run evals",
+    "progress": "{done} / {total}",
+    "history": "Run history",
+    "compare": "Compare",
+    "compareHint": "Select exactly two runs to compare",
+    "typeMustFind": "must find",
+    "typeMustNotFlag": "must not flag",
+    "result": {
+      "pass": "pass",
+      "fail": "fail",
+      "errored": "errored",
+      "never_run": "never run"
+    },
+    "columns": {
+      "time": "Time",
+      "version": "Version",
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation",
+      "passed": "Passed",
+      "cost": "Cost"
+    },
+    "emptyCases": "No eval cases yet. Turn an accepted or dismissed finding into one from a PR's findings.",
+    "noRuns": "No runs yet. Run the evals to get a baseline.",
+    "deleteCase": "Delete case",
+    "vsPrevious": "vs previous run",
+    "casesHeading": "Eval cases",
+    "running": "Running…",
+    "loadFailed": "Could not load eval data",
+    "errors": {
+      "noCases": "This agent has no eval cases yet.",
+      "providerNotConfigured": "The agent's provider has no API key configured.",
+      "runInFlight": "A run is already in progress for this agent.",
+      "generic": "Could not start the eval run"
+    }
+  },
+  "compare": {
+    "title": "Compare runs",
+    "promptDiff": "System prompt diff",
+    "promptUnavailable": "The prompt of one of these versions was not stored.",
+    "samePrompt": "Prompts are identical",
+    "flipped": "Cases that flipped",
+    "noFlips": "No case changed its result",
+    "versions": "v{a} → v{b}",
+    "passToFail": "pass → fail",
+    "failToPass": "fail → pass",
+    "onlyInA": "Only in the older run",
+    "onlyInB": "Only in the newer run",
+    "close": "Close",
+    "loadFailed": "Could not load the comparison"
   }
 }

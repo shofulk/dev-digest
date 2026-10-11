@@ -12,6 +12,7 @@ import {
 } from "@/components/diff-viewer";
 import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
+import { useCreateEvalCase } from "@/lib/hooks/eval";
 import { notify } from "@/lib/toast";
 import { FindingCard } from "../FindingCard";
 import type { PrFile } from "@devdigest/shared";
@@ -55,6 +56,7 @@ export function DiffTab({
   const create = useCreatePrComment(prId);
   const { data: reviews } = usePrReviews(prId);
   const action = useFindingAction();
+  const evalCase = useCreateEvalCase();
   const {
     data: smartDiff,
     isLoading: smartDiffLoading,
@@ -106,6 +108,14 @@ export function DiffTab({
         onAction={(a) => {
           if (prId) action.mutate({ findingId: f.id, action: a, prId });
         }}
+        evalPending={evalCase.isPending}
+        onEvalCase={() =>
+          evalCase.mutate(f.id, {
+            onSuccess: (r) =>
+              notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
+            onError: (e) => notify.error(e.message || t("finding.evalCaseFailed")),
+          })
+        }
         repoFullName={repoFullName}
         headSha={headSha}
       />

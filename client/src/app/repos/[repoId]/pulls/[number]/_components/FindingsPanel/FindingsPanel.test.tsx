@@ -1,11 +1,21 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/prReview.json";
 
 vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
+const createEvalCase = vi.fn();
+vi.mock("../../../../../../../lib/hooks/eval", () => ({
+  useCreateEvalCase: () => ({ mutate: createEvalCase, isPending: false }),
+}));
+
+const notifySuccess = vi.fn();
+vi.mock("../../../../../../../lib/toast", () => ({
+  notify: { success: (m: string) => notifySuccess(m), error: vi.fn() },
 }));
 
 import { FindingsPanel } from "./FindingsPanel";
@@ -88,6 +98,41 @@ describe("FindingsPanel (smoke)", () => {
     const noCriticals = MIXED.filter((f) => f.severity !== "CRITICAL");
     renderWithIntl(<FindingsPanel findings={noCriticals} prId="pr1" severity="CRITICAL" />);
     expect(screen.getByText("No findings match")).toBeInTheDocument();
+  });
+});
+
+describe("FindingsPanel eval-case action", () => {
+  it("passes the accepted finding's id to the create-eval-case mutation", () => {
+    const accepted = { ...FINDINGS[0]!, accepted_at: "2026-10-01T00:00:00Z" };
+    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
+    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
+    expect(createEvalCase).toHaveBeenCalledTimes(1);
+    expect(createEvalCase.mock.calls[0]![0]).toBe("f1");
+  });
+});
+
+describe("FindingsPanel eval-case toast", () => {
+  const accepted = { ...FINDINGS[0]!, accepted_at: "2026-10-01T00:00:00Z" };
+
+  /** Click the action and let the mutation succeed with the given `created` flag. */
+  function clickAndSucceed(created: boolean) {
+    createEvalCase.mockImplementationOnce((_id: string, opts: { onSuccess: (r: { created: boolean }) => void }) =>
+      opts.onSuccess({ created }),
+    );
+    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
+    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
+  }
+
+  it("says the case was created when the server created it", () => {
+    notifySuccess.mockClear();
+    clickAndSucceed(true);
+    expect(notifySuccess).toHaveBeenCalledWith("Eval case created");
+  });
+
+  it("says it is already in the eval set when the server reused an existing case", () => {
+    notifySuccess.mockClear();
+    clickAndSucceed(false);
+    expect(notifySuccess).toHaveBeenCalledWith("Already in the eval set");
   });
 });
 

@@ -8,6 +8,8 @@ import { Toggle, EmptyState } from "@devdigest/ui";
 import type { FindingRecord, Severity } from "@devdigest/shared";
 import { FindingCard } from "../FindingCard";
 import { useFindingAction } from "../../../../../../../lib/hooks/reviews";
+import { useCreateEvalCase } from "../../../../../../../lib/hooks/eval";
+import { notify } from "../../../../../../../lib/toast";
 import { KEY_TO_ACTION } from "./constants";
 import { visibleFindings } from "./helpers";
 import { s } from "./styles";
@@ -28,6 +30,7 @@ export function FindingsPanel({
 }) {
   const t = useTranslations("prReview");
   const action = useFindingAction();
+  const evalCase = useCreateEvalCase();
   const [hideLow, setHideLow] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(0);
 
@@ -80,6 +83,14 @@ export function FindingsPanel({
               repoFullName={repoFullName}
               headSha={headSha}
               onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
+              evalPending={evalCase.isPending}
+              onEvalCase={() =>
+                evalCase.mutate(f.id, {
+                  onSuccess: (r) =>
+                    notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
+                  onError: (e) => notify.error(e.message || t("finding.evalCaseFailed")),
+                })
+              }
             />
           ))
         )}

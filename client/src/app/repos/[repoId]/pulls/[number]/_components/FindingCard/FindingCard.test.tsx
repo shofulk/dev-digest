@@ -58,3 +58,43 @@ describe("FindingCard (smoke, both themes)", () => {
     expect(onAction).toHaveBeenCalledWith("dismiss");
   });
 });
+
+describe("FindingCard eval-case action", () => {
+  const ACCEPTED = { ...FINDING, accepted_at: "2026-10-01T00:00:00Z" };
+  const DISMISSED = { ...FINDING, dismissed_at: "2026-10-01T00:00:00Z" };
+  const evalButton = () => screen.getByRole("button", { name: /Turn into eval case/ });
+
+  it("is disabled with the triage hint while the finding is untriaged", () => {
+    renderWithIntl(<FindingCard f={FINDING} defaultExpanded onEvalCase={() => {}} />);
+    expect(evalButton()).toBeDisabled();
+    expect(evalButton()).toHaveAttribute("title", "Accept or dismiss this finding first");
+  });
+
+  it("labels must_find for an accepted finding and must_not_flag for a dismissed one", () => {
+    renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onEvalCase={() => {}} />);
+    expect(evalButton()).toBeEnabled();
+    expect(evalButton()).toHaveTextContent("as must_find");
+    cleanup();
+    renderWithIntl(<FindingCard f={DISMISSED} defaultExpanded onEvalCase={() => {}} />);
+    expect(evalButton()).toHaveTextContent("as must_not_flag");
+  });
+
+  it("calls onEvalCase once per click and is disabled while evalPending", () => {
+    const onEvalCase = vi.fn();
+    renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onEvalCase={onEvalCase} />);
+    fireEvent.click(evalButton());
+    expect(onEvalCase).toHaveBeenCalledTimes(1);
+    cleanup();
+    renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onEvalCase={onEvalCase} evalPending />);
+    expect(evalButton()).toBeDisabled();
+  });
+
+  it("leaves accept/dismiss untouched by the eval action", () => {
+    const onAction = vi.fn();
+    const onEvalCase = vi.fn();
+    renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onAction={onAction} onEvalCase={onEvalCase} />);
+    fireEvent.click(screen.getByText("Dismiss"));
+    expect(onAction).toHaveBeenCalledWith("dismiss");
+    expect(onEvalCase).not.toHaveBeenCalled();
+  });
+});
