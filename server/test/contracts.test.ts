@@ -18,6 +18,14 @@ import {
   Settings,
   Repo,
   PrDetail,
+  EvalExpectation,
+  EvalCaseCreated,
+  EvalRunActualOutput,
+  EvalSuiteRun,
+  EvalSuiteRunDetail,
+  EvalCompare,
+  EvalCompareQuery,
+  EvalDashboardOverview,
 } from '@devdigest/shared';
 
 /**
@@ -313,5 +321,153 @@ describe('platform DTOs', () => {
         commits: [],
       }),
     ).not.toThrow();
+  });
+});
+
+describe('eval pipeline contracts', () => {
+  const expectation = {
+    type: 'must_find',
+    file: 'src/a.ts',
+    start_line: 10,
+    end_line: 12,
+    severity: 'WARNING',
+    category: 'bug',
+    title: 'Off by one',
+  };
+  const run = {
+    run_id: '11111111-1111-4111-8111-111111111111',
+    agent_id: 'ag1',
+    status: 'completed',
+    agent_version: 2,
+    started_at: '2026-10-11T10:00:00.000Z',
+    finished_at: '2026-10-11T10:01:00.000Z',
+    cases_total: 3,
+    cases_done: 3,
+    recall: 0.5,
+    precision: null,
+    citation_accuracy: 1,
+    traces_passed: 1,
+    traces_total: 3,
+    cases_errored: 0,
+    duration_ms: 1200,
+    cost_usd: null,
+  };
+
+  it('EvalRunActualOutput parses a minimal pending document and a full completed one', () => {
+    expect(() =>
+      EvalRunActualOutput.parse({ run_id: 'r', agent_id: 'a', agent_version: 1, status: 'pending' }),
+    ).not.toThrow();
+    const full = EvalRunActualOutput.parse({
+      run_id: 'r',
+      agent_id: 'a',
+      agent_version: 1,
+      status: 'completed',
+      findings: [
+        {
+          file: 'src/a.ts',
+          start_line: 10,
+          end_line: 11,
+          severity: 'CRITICAL',
+          category: 'security',
+          title: 't',
+        },
+      ],
+      grounding_kept: 1,
+      grounding_dropped: 2,
+      finished_at: '2026-10-11T10:01:00.000Z',
+    });
+    expect(full.grounding_dropped).toBe(2);
+  });
+
+  it('EvalExpectation rejects an unknown type; EvalCaseCreated requires created', () => {
+    expect(EvalExpectation.safeParse({ ...expectation, type: 'bogus' }).success).toBe(false);
+    expect(EvalExpectation.safeParse(expectation).success).toBe(true);
+    const base = {
+      id: 'c1',
+      owner_kind: 'agent',
+      owner_id: 'ag1',
+      name: 'n',
+      input_diff: 'd',
+      input_files: ['src/a.ts'],
+      input_meta: {},
+      expected_output: expectation,
+    };
+    expect(EvalCaseCreated.safeParse(base).success).toBe(false);
+    expect(EvalCaseCreated.safeParse({ ...base, created: true }).success).toBe(true);
+  });
+
+  it('EvalSuiteRun / EvalSuiteRunDetail parse, and metrics stay within 0..1', () => {
+    expect(EvalSuiteRun.safeParse(run).success).toBe(true);
+    expect(EvalSuiteRun.safeParse({ ...run, recall: 1.5 }).success).toBe(false);
+    const detail = EvalSuiteRunDetail.parse({
+      ...run,
+      per_case: [
+        {
+          case_id: 'c1',
+          name: 'n',
+          expectation,
+          status: 'completed',
+          pass: true,
+          findings: [
+            {
+              file: 'src/a.ts',
+              start_line: 10,
+              end_line: 12,
+              severity: 'WARNING',
+              category: 'bug',
+              title: 't',
+              matched: true,
+            },
+          ],
+          grounding_kept: 1,
+          grounding_dropped: 0,
+          duration_ms: 10,
+          cost_usd: 0.01,
+        },
+      ],
+    });
+    expect(detail.per_case[0]!.findings[0]!.matched).toBe(true);
+  });
+
+  it('EvalCompare parses prompt_diff ops and rejects an unknown op', () => {
+    const compare = {
+      a: run,
+      b: { ...run, run_id: '22222222-2222-4222-8222-222222222222', agent_version: 3 },
+      delta: { recall: 0.1, precision: null, citation_accuracy: 0, cost_usd: null },
+      flips: [{ case_id: 'c1', name: 'n', a_pass: true, b_pass: false, direction: 'pass_to_fail' }],
+      only_in_a: [],
+      only_in_b: [{ case_id: 'c9', name: 'new' }],
+      prompt_diff: [
+        { op: 'same', text: 'x' },
+        { op: 'add', text: 'y' },
+        { op: 'del', text: 'z' },
+      ],
+      prompt_available: true,
+    };
+    expect(EvalCompare.safeParse(compare).success).toBe(true);
+    expect(
+      EvalCompare.safeParse({ ...compare, prompt_diff: [{ op: 'mod', text: 'x' }] }).success,
+    ).toBe(false);
+  });
+
+  it('EvalDashboardOverview parses; EvalCompareQuery rejects a non-uuid', () => {
+    expect(
+      EvalDashboardOverview.safeParse({
+        agents: [
+          {
+            agent_id: 'ag1',
+            name: 'A',
+            model: 'm',
+            cases_total: 3,
+            latest: run,
+            trend: [{ run_id: 'r', started_at: '2026-10-11T10:00:00.000Z', recall: 1, precision: null }],
+          },
+        ],
+        recent_runs: [{ ...run, agent_name: 'A' }],
+      }).success,
+    ).toBe(true);
+    const id = '11111111-1111-4111-8111-111111111111';
+    expect(EvalCompareQuery.safeParse({ a: id, b: id }).success).toBe(true);
+    expect(EvalCompareQuery.safeParse({ a: 'nope', b: id }).success).toBe(false);
   });
 });
