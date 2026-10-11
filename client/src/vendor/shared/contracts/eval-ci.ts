@@ -297,6 +297,31 @@ export const EvalDashboardOverview = z.object({
 });
 export type EvalDashboardOverview = z.infer<typeof EvalDashboardOverview>;
 
+/** Body of `POST /eval/runs/all` — an explicit confirmation, one model call per case. */
+export const EvalRunAllInput = z.object({
+  confirm: z.literal(true),
+});
+export type EvalRunAllInput = z.infer<typeof EvalRunAllInput>;
+
+/** Why one agent was not started by run-all. */
+export const EvalRunAllRefusal = z.enum(['run_in_flight', 'provider_not_configured', 'no_cases', 'start_failed']);
+export type EvalRunAllRefusal = z.infer<typeof EvalRunAllRefusal>;
+
+/** One agent's outcome in run-all: a started `run_id`, or a refusal reason. */
+export const EvalRunAllEntry = z.object({
+  agent_id: z.string(),
+  agent_name: z.string(),
+  run_id: z.string().uuid().nullable(),
+  refused_reason: EvalRunAllRefusal.nullable(),
+});
+export type EvalRunAllEntry = z.infer<typeof EvalRunAllEntry>;
+
+/** Response of `POST /eval/runs/all`. */
+export const EvalRunAllResult = z.object({
+  started: z.array(EvalRunAllEntry),
+});
+export type EvalRunAllResult = z.infer<typeof EvalRunAllResult>;
+
 // ===========================================================================
 // Compose Review
 // ===========================================================================

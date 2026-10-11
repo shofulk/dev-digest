@@ -7,6 +7,8 @@ import {
   EvalCompare,
   EvalCompareQuery,
   EvalDashboardOverview,
+  EvalRunAllInput,
+  EvalRunAllResult,
   EvalStartRunResponse,
   EvalSuiteRun,
   EvalSuiteRunDetail,
@@ -14,7 +16,12 @@ import {
 import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
-import { EVAL_RUN_RATE_LIMIT_MAX, EVAL_RUN_RATE_LIMIT_WINDOW } from './constants.js';
+import {
+  EVAL_RUN_ALL_RATE_LIMIT_MAX,
+  EVAL_RUN_ALL_RATE_LIMIT_WINDOW,
+  EVAL_RUN_RATE_LIMIT_MAX,
+  EVAL_RUN_RATE_LIMIT_WINDOW,
+} from './constants.js';
 import { EvalService } from './service.js';
 
 /**
@@ -30,6 +37,7 @@ import { EvalService } from './service.js';
  *   GET    /eval-runs/compare?a&b      → two runs of one agent side by side
  *   GET    /eval-runs/:runId           → one run with per-case outcomes (detail; clients poll the list route)
  *   GET    /eval/dashboard             → per-agent roll-up + recent runs
+ *   POST   /eval/runs/all              → 202; one suite run per agent with cases (refusals are per agent)
  */
 const RunParams = z.object({ runId: z.string().uuid() });
 
@@ -113,6 +121,20 @@ export default async function evalRoutes(appBase: FastifyInstance) {
     async (req) => {
       const { workspaceId } = await getContext(container, req);
       return service.dashboard(workspaceId);
+    },
+  );
+
+  app.post(
+    '/eval/runs/all',
+    {
+      schema: { body: EvalRunAllInput, response: { 202: EvalRunAllResult } },
+      config: { rateLimit: { max: EVAL_RUN_ALL_RATE_LIMIT_MAX, timeWindow: EVAL_RUN_ALL_RATE_LIMIT_WINDOW } },
+    },
+    async (req, reply) => {
+      const { workspaceId } = await getContext(container, req);
+      const result = await service.runAll(workspaceId, req.log);
+      reply.code(202);
+      return result;
     },
   );
 }

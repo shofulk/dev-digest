@@ -3,7 +3,6 @@ import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
 import { MAX_FROZEN_DIFF_BYTES } from './constants.js';
 import {
   buildFrozenDiff,
-  caseName,
   expectationTypeOf,
   freezeCase,
   type FreezableFinding,
@@ -43,15 +42,28 @@ describe('expectationTypeOf', () => {
   });
 });
 
-describe('caseName', () => {
-  it('slugs the title and appends file:line', () => {
-    expect(caseName('Missing assertion for the b branch!', 'src/a.ts', 2)).toBe(
-      'missing-assertion-for-the-b-branch · src/a.ts:2',
-    );
+describe('case name (AC33: the bare title slug, via freezeCase)', () => {
+  const nameOf = (title: string) => {
+    const r = freeze({ finding: { ...finding, title } });
+    expect(r.ok).toBe(true);
+    return r.ok ? r.value.name : '';
+  };
+
+  it('AC33: slugs the title and carries no file:line', () => {
+    const name = nameOf('Missing assertion for the b branch!');
+    expect(name).toBe('missing-assertion-for-the-b-branch');
+    expect(name).not.toContain(' · ');
+    expect(name).not.toContain('src/a.ts');
   });
-  it('caps the slug length', () => {
-    const name = caseName('x'.repeat(200), 'f.ts', 1);
-    expect(name.split(' · ')[0]!.length).toBeLessThanOrEqual(60);
+
+  it('AC33: caps the slug at 60 characters and still has no separator', () => {
+    const name = nameOf('x'.repeat(200));
+    expect(name).toMatch(/^x{1,60}$/);
+    expect(name).not.toContain(' · ');
+  });
+
+  it('AC33: falls back to "finding" for an all-symbol title', () => {
+    expect(nameOf('!!! ??? ...')).toBe('finding');
   });
 });
 
@@ -60,7 +72,7 @@ describe('freezeCase', () => {
     const r = freeze();
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value.name).toBe('missing-assertion-for-the-b-branch · src/a.ts:2');
+    expect(r.value.name).toBe('missing-assertion-for-the-b-branch');
     expect(r.value.input_files).toEqual(['src/a.ts']);
     expect(r.value.input_meta).toEqual({
       source_finding_id: 'f-1',

@@ -8,6 +8,7 @@ import {
   type EvalCaseView,
   type EvalDashboardOverview,
   type EvalPromptDiffLine,
+  type EvalRunAllRefusal,
   type EvalSuiteRun,
   type EvalSuiteRunDetail,
 } from '@devdigest/shared';
@@ -385,4 +386,16 @@ export function toDashboard(
       agent_name: names.get(s.summary.agent_id) ?? s.summary.agent_id,
     })),
   };
+}
+
+/** Maps a start-path error code to a run-all refusal reason; anything else is `start_failed`. */
+export function runAllRefusal(code: string | undefined): EvalRunAllRefusal {
+  switch (code) {
+    case 'run_in_flight':
+    case 'provider_not_configured':
+    case 'no_cases':
+      return code;
+    default:
+      return 'start_failed';
+  }
 }

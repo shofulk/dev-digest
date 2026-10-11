@@ -12,6 +12,10 @@ export const EVAL_PENDING_TIMEOUT_MS = 15 * 60 * 1000;
 export const EVAL_RUN_RATE_LIMIT_MAX = 5;
 export const EVAL_RUN_RATE_LIMIT_WINDOW = '1 minute';
 
+/** Run-all fans out to every agent at once, so its limit is tighter still. */
+export const EVAL_RUN_ALL_RATE_LIMIT_MAX = 2;
+export const EVAL_RUN_ALL_RATE_LIMIT_WINDOW = '1 minute';
+
 /** Dashboard: runs kept per agent for the sparkline, and runs in the cross-agent table. */
 export const DASHBOARD_HISTORY_RUNS = 10;
 export const DASHBOARD_RECENT_RUNS = 20;

@@ -8,6 +8,7 @@ import {
   sanitizeErrorReason,
   groupSuites,
   latestCompletedResult,
+  runAllRefusal,
   systemPromptOf,
   toCaseOutcome,
   toCaseView,
@@ -306,5 +307,22 @@ describe('toDashboard', () => {
     expect(out.agents).toEqual([
       { agent_id: 'agent-3', name: 'Three', model: 'm', cases_total: 2, latest: null, trend: [] },
     ]);
+  });
+});
+
+describe('runAllRefusal', () => {
+  it.each(['run_in_flight', 'provider_not_configured', 'no_cases'] as const)(
+    'AC35: %s maps to itself',
+    (code) => {
+      expect(runAllRefusal(code)).toBe(code);
+    },
+  );
+
+  it.each(['conflict', 'not_found', 'bogus'])('AC35: the unrelated code %s maps to start_failed', (code) => {
+    expect(runAllRefusal(code)).toBe('start_failed');
+  });
+
+  it('AC35: a missing code (a non-AppError) maps to start_failed', () => {
+    expect(runAllRefusal(undefined)).toBe('start_failed');
   });
 });

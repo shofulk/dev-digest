@@ -5,6 +5,7 @@ import {
   type EvalCaseView,
   type EvalCompare,
   type EvalDashboardOverview,
+  type EvalRunAllResult,
   type EvalStartRunResponse,
   type EvalSuiteRun,
   type EvalSuiteRunDetail,
@@ -30,6 +31,7 @@ import {
   flipRows,
   groupSuites,
   latestCompletedResult,
+  runAllRefusal,
   sanitizeErrorReason,
   systemPromptOf,
   toCaseView,
@@ -223,6 +225,38 @@ export class EvalService {
       .finally(() => this.inFlight.delete(agentId));
 
     return { run_id: started.runId, cases_total: cases.length };
+  }
+
+  /**
+   * Starts one suite run per agent with at least one case, refusing agents
+   * individually. Runs start sequentially through the same path as the
+   * single-agent route, and one agent's failure never stops the rest.
+   */
+  async runAll(workspaceId: string, logger: Logger): Promise<EvalRunAllResult> {
+    const [counts, agents] = await Promise.all([
+      this.store.countCasesByAgent(workspaceId),
+      this.agents.list(workspaceId),
+    ]);
+    const eligible = agents
+      .filter((a) => (counts.get(a.id) ?? 0) > 0)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const started: EvalRunAllResult['started'] = [];
+    for (const agent of eligible) {
+      try {
+        const run = await this.startRun(workspaceId, agent.id, logger);
+        started.push({ agent_id: agent.id, agent_name: agent.name, run_id: run.run_id, refused_reason: null });
+      } catch (err) {
+        if (!(err instanceof AppError)) logger.warn({ err, agentId: agent.id }, 'eval run-all: start failed');
+        started.push({
+          agent_id: agent.id,
+          agent_name: agent.name,
+          run_id: null,
+          refused_reason: runAllRefusal(err instanceof AppError ? err.code : undefined),
+        });
+      }
+    }
+    return { started };
   }
 
   private runInFlight(): AppError {

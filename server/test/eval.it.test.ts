@@ -106,6 +106,7 @@ d('eval module (Testcontainers pg)', () => {
   let pg: PgFixture;
   let workspaceA: string;
   let workspaceB: string;
+  let workspaceC: string;
   let userId: string;
   let prId: string;
   let seq = 0;
@@ -120,6 +121,8 @@ d('eval module (Testcontainers pg)', () => {
     userId = user!.id;
     const [other] = await db.insert(t.workspaces).values({ name: `other-${Date.now()}` }).returning();
     workspaceB = other!.id;
+    const [third] = await db.insert(t.workspaces).values({ name: `run-all-${Date.now()}` }).returning();
+    workspaceC = third!.id;
 
     const [repo] = await db
       .insert(t.repos)
@@ -291,7 +294,7 @@ d('eval module (Testcontainers pg)', () => {
     const { res, body } = await freeze(app, findingId);
     expect(res.statusCode).toBe(201);
     expect(body).toMatchObject({ created: true, owner_id: agentId, notes: 'The branch is never asserted.' });
-    expect(body.name).toBe('original-finding-at-line-3 · src/a.ts:3');
+    expect(body.name).toBe('original-finding-at-line-3');
     expect(body.input_diff.startsWith('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@')).toBe(true);
     expect(body.input_files).toEqual(['src/a.ts']);
     expect(body.input_meta).toMatchObject({
@@ -664,5 +667,137 @@ d('eval module (Testcontainers pg)', () => {
     expect(rows).toHaveLength(0);
     const remaining = (await app.inject({ url: `/agents/${agentId}/eval-cases` })).json() as unknown[];
     expect(remaining).toHaveLength(1);
+  });
+
+  // ------------------------------------------------------- run all agents (AC35)
+
+  interface RunAllEntry {
+    agent_id: string;
+    agent_name: string;
+    run_id: string | null;
+    refused_reason: string | null;
+  }
+
+  /** Freezes one accepted case per line for `agentId`, as the app of that workspace. */
+  async function addCases(app: FastifyInstance, agentId: string, workspaceId: string, lines: number[]) {
+    for (const line of lines) {
+      const findingId = await newFinding({ agentId, triage: 'accepted', line, workspaceId });
+      expect((await freeze(app, findingId)).res.statusCode).toBe(201);
+    }
+  }
+
+  it('AC35: run-all starts every agent with cases through the single-agent start path and refuses the rest one by one', async () => {
+    const llm = new ScriptedLLM();
+    llm.fixture = reviewOf(finding(3));
+    let release!: () => void;
+    llm.gate = new Promise<void>((r) => (release = r));
+    const app = await makeApp(llm, workspaceC);
+
+    const x = await newAgent('openrouter', workspaceC); // 2 cases, starts
+    const y = await newAgent('openai', workspaceC); //     1 case, no usable key
+    const z = await newAgent('openrouter', workspaceC); // 1 case, already running
+    const w = await newAgent('openrouter', workspaceC); // 0 cases, not listed
+    await addCases(app, x, workspaceC, [3, 4]);
+    await addCases(app, y, workspaceC, [3]);
+    await addCases(app, z, workspaceC, [3]);
+
+    // Z's run is started first and held on the gate, so run-all meets it in flight.
+    const zRun = await startRun(app, z);
+    expect(zRun.statusCode).toBe(202);
+    const zRunId = (zRun.json() as { run_id: string }).run_id;
+
+    const res = await app.inject({ method: 'POST', url: '/eval/runs/all', payload: { confirm: true } });
+    expect(res.statusCode).toBe(202);
+    const { started } = res.json() as { started: RunAllEntry[] };
+
+    expect(started.map((e) => e.agent_id).sort()).toEqual([x, y, z].sort());
+    expect(started.find((e) => e.agent_id === w)).toBeUndefined();
+    const byId = (id: string) => started.find((e) => e.agent_id === id)!;
+
+    expect(byId(x).agent_name).toMatch(/^Eval Agent \d+$/);
+    expect(byId(x).run_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(byId(x).refused_reason).toBeNull();
+    expect(byId(y)).toMatchObject({ run_id: null, refused_reason: 'provider_not_configured' });
+    expect(byId(z)).toMatchObject({ run_id: null, refused_reason: 'run_in_flight' });
+    for (const e of started) expect(e.agent_name.length).toBeGreaterThan(0);
+
+    // Y was refused before any row was written.
+    const yCases = (await app.inject({ url: `/agents/${y}/eval-cases` })).json() as { case: { id: string } }[];
+    const yRows = await pg.handle.db
+      .select()
+      .from(t.evalRuns)
+      .where(inArray(t.evalRuns.caseId, yCases.map((c) => c.case.id)));
+    expect(yRows).toHaveLength(0);
+
+    // X's run is a normal suite run: same start path, so both of its cases ran.
+    release();
+    const xRun = await waitCompleted(app, byId(x).run_id!);
+    expect(xRun).toMatchObject({ agent_id: x, cases_total: 2, cases_done: 2 });
+    await waitCompleted(app, zRunId);
+  });
+
+  it.each([
+    ['an empty body', {}],
+    ['confirm: false', { confirm: false }],
+  ])('AC35: run-all with %s is rejected at the edge and starts nothing', async (_label, payload) => {
+    const app = await makeApp(new ScriptedLLM(), workspaceC);
+    const [before] = await pg.handle.db.select({ n: sql<number>`count(*)::int` }).from(t.evalRuns);
+
+    const res = await app.inject({ method: 'POST', url: '/eval/runs/all', payload });
+    // The app maps every request-validation failure to 422 `validation_error` (app.ts error handler).
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.code).toBe('validation_error');
+
+    const [after] = await pg.handle.db.select({ n: sql<number>`count(*)::int` }).from(t.evalRuns);
+    expect(after!.n).toBe(before!.n);
+  });
+
+  it('AC35: run-all is rate-limited to 2 per minute: the 3rd POST answers 429', async () => {
+    // A workspace of its own with no cases, so the two allowed calls start nothing.
+    const [empty] = await pg.handle.db.insert(t.workspaces).values({ name: `empty-${Date.now()}` }).returning();
+    const app = await makeApp(new ScriptedLLM(), empty!.id, 'development');
+    const post = () => app.inject({ method: 'POST', url: '/eval/runs/all', payload: { confirm: true } });
+
+    for (let i = 0; i < 2; i++) {
+      const res = await post();
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({ started: [] });
+    }
+    expect((await post()).statusCode).toBe(429);
+  });
+
+  it('AC33: a case stored with the legacy `title · file:line` name is listed unchanged', async () => {
+    const app = await makeApp();
+    const agentId = await newAgent();
+    const legacyName = 'old-title · src/a.ts:3';
+    const [row] = await pg.handle.db
+      .insert(t.evalCases)
+      .values({
+        workspaceId: workspaceA,
+        ownerKind: 'agent',
+        ownerId: agentId,
+        name: legacyName,
+        inputDiff: `diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n${PATCH}`,
+        inputFiles: ['src/a.ts'],
+        inputMeta: { source_finding_id: '00000000-0000-4000-8000-000000000001', pr_number: 42, pr_title: 'Add the thing', pr_body: '' },
+        expectedOutput: {
+          type: 'must_find',
+          file: 'src/a.ts',
+          start_line: 3,
+          end_line: 3,
+          severity: 'WARNING',
+          category: 'test',
+          title: 'old title',
+        },
+        notes: 'rationale',
+      })
+      .returning();
+
+    const res = await app.inject({ url: `/agents/${agentId}/eval-cases` });
+    expect(res.statusCode).toBe(200);
+    const cases = res.json() as { case: { id: string; name: string }; last_result: string }[];
+    expect(cases).toHaveLength(1);
+    expect(cases[0]!.case).toMatchObject({ id: row!.id, name: legacyName });
+    expect(cases[0]!.last_result).toBe('never_run');
   });
 });

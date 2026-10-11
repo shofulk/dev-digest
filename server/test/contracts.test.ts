@@ -26,6 +26,8 @@ import {
   EvalCompare,
   EvalCompareQuery,
   EvalDashboardOverview,
+  EvalRunAllInput,
+  EvalRunAllResult,
 } from '@devdigest/shared';
 
 /**
@@ -469,5 +471,19 @@ describe('eval pipeline contracts', () => {
     const id = '11111111-1111-4111-8111-111111111111';
     expect(EvalCompareQuery.safeParse({ a: id, b: id }).success).toBe(true);
     expect(EvalCompareQuery.safeParse({ a: 'nope', b: id }).success).toBe(false);
+  });
+
+  it('EvalRunAllInput requires confirm: true; EvalRunAllResult parses started and refused entries', () => {
+    expect(EvalRunAllInput.safeParse({ confirm: true }).success).toBe(true);
+    expect(EvalRunAllInput.safeParse({ confirm: false }).success).toBe(false);
+    expect(EvalRunAllInput.safeParse({}).success).toBe(false);
+    const id = '11111111-1111-4111-8111-111111111111';
+    const started = { agent_id: 'ag1', agent_name: 'X', run_id: id, refused_reason: null };
+    const refused = { agent_id: 'ag2', agent_name: 'Y', run_id: null, refused_reason: 'run_in_flight' };
+    expect(EvalRunAllResult.safeParse({ started: [started, refused] }).success).toBe(true);
+    expect(
+      EvalRunAllResult.safeParse({ started: [{ ...refused, refused_reason: 'bogus' }] }).success,
+    ).toBe(false);
+    expect(EvalRunAllResult.safeParse({ started: [{ ...started, run_id: 'nope' }] }).success).toBe(false);
   });
 });

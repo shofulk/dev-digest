@@ -8,7 +8,7 @@ import type {
   Provider,
   ReviewStrategy,
 } from '@devdigest/shared';
-import { NotFoundError } from '../../platform/errors.js';
+import { AppError, NotFoundError } from '../../platform/errors.js';
 import { AgentsRepository, type SkillLinkInput } from './repository.js';
 import { toAgentDto, toAgentVersionDto } from './helpers.js';
 
@@ -50,10 +50,12 @@ export interface UpdateAgentInput {
 }
 
 export class AgentsService {
-  private repo: AgentsRepository;
+  private readonly repo: AgentsRepository;
+  private readonly llms: Pick<Container, 'llm'>;
 
-  constructor(private container: Container) {
-    this.repo = new AgentsRepository(container.db);
+  constructor(container: Container) {
+    this.repo = container.agentsRepo;
+    this.llms = container;
   }
 
   async list(workspaceId: string): Promise<Agent[]> {
@@ -136,6 +138,32 @@ export class AgentsService {
     return row ? toAgentVersionDto(row) : undefined;
   }
 
+  /**
+   * Restores a recorded version's config as a NEW agent version. Returns undefined
+   * when the agent is not in this workspace or the version was never recorded
+   * (route → 404); restoring the current version is a 409.
+   */
+  async restore(workspaceId: string, agentId: string, version: number): Promise<Agent | undefined> {
+    const agent = await this.repo.getById(workspaceId, agentId);
+    if (!agent) return undefined;
+    const target = await this.repo.getVersion(agentId, version);
+    if (!target) return undefined;
+    if (version === agent.version) {
+      throw new AppError('conflict', `v${version} is already the current version.`, 409);
+    }
+    const { config } = toAgentVersionDto(target);
+    const row = await this.repo.restoreVersion(workspaceId, agentId, {
+      provider: config.provider,
+      model: config.model,
+      systemPrompt: config.system_prompt,
+      outputSchema: config.output_schema,
+      strategy: config.strategy,
+      ciFailOn: config.ci_fail_on,
+      repoIntel: config.repo_intel,
+    });
+    return row ? toAgentDto(row) : undefined;
+  }
+
   /** Linked skills for an agent, ordered, with the fields the Skills tab renders. */
   async skillLinks(agentId: string): Promise<AgentLinkedSkill[]> {
     const links = await this.repo.linkedSkills(agentId);
@@ -214,7 +242,7 @@ export class AgentsService {
    */
   async listModels(provider: Provider): Promise<ModelInfo[]> {
     try {
-      const llm = await this.container.llm(provider);
+      const llm = await this.llms.llm(provider);
       return await llm.listModels();
     } catch {
       return [];

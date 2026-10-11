@@ -73,15 +73,15 @@ export function buildFrozenDiff(path: string, patch: string): string {
   return [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, patch].join('\n');
 }
 
-/** `<slug> · <file>:<line>`; the slug is lowercase, `-`-separated and length-capped. */
-export function caseName(title: string, file: string, line: number): string {
+/** The title slug: lowercase, `-`-separated and length-capped; `finding` when nothing survives. */
+export function caseName(title: string): string {
   const slug = title
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, CASE_NAME_SLUG_MAX)
     .replace(/-+$/, '');
-  return `${slug || 'finding'} · ${file}:${line}`;
+  return slug || 'finding';
 }
 
 export function freezeCase(input: {
@@ -131,7 +131,7 @@ export function freezeCase(input: {
   return {
     ok: true,
     value: {
-      name: caseName(finding.title, finding.file, finding.startLine),
+      name: caseName(finding.title),
       input_diff: inputDiff,
       input_files: [finding.file],
       input_meta: {
