@@ -28,6 +28,8 @@ export interface QualityCase {
   practices?: string[];
   /** Substrings that must ALL appear before the judge runs (cheap-tier gate). */
   grounding?: string[];
+  /** Most content lines the answer may have — counted in code, never by the judge. */
+  maxLines?: number;
   /** Judge score gate (default 0.6). */
   threshold?: number;
   maxTurns?: number;
@@ -79,6 +81,11 @@ export function activated(result: Result, skill: string): boolean {
 
 type Task = (prompt: string, artifact: string, opts?: RunOptions) => Promise<Result>;
 
+/** Non-blank lines, without the code-fence markers a model may wrap its answer in. */
+function contentLines(text: string): string[] {
+  return text.split("\n").filter((l) => l.trim() !== "" && !/^\s*```/.test(l));
+}
+
 function runQualityCases(artifact: string, cases: QualityCase[], task: Task): void {
   for (const c of cases) {
     test(c.name, async () => {
@@ -104,6 +111,10 @@ function runQualityCases(artifact: string, cases: QualityCase[], task: Task): vo
 
       if (grounded !== undefined) {
         expect(grounded, `missing concrete evidence; output:\n${result.text}`).toBe(1);
+      }
+      if (c.maxLines !== undefined) {
+        const lines = contentLines(result.text);
+        expect(lines.length, `more than ${c.maxLines} lines:\n${lines.join("\n")}`).toBeLessThanOrEqual(c.maxLines);
       }
       if (verdict) {
         expect(verdict.score, JSON.stringify(verdict.results)).toBeGreaterThanOrEqual(threshold);

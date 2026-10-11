@@ -345,6 +345,7 @@ export const cases: SkillCase[] = [
       // ...
     ],
     grounding: [],        // optional substrings that must ALL appear before the judge runs
+    maxLines: 3,          // optional: most non-blank lines (code fences ignored), checked in code
     threshold: 0.6,       // judge score gate
     maxTurns: 8,          // optional
   },

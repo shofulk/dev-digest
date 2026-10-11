@@ -14,8 +14,10 @@ export const cases: SkillCase[] = [
     prompt:
       "Do step 3 of the skill only (interpret the data): write the content of advice.txt for this audit. " +
       `Include the exact command for every removal you propose.\n\n${DEPS}`,
+    // A line count is a fact, not a judgement: the judge once failed a 3-line answer wrapped in a
+    // code fence. maxLines counts it in code; the judge only scores what needs reading.
+    maxLines: 3,
     practices: [
-      "The advice is at most 3 lines, one advice per line (count the lines: 3 or fewer)",
       "Marks the removal of the unused-candidate @fastify/autoload (or tsx) with the words 'confirm before removing' or equivalent, not as certainly unused",
       "Proposes 'npm --prefix reviewer-core uninstall tsx' (or install/remove with --prefix) for tsx in reviewer-core, not a pnpm command, because its lockfile is package-lock.json",
     ],
