@@ -19,6 +19,10 @@ import type {
 /** Poll period while a suite run is in flight. */
 export const EVAL_POLL_MS = 2000;
 
+/** Eval data changes from other tabs (a case made on a PR page, a run started elsewhere), so
+ *  these reads refetch on focus even inside the app-wide 30 s staleTime. */
+const REFETCH_ON_FOCUS = "always" as const;
+
 export const evalKeys = {
   all: ["eval"] as const,
   cases: (agentId: string | null | undefined) => ["eval", "cases", agentId] as const,
@@ -40,6 +44,7 @@ export function useEvalCases(agentId: string | null | undefined) {
     queryKey: evalKeys.cases(agentId),
     queryFn: () => api.get<EvalCaseView[]>(`/agents/${agentId}/eval-cases`),
     enabled: !!agentId,
+    refetchOnWindowFocus: REFETCH_ON_FOCUS,
   });
 }
 
@@ -48,6 +53,7 @@ export function useEvalRuns(agentId: string | null | undefined) {
     queryKey: evalKeys.runs(agentId),
     queryFn: () => api.get<EvalSuiteRun[]>(`/agents/${agentId}/eval-runs`),
     enabled: !!agentId,
+    refetchOnWindowFocus: REFETCH_ON_FOCUS,
     refetchInterval: (q) =>
       pollInterval(q.state.data?.some((r) => r.status === "running") ? "running" : null),
   });
@@ -71,6 +77,7 @@ export function useEvalDashboard() {
   return useQuery({
     queryKey: evalKeys.dashboard,
     queryFn: () => api.get<EvalDashboardOverview>("/eval/dashboard"),
+    refetchOnWindowFocus: REFETCH_ON_FOCUS,
     refetchInterval: (q) => dashboardPollInterval(q.state.data),
   });
 }

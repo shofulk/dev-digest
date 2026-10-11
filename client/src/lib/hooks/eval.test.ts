@@ -1,9 +1,18 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import type { EvalDashboardOverview } from "@devdigest/shared/contracts/eval-ci";
-import { EVAL_POLL_MS, dashboardPollInterval, evalKeys, pollInterval, useRunAllEvals } from "./eval";
+import {
+  EVAL_POLL_MS,
+  dashboardPollInterval,
+  evalKeys,
+  pollInterval,
+  useEvalCases,
+  useEvalDashboard,
+  useEvalRuns,
+  useRunAllEvals,
+} from "./eval";
 
 interface Call {
   method: string;
@@ -95,5 +104,30 @@ describe("useRunAllEvals", () => {
 
     expect(calls).toContainEqual({ method: "POST", path: "/eval/runs/all", body: { confirm: true } });
     expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.all });
+  });
+});
+
+describe("eval reads refetch when the window regains focus", () => {
+  afterEach(() => focusManager.setFocused(undefined));
+
+  // The app-wide client turns focus refetch off and keeps data fresh for 30 s; a case made
+  // on a PR page in another tab must still show up when the Evals tab is focused again.
+  const appLikeClient = () =>
+    new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 30_000, refetchOnWindowFocus: false } } });
+
+  it.each([
+    ["useEvalCases", () => useEvalCases("a1"), "/agents/a1/eval-cases", []],
+    ["useEvalRuns", () => useEvalRuns("a1"), "/agents/a1/eval-runs", []],
+    ["useEvalDashboard", () => useEvalDashboard(), "/eval/dashboard", { agents: [], recent_runs: [] }],
+  ] as const)("%s refetches on focus inside the staleTime", async (_name, hook, path, response) => {
+    installFetch(response);
+    const { result } = renderHook((): { isSuccess: boolean } => hook(), { wrapper: makeWrapper(appLikeClient()) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const before = calls.filter((c) => c.path === path).length;
+
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+
+    await waitFor(() => expect(calls.filter((c) => c.path === path).length).toBe(before + 1));
   });
 });
