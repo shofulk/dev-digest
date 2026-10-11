@@ -1,6 +1,6 @@
 {
   "name": "Eval dashboard and the agent Evals tab render on a fresh seed",
-  "description": "Read-only and data-independent: the seed has no agent-owned review, so no eval case can exist. Opens the Eval Dashboard from the sidebar and checks its subtitle, then opens the Security Reviewer Evals tab and checks the 'Run evals' button. Never changes triage state or starts a run.",
+  "description": "Read-only and data-independent: the seed has no agent-owned review, so no eval case can exist. Opens the Eval Dashboard from the sidebar and checks its subtitle, then opens the Security Reviewer Evals tab and checks the 'Run all evals' button. Never changes triage state or starts a run.",
   "steps": [
     { "cmd": ["open", "{BASE}/agents"], "label": "load the agents page" },
     { "cmd": ["wait", "--url", "/agents"], "label": "agents route reached" },
@@ -14,6 +14,6 @@
     { "cmd": ["wait", "--url", "/agents/"], "label": "agent editor route reached" },
     { "cmd": ["find", "role", "button", "click", "--name", "Evals"], "label": "switch to the Evals tab" },
     { "cmd": ["wait", "--url", "tab=evals"], "label": "tab is reflected in the URL" },
-    { "cmd": ["wait", "--text", "Run evals"], "label": "the Run evals button renders" }
+    { "cmd": ["wait", "--text", "Run all evals"], "label": "the Run all evals button renders" }
   ]
 }

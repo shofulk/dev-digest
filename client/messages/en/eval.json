@@ -96,7 +96,17 @@
     "crumbEvalCase": "Eval case"
   },
   "suite": {
-    "runEvals": "Run evals",
+    "runAll": "Run all evals",
+    "metricsLabel": "Eval metrics",
+    "dashboardLink": "View full dashboard →",
+    "passingBadge": "{passing} / {total} passing",
+    "expectedFind": "expected ≥1 finding, got {got}",
+    "expectedNone": "expected 0 findings, got {got}",
+    "deltaUp": "▲ {points}pt",
+    "deltaDown": "▼ {points}pt",
+    "deltaFlat": "±0pt",
+    "metricEmpty": "—",
+    "tracesPassed": "TRACES PASSED",
     "progress": "{done} / {total}",
     "history": "Run history",
     "compare": "Compare",

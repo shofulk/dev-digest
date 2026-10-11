@@ -146,13 +146,14 @@ describe('latestCompletedResult', () => {
       runRow({ caseId: '1', runId: 'mid', at: '2026-10-02T10:00:00Z', pass: true }),
       runRow({ caseId: '1', runId: 'new', at: '2026-10-03T10:00:00Z', status: 'pending' }),
     ]);
-    expect(latestCompletedResult('1', suites)).toEqual({ result: 'pass', run_id: 'mid' });
+    expect(latestCompletedResult('1', suites)).toEqual({ result: 'pass', run_id: 'mid', matched: 0 });
   });
 
   it('reports errored and never_run', () => {
     const suites = groupSuites([runRow({ caseId: '1', runId: 'r', at: '2026-10-01T10:00:00Z', status: 'errored' })]);
     expect(latestCompletedResult('1', suites).result).toBe('errored');
-    expect(latestCompletedResult('other', suites)).toEqual({ result: 'never_run', run_id: null });
+    expect(latestCompletedResult('other', suites)).toEqual({ result: 'never_run', run_id: null, matched: null });
+    expect(latestCompletedResult('1', suites).matched).toBeNull();
   });
 });
 
@@ -172,10 +173,24 @@ describe('toCaseOutcome / toCaseView', () => {
   });
 
   it('builds the case view with a parsed expectation', () => {
-    const view = toCaseView(caseRow('1'), { result: 'never_run', run_id: null });
+    const view = toCaseView(caseRow('1'), { result: 'never_run', run_id: null, matched: null });
     expect(view.expectation?.type).toBe('must_find');
     expect(view.case.input_diff).toBe('diff');
     expect(view.last_result).toBe('never_run');
+    expect(view.last_matched).toBeNull();
+  });
+
+  it('carries the matched count of the newest completed run into the view', () => {
+    const suites = groupSuites([
+      runRow({
+        caseId: '1',
+        runId: 'r',
+        at: '2026-10-01T10:00:00Z',
+        findings: [...HIT, { file: 'src/a.ts', start_line: 50, end_line: 51 }],
+      }),
+    ]);
+    const view = toCaseView(caseRow('1'), latestCompletedResult('1', suites));
+    expect(view.last_matched).toBe(HIT.length);
   });
 });
 

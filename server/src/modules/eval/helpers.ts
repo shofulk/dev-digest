@@ -128,6 +128,8 @@ export function parseExpectation(raw: unknown): EvalExpectation | null {
 export interface LatestResult {
   result: EvalCaseResult;
   run_id: string | null;
+  /** Findings of that run that matched the expectation; `null` when never run or errored. */
+  matched: number | null;
 }
 
 export function toCaseView(row: EvalCaseRow, latest: LatestResult): EvalCaseView {
@@ -136,6 +138,7 @@ export function toCaseView(row: EvalCaseRow, latest: LatestResult): EvalCaseView
     expectation: parseExpectation(row.expectedOutput),
     last_result: latest.result,
     last_run_id: latest.run_id,
+    last_matched: latest.matched,
   };
 }
 
@@ -241,9 +244,13 @@ export function latestCompletedResult(caseId: string, suites: Suite[]): LatestRe
           ? 'pass'
           : 'fail'
         : 'errored';
-    return { result, run_id: suite.summary.run_id };
+    const matched =
+      result !== 'errored' && row.expectation
+        ? (row.output.findings ?? []).filter((f) => matches(f, row.expectation!)).length
+        : null;
+    return { result, run_id: suite.summary.run_id, matched };
   }
-  return { result: 'never_run', run_id: null };
+  return { result: 'never_run', run_id: null, matched: null };
 }
 
 export function toCaseOutcome(row: ParsedRow): EvalCaseOutcome {

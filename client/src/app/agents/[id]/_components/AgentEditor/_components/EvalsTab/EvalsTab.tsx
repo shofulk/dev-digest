@@ -5,15 +5,25 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Button, Checkbox, ErrorState, MetricCard, Skeleton } from "@devdigest/ui";
-import type { EvalCaseView } from "@devdigest/shared/contracts/eval-ci";
+import Link from "next/link";
+import { Button, Checkbox, ErrorState, Icon, Skeleton } from "@devdigest/ui";
 import { ApiError } from "@/lib/api";
 import { notify } from "@/lib/toast";
 import { formatCost } from "@/lib/format-cost";
-import { formatMetric, orderPair } from "@/lib/eval-metrics";
+import { formatMetric, orderPair, toneColor } from "@/lib/eval-metrics";
 import { useDeleteEvalCase, useEvalCases, useEvalRuns, useStartEvalRun } from "@/lib/hooks/eval";
 import { CompareModal } from "./_components/CompareModal";
-import { canCompare, latestTwoCompleted, metricDelta, startErrorKey, toggleSelected } from "./helpers";
+import {
+  canCompare,
+  formatPercent,
+  latestTwoCompleted,
+  locationOf,
+  metricDelta,
+  passingCounts,
+  pointsDelta,
+  startErrorKey,
+  toggleSelected,
+} from "./helpers";
 import { s } from "./styles";
 
 const RESULT_KEYS = {
@@ -23,10 +33,42 @@ const RESULT_KEYS = {
   never_run: "suite.result.never_run",
 } as const;
 
-function lineRange(c: EvalCaseView): string | null {
-  const e = c.expectation;
-  if (!e) return null;
-  return e.start_line === e.end_line ? `${e.file}:${e.start_line}` : `${e.file}:${e.start_line}-${e.end_line}`;
+const STATUS_ICON = {
+  pass: { icon: "CheckCircle", color: "var(--ok)" },
+  fail: { icon: "XCircle", color: "var(--crit)" },
+  errored: { icon: "AlertTriangle", color: "var(--warn)" },
+  never_run: { icon: "Dot", color: "var(--text-muted)" },
+} as const;
+
+function MetricTile({
+  label,
+  value,
+  color,
+  delta,
+}: {
+  label: string;
+  value: string;
+  color: string;
+  delta?: { direction: "up" | "down" | "flat"; points: number };
+}) {
+  const t = useTranslations("eval");
+  return (
+    <div style={s.tile}>
+      <div style={s.tileLabel}>{label}</div>
+      <div style={s.tileBody}>
+        <span className="tnum" style={s.tileValue(color)}>
+          {value}
+        </span>
+        {delta && (
+          <span className="tnum" style={s.tileDelta(toneColor(delta.direction))}>
+            {delta.direction === "flat"
+              ? t("suite.deltaFlat")
+              : t(delta.direction === "up" ? "suite.deltaUp" : "suite.deltaDown", { points: delta.points })}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function EvalsTab({ agentId }: { agentId: string }) {
@@ -49,6 +91,8 @@ export function EvalsTab({ agentId }: { agentId: string }) {
   const runList = runs.data ?? [];
   const running = runList.find((r) => r.status === "running") ?? null;
   const { latest, previous } = latestTwoCompleted(runList);
+  const dash = t("suite.metricEmpty");
+  const counts = passingCounts(caseList.map((c) => c.last_result));
   const pair = canCompare(selected) ? orderPair(runList, [selected[0]!, selected[1]!]) : null;
 
   const onRun = () =>
@@ -75,33 +119,50 @@ export function EvalsTab({ agentId }: { agentId: string }) {
 
   return (
     <div style={s.wrap}>
-      {latest && (
-        <div style={s.tiles}>
-          <MetricCard
-            label={t("dashboard.metrics.recall")}
-            value={formatMetric(latest.recall)}
-            delta={metricDelta(latest.recall, previous?.recall)}
-          />
-          <MetricCard
-            label={t("dashboard.metrics.precision")}
-            value={formatMetric(latest.precision)}
-            delta={metricDelta(latest.precision, previous?.precision)}
-          />
-          <MetricCard
-            label={t("dashboard.metrics.citationAccuracy")}
-            value={formatMetric(latest.citation_accuracy)}
-            delta={metricDelta(latest.citation_accuracy, previous?.citation_accuracy)}
-          />
-          <MetricCard label={t("dashboard.metrics.passed")} value={`${latest.traces_passed}/${latest.traces_total}`} />
+      <section>
+        <div style={s.metricsHead}>
+          <Icon.Gauge size={14} />
+          <span style={s.metricsLabel}>{t("suite.metricsLabel")}</span>
+          <Link href="/eval" className="mono" style={s.dashLink}>
+            {t("suite.dashboardLink")}
+          </Link>
         </div>
-      )}
+        <div style={s.tiles}>
+          <MetricTile
+            label={t("dashboard.metrics.recall")}
+            value={formatPercent(latest?.recall) ?? dash}
+            color="var(--accent)"
+            delta={pointsDelta(metricDelta(latest?.recall, previous?.recall))}
+          />
+          <MetricTile
+            label={t("dashboard.metrics.precision")}
+            value={formatPercent(latest?.precision) ?? dash}
+            color="var(--ok)"
+            delta={pointsDelta(metricDelta(latest?.precision, previous?.precision))}
+          />
+          <MetricTile
+            label={t("dashboard.metrics.citationAccuracy")}
+            value={formatPercent(latest?.citation_accuracy) ?? dash}
+            color="var(--warn)"
+            delta={pointsDelta(metricDelta(latest?.citation_accuracy, previous?.citation_accuracy))}
+          />
+          <MetricTile
+            label={t("suite.tracesPassed")}
+            value={latest ? `${latest.traces_passed}/${latest.traces_total}` : dash}
+            color="var(--text-primary)"
+          />
+        </div>
+      </section>
 
       <section>
         <div style={s.sectionHead}>
           <h2 style={s.h2}>{t("suite.casesHeading")}</h2>
+          {counts.anyRun && (
+            <span style={s.passingBadge}>{t("suite.passingBadge", { passing: counts.passing, total: counts.total })}</span>
+          )}
           <div style={s.spacer}>
             <Button
-              kind="primary"
+              kind="secondary"
               size="sm"
               icon="Play"
               loading={start.isPending}
@@ -110,7 +171,7 @@ export function EvalsTab({ agentId }: { agentId: string }) {
             >
               {running
                 ? t("suite.progress", { done: running.cases_done, total: running.cases_total })
-                : t("suite.runEvals")}
+                : t("suite.runAll")}
             </Button>
           </div>
         </div>
@@ -122,37 +183,53 @@ export function EvalsTab({ agentId }: { agentId: string }) {
         ) : caseList.length === 0 ? (
           <div style={s.hint}>{t("suite.emptyCases")}</div>
         ) : (
-          <table style={s.table}>
-            <tbody>
-              {caseList.map((c) => {
-                const range = lineRange(c);
-                const type = c.expectation?.type;
-                return (
-                  <tr key={c.case.id}>
-                    <td style={s.td}>{c.case.name}</td>
-                    <td style={s.td}>
-                      {type && (
-                        <Badge>{t(type === "must_find" ? "suite.typeMustFind" : "suite.typeMustNotFlag")}</Badge>
-                      )}
-                    </td>
-                    <td style={s.td}>{range && <span className="mono">{range}</span>}</td>
-                    <td style={{ ...s.td, ...s.result(c.last_result) }}>{t(RESULT_KEYS[c.last_result])}</td>
-                    <td style={s.td}>
-                      <Button
-                        kind="ghost"
-                        size="sm"
-                        icon="Trash"
-                        aria-label={t("suite.deleteCase")}
-                        title={t("suite.deleteCase")}
-                        disabled={del.isPending}
-                        onClick={() => del.mutate(c.case.id)}
-                      />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div style={s.caseList}>
+            {caseList.map((c) => {
+              const e = c.expectation;
+              const path = e ? locationOf(e) : null;
+              const status = STATUS_ICON[c.last_result];
+              const StatusIcon = Icon[status.icon];
+              const meta =
+                e && (c.last_result === "pass" || c.last_result === "fail")
+                  ? t(e.type === "must_find" ? "suite.expectedFind" : "suite.expectedNone", { got: c.last_matched ?? 0 })
+                  : t(RESULT_KEYS[c.last_result]);
+              return (
+                <div key={c.case.id} data-testid="eval-case-card" style={s.caseCard}>
+                  <span role="img" aria-label={t(RESULT_KEYS[c.last_result])} style={{ ...s.statusIcon, color: status.color }}>
+                    <StatusIcon size={c.last_result === "never_run" ? 14 : 18} />
+                  </span>
+                  <div style={s.caseMain}>
+                    <span className="mono" style={s.caseName}>
+                      {c.case.name}
+                    </span>
+                    <span style={s.caseMeta}>{meta}</span>
+                    {path && (
+                      <span className="mono" style={s.casePath} title={path}>
+                        {path}
+                      </span>
+                    )}
+                  </div>
+                  <div style={s.caseSide}>
+                    {e && (
+                      <span style={s.chip}>
+                        {e.severity} · {e.category}
+                      </span>
+                    )}
+                    {e && <span style={s.chip}>{t(e.type === "must_find" ? "suite.typeMustFind" : "suite.typeMustNotFlag")}</span>}
+                    <Button
+                      kind="ghost"
+                      size="sm"
+                      icon="Trash"
+                      aria-label={t("suite.deleteCase")}
+                      title={t("suite.deleteCase")}
+                      disabled={del.isPending}
+                      onClick={() => del.mutate(c.case.id)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </section>
 

@@ -115,7 +115,7 @@ describe("EvalsTab", () => {
     expect(screen.getByTestId("compare-modal")).toHaveTextContent("old>new");
   });
 
-  it("disables Run evals while a run is running and shows progress", () => {
+  it("disables Run all evals while a run is running and shows progress", () => {
     cases = [caseView("1")];
     runs = [run({ run_id: "live", status: "running", cases_done: 2, cases_total: 5, finished_at: null })];
     renderTab();
@@ -124,19 +124,19 @@ describe("EvalsTab", () => {
     expect(btn).toBeDisabled();
   });
 
-  it("starts a run from an enabled Run evals button", () => {
+  it("starts a run from an enabled Run all evals button", () => {
     cases = [caseView("1")];
     runs = [];
     renderTab();
-    fireEvent.click(screen.getByRole("button", { name: "Run evals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run all evals" }));
     expect(startMutate).toHaveBeenCalledTimes(1);
   });
 
-  it("disables Run evals with no cases", () => {
+  it("disables Run all evals with no cases", () => {
     cases = [];
     runs = [];
     renderTab();
-    expect(screen.getByRole("button", { name: "Run evals" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run all evals" })).toBeDisabled();
     expect(screen.getByText(/No eval cases yet/)).toBeInTheDocument();
   });
 
@@ -148,51 +148,148 @@ describe("EvalsTab", () => {
     const loc = screen.getByText("src/config.ts:11");
     expect(loc.tagName).toBe("SPAN");
     expect(screen.queryByRole("link", { name: /config\.ts/ })).toBeNull();
-    const row = loc.closest("tr")!;
-    expect(within(row).getByText("never run")).toBeInTheDocument();
+    const card = loc.closest("[data-testid='eval-case-card']") as HTMLElement;
+    expect(within(card).getByText("never run")).toBeInTheDocument();
   });
 });
 
 describe("EvalsTab metric tiles", () => {
-  /** The tile whose label is `label`: its value and signed delta (colour carries the sign). */
+  /** The tile whose label is `label`: its big value and the delta text, when there is one. */
   function tile(label: string) {
-    const root = screen.getByText(label).parentElement!.parentElement!;
-    return {
-      value: root.querySelector("span.tnum")!.firstChild!.textContent,
-      deltas: Array.from(root.querySelectorAll("span.tnum")).slice(1),
-    };
+    const root = screen.getByText(label).parentElement!;
+    const spans = root.querySelectorAll("span.tnum");
+    return { value: spans[0]!.textContent, delta: spans[1] ?? null };
   }
 
-  it("shows the latest completed run's values and the signed delta against the previous one", () => {
+  it("shows the latest completed run's percentages and the signed point delta against the previous one", () => {
     cases = [caseView("1")];
     runs = [
       run({ run_id: "live", status: "running", started_at: "2026-10-05T00:00:00Z", recall: 0.1, precision: 0.1 }),
-      run({ run_id: "new", started_at: "2026-10-03T00:00:00Z", recall: 0.8, precision: 0.4, citation_accuracy: 1 }),
-      run({ run_id: "old", started_at: "2026-10-01T00:00:00Z", recall: 0.5, precision: 0.6, citation_accuracy: 1 }),
+      run({ run_id: "new", started_at: "2026-10-03T00:00:00Z", recall: 0.82, precision: 0.4, citation_accuracy: 1 }),
+      run({ run_id: "old", started_at: "2026-10-01T00:00:00Z", recall: 0.78, precision: 0.6, citation_accuracy: 1 }),
     ];
     renderTab();
 
     const recall = tile("RECALL");
-    expect(recall.value).toBe("0.80");
-    expect(recall.deltas.map((d) => d.textContent)).toEqual(["0.30"]);
-    expect(recall.deltas[0]!.parentElement!.getAttribute("style")).toContain("var(--ok)");
+    expect(recall.value).toBe("82%");
+    expect(recall.delta!.textContent).toBe("▲ 4pt");
+    expect(recall.delta!.getAttribute("style")).toContain("var(--ok)");
 
     const precision = tile("PRECISION");
-    expect(precision.value).toBe("0.40");
-    expect(precision.deltas.map((d) => d.textContent)).toEqual(["0.20"]);
-    expect(precision.deltas[0]!.parentElement!.getAttribute("style")).toContain("var(--crit)");
+    expect(precision.value).toBe("40%");
+    expect(precision.delta!.textContent).toBe("▼ 20pt");
+    expect(precision.delta!.getAttribute("style")).toContain("var(--crit)");
 
     const citation = tile("CITATION ACCURACY");
-    expect(citation.value).toBe("1.00");
-    expect(citation.deltas[0]!.parentElement!.getAttribute("style")).toContain("var(--text-muted)");
+    expect(citation.value).toBe("100%");
+    expect(citation.delta!.textContent).toBe("±0pt");
+    expect(citation.delta!.getAttribute("style")).toContain("var(--text-muted)");
+
+    expect(tile("TRACES PASSED").value).toBe("3/5");
+    expect(tile("TRACES PASSED").delta).toBeNull();
   });
 
   it("shows no delta when there is only one completed run", () => {
     cases = [caseView("1")];
     runs = [run({ run_id: "only", recall: 0.8 })];
     renderTab();
-    expect(tile("RECALL").value).toBe("0.80");
-    expect(tile("RECALL").deltas).toHaveLength(0);
+    expect(tile("RECALL").value).toBe("80%");
+    expect(tile("RECALL").delta).toBeNull();
+  });
+
+  it("shows the four tiles as an em dash with no delta before any run", () => {
+    cases = [caseView("1", { last_result: "never_run", last_run_id: null })];
+    runs = [];
+    renderTab();
+    for (const label of ["RECALL", "PRECISION", "CITATION ACCURACY", "TRACES PASSED"]) {
+      const t = tile(label);
+      expect(t.value).toBe("—");
+      expect(t.delta).toBeNull();
+    }
+    expect(screen.queryByText(/passing$/)).toBeNull();
+  });
+
+  it("links to the full dashboard", () => {
+    cases = [];
+    runs = [];
+    renderTab();
+    expect(screen.getByRole("link", { name: "View full dashboard →" })).toHaveAttribute("href", "/eval");
+  });
+});
+
+describe("EvalsTab case cards", () => {
+  const mustNot = (over: Partial<EvalCaseView>) =>
+    caseView("2", {
+      expectation: {
+        type: "must_not_flag",
+        file: "src/b.ts",
+        start_line: 3,
+        end_line: 5,
+        severity: "WARNING",
+        category: "test",
+        title: "t",
+      },
+      ...over,
+    });
+
+  it("renders a status icon, the expected/got line, chips, a delete button and the passing badge per card", () => {
+    cases = [
+      caseView("1", { last_result: "pass", last_matched: 2 }),
+      mustNot({ last_result: "fail", last_matched: 1 }),
+    ];
+    runs = [run({ run_id: "r1" })];
+    renderTab();
+
+    const cards = screen.getAllByTestId("eval-case-card");
+    expect(cards).toHaveLength(2);
+    expect(within(cards[0]!).getByRole("img", { name: "pass" })).toBeInTheDocument();
+    expect(within(cards[0]!).getByText("expected ≥1 finding, got 2")).toBeInTheDocument();
+    expect(within(cards[0]!).getByText("CRITICAL · security")).toBeInTheDocument();
+    expect(within(cards[1]!).getByRole("img", { name: "fail" })).toBeInTheDocument();
+    expect(within(cards[1]!).getByText("expected 0 findings, got 1")).toBeInTheDocument();
+    expect(within(cards[1]!).getByText("WARNING · test")).toBeInTheDocument();
+    for (const card of cards) {
+      expect(within(card).getByRole("button", { name: "Delete case" })).toBeInTheDocument();
+    }
+    expect(screen.getByText("1 / 2 passing")).toBeInTheDocument();
+  });
+
+  it("labels an errored case without a count and never run without an icon of pass/fail", () => {
+    cases = [
+      caseView("1", { last_result: "errored", last_matched: null }),
+      caseView("2", { last_result: "never_run", last_run_id: null }),
+    ];
+    runs = [run({ run_id: "r1" })];
+    renderTab();
+    const [errored, never] = screen.getAllByTestId("eval-case-card");
+    expect(within(errored!).getByRole("img", { name: "errored" })).toBeInTheDocument();
+    expect(within(errored!).getByText("errored", { selector: "span:not([role])" })).toBeInTheDocument();
+    expect(within(errored!).queryByText(/got/)).toBeNull();
+    expect(within(never!).getByRole("img", { name: "never run" })).toBeInTheDocument();
+  });
+
+  it("truncates a long path on one line and keeps the full path in the title", () => {
+    const long = `${"deep/".repeat(30)}file.ts`;
+    cases = [
+      caseView("1", {
+        expectation: {
+          type: "must_find",
+          file: long,
+          start_line: 7,
+          end_line: 7,
+          severity: "CRITICAL",
+          category: "security",
+          title: "x",
+        },
+      }),
+    ];
+    runs = [];
+    renderTab();
+    const path = screen.getByText(`${long}:7`);
+    expect(path).toHaveAttribute("title", `${long}:7`);
+    expect(path.style.textOverflow).toBe("ellipsis");
+    expect(path.style.whiteSpace).toBe("nowrap");
+    expect(path.style.overflow).toBe("hidden");
   });
 });
 

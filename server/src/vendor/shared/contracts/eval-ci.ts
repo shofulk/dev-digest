@@ -133,6 +133,8 @@ export const EvalCaseView = z.object({
   expectation: EvalExpectation.nullable(),
   last_result: EvalCaseResult,
   last_run_id: z.string().nullish(),
+  /** Findings of the newest completed run that matched the expectation; null = never run / errored. */
+  last_matched: z.number().int().nullish(),
 });
 export type EvalCaseView = z.infer<typeof EvalCaseView>;
 
