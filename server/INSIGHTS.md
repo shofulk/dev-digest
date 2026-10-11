@@ -234,6 +234,33 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-11 — an eval "suite run" has no table: rows are grouped by `actual_output->>'run_id'`, and every late write is guarded on `status = 'pending'`
+
+`eval_runs` holds one row per (case, run); the run itself exists only as the `run_id` string
+inside each row's `actual_output`. Completing or erroring a row is an `UPDATE ... WHERE
+status = 'pending'`, so a row that was reconciled (or whose case was deleted) while the LLM call
+was in flight is never resurrected by the late result. Keep that guard on any new write path.
+For deterministic 409 / per-case-error tests, subclass the mock LLM and hold its call on a
+promise gate (`ScriptedLLM.gate`) instead of racing timers.
+**Evidence:** `server/src/modules/eval/repository.ts:155`, `server/test/eval.it.test.ts:57`
+
+### 2026-10-11 — seeded agents have no `agent_versions` row, so anything that records "the prompt this run used" must snapshot first
+
+`seed.ts` inserts agents directly; only `AgentsRepository.insert/update` write a version
+snapshot. An eval run therefore calls `ensureVersionSnapshot` before inserting its rows, or
+run compare has no prompt to show for the seeded Security Reviewer. It never overwrites an
+existing snapshot, so it is safe to call on every start.
+**Evidence:** `server/src/modules/agents/repository.ts:167`, `server/src/modules/eval/service.ts:191`
+
+### 2026-10-11 — the client `vendor/shared` mirror had silently drifted from the server copy at the base commit
+
+`client/src/vendor/shared/contracts/eval-ci.ts` differed from the server source before the
+eval work started and nothing noticed. `test/eval-contract-parity.test.ts` now asserts the two
+files are byte-identical (`eval-ci.ts`, `knowledge.ts`); when it fails, re-mirror from
+`server/src/vendor/shared`, never edit the client copy. Add a file to its list when a new
+contract is mirrored.
+**Evidence:** `server/test/eval-contract-parity.test.ts:12`
+
 ### 2026-10-03 - `pnpm arch` stays at baseline while a ring-1 function takes a raw `Db`
 depcruise checks import edges, and `_shared/agent-skills.ts` already imports the `Db` type, so a
 new ring-1 function with a `db: Db` parameter (or a service field typed `Container['db']`) is

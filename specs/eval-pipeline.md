@@ -110,8 +110,8 @@ citation accuracy, so two runs of different agent versions can be compared side 
 20. `GET /agents/:id/eval-runs` → `EvalSuiteRun[]` newest first: `run_id`, `status`,
     `agent_version`, `started_at`, `finished_at`, the run metrics of **D**, case count.
 21. `GET /eval-runs/:runId` → `EvalSuiteRun` plus `per_case[]` (case name, expectation, pass,
-    status, findings with a `matched` flag, kept/dropped counts). The client polls this while
-    the run is `running`.
+    status, findings with a `matched` flag, kept/dropped counts). It serves per-case detail; the
+    client polls `GET /agents/:id/eval-runs` (AC20) while a run is `running`.
 22. `GET /eval-runs/compare?a=<runId>&b=<runId>` → `EvalCompare`: both runs' summaries, metric
     deltas (`b − a`, `null` when either side is `null`), per-case flips (pass→fail, fail→pass)
     over the cases both runs share, cases only in one run, and a line diff of the two

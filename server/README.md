@@ -78,6 +78,7 @@ flowchart TB
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
     skills["skills<br/>/skills[/:id] · /skills/:id/(versions[/:v][/restore]|stats)<br/>/skills/import[/preview] · /skills/tokens"]
+    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
@@ -123,6 +124,11 @@ the model returns is checked against the PR's changed-file hunk ranges and
 blast-caller lines before it is stored — a reference that does not check out
 is dropped, never rewritten (`src/modules/brief/grounding.ts`). See
 [`.doc/pr-brief.md`](.doc/pr-brief.md) for why the module is shaped this way.
+
+`eval` scores an agent with code only: no LLM judge, and no `agent_runs` or `findings` writes.
+A case is a frozen single-file snapshot taken from a triaged finding, so later edits to the PR do not move it.
+A suite run is not a table: its rows are grouped by `actual_output.run_id`.
+The client polls the run until every row has left `pending`.
 
 ## Environment
 

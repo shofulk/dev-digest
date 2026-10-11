@@ -315,6 +315,19 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-11 — vendor `Sparkline` renders `NaN` coordinates for a single data point
+
+It maps `i / (data.length - 1)`, so a series of length 1 divides by zero (only an empty one is
+guarded). Render it only when `data.length >= 2`, and show a plain value otherwise — a new
+agent with one eval run is the normal case, not an edge.
+**Evidence:** `client/src/vendor/ui/charts/Sparkline.tsx:15`
+
+### 2026-10-11 — there is no `--danger` colour token; the red in `vendor/ui` is `--crit`
+
+`var(--danger)` resolves to nothing and fails silently (no colour, no error). Tokens live in
+`vendor/ui/styles.css`; use `--crit` for error/regression states.
+**Evidence:** `client/src/vendor/ui/styles.css:25`
+
 ### 2026-10-04 — `@testing-library/user-event` is not installed; component tests use `fireEvent`
 Only `@testing-library/react` and `jest-dom` are dependencies, so the RTL skill's
 "prefer `userEvent`" advice does not apply here without adding a package (a lockfile
