@@ -209,7 +209,7 @@ when nothing is left to run every tier job is skipped. A PR from a fork gets no 
 
 | Variable | Default | Why |
 |----------|---------|-----|
-| `EVAL_MODEL` | `deepseek/deepseek-v4-flash` | skills + agents under test — cheapest capable model |
+| `EVAL_MODEL` | `anthropic/claude-haiku-5.5` | skills + agents under test — the Agent SDK's own model family; on a ~100k-in/9k-out agent case it costs about what `deepseek/deepseek-v4-flash` does (cheaper output, pricier input), which needed 17–36 turns and hit the 4 min timeout |
 | `EVAL_JUDGE_MODEL` | `google/gemini-2.5-flash` | another family than the model under test (self-preference) |
 | `EVAL_WORKFLOW_MODEL` | `google/gemini-2.5-flash` | the workflow tier asserts on subagent dispatch, which only Gemini Flash did reliably (table above) |
 
