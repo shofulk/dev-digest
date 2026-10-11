@@ -8,7 +8,6 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import {
   Icon,
-  SeverityBadge,
   CategoryTag,
   MonoLink,
   ConfidenceNum,
@@ -20,7 +19,8 @@ import {
 import type { FindingRecord, FindingActionKind } from "@devdigest/shared";
 import { SEV_COLOR, SEV_COLOR_FALLBACK } from "./constants";
 import { evalCaseTypeOf, lineLabel } from "./helpers";
-import { githubBlobUrl } from "../../../../../../../lib/github-urls";
+import { githubBlobUrl } from "../../lib/github-urls";
+import { SeverityMark } from "./SeverityMark";
 import { s } from "./styles";
 
 export function FindingCard({
@@ -31,6 +31,8 @@ export function FindingCard({
   pending,
   onEvalCase,
   evalPending,
+  onLearn,
+  learnPending,
   repoFullName,
   headSha,
 }: {
@@ -42,6 +44,9 @@ export function FindingCard({
   /** Freeze this finding into an eval case; the parent owns the mutation. */
   onEvalCase?: () => void;
   evalPending?: boolean;
+  /** Save this finding as a repo learning; the parent owns the mutation. Button hidden when absent. */
+  onLearn?: () => void;
+  learnPending?: boolean;
   repoFullName?: string | null;
   headSha?: string | null;
 }) {
@@ -61,11 +66,13 @@ export function FindingCard({
     <div data-finding-id={f.id} style={s.card(!!focused, sevColor, muted)}>
       <div onClick={() => setExpanded((e) => !e)} style={s.header}>
         <div style={s.badgeWrap}>
-          <SeverityBadge severity={f.severity as Severity} compact />
+          <SeverityMark severity={f.severity as Severity} />
         </div>
         <div style={s.headerMain}>
           <div style={s.titleRow}>
-            <span style={s.title(muted, dismissed)}>{f.title}</span>
+            <div style={s.title(muted, dismissed)}>
+              <Markdown>{f.title}</Markdown>
+            </div>
             <CategoryTag category={f.category as Category} />
             {f.scope === "out" && <span style={s.acceptedTag}>{t("finding.outOfScope")}</span>}
             {accepted && <span style={s.acceptedTag}>{t("finding.accepted")}</span>}
@@ -78,7 +85,11 @@ export function FindingCard({
             <ConfidenceNum value={f.confidence} />
           </div>
         </div>
-        <Icon.ChevronDown size={16} style={s.chevron(expanded)} />
+        {/* The keyboard / assistive-tech handle of the header: Enter and Space fire its click,
+            which bubbles to the header's onClick (the mouse target) — one toggle either way. */}
+        <button type="button" aria-expanded={expanded} aria-label={t("finding.toggleDetails")} style={s.toggle}>
+          <Icon.ChevronDown size={16} style={s.chevron(expanded)} />
+        </button>
       </div>
 
       {expanded && (
@@ -127,6 +138,18 @@ export function FindingCard({
               {t("finding.evalCase")}
               {evalType && ` ${t(evalType === "must_find" ? "finding.evalCaseMustFind" : "finding.evalCaseMustNotFlag")}`}
             </Button>
+            {onLearn && (
+              <Button
+                kind="ghost"
+                size="sm"
+                icon="Brain"
+                disabled={learnPending}
+                active={!!f.learned}
+                onClick={() => onLearn()}
+              >
+                {f.learned ? t("finding.learned") : t("finding.learn")}
+              </Button>
+            )}
           </div>
         </div>
       )}

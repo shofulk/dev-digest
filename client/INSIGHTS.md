@@ -192,6 +192,9 @@ boots — load one route before calling client work done.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+### 2026-10-11 — a failed mutation toasts twice, and a one-line title in vendor `Markdown` is not a block problem
+Every mutation error already toasts `err.message` through the global `MutationCache` (`providers.tsx`), so an `onError` that toasts again (`useFindingCardActions` eval-case: translated `caseErrorKey`) gives two toasts; `FindingsPanel.test.tsx` pins the translated one, so changing it is a product decision, not a drive-by. Separately, vendor `Markdown` has no inline mode, but `.dd-md > :last-child { margin-bottom: 0 !important }` (globals.css) zeroes the lone `<p>`; render a title in a `<div>` (never a `<span>`, `div > p` is not phrasing content) and it lays out like text.
+**Evidence:** client/src/components/finding-card/useFindingCardActions.ts:34
 
 ### 2026-10-04 — a data hook reports failure as a stable `code` only; the component maps code → `t()` key
 `client/AGENTS.md` says "no literal copy in components", which reads as if hooks were

@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
-import messages from "../../../../../../../../messages/en/prReview.json";
+import messages from "../../../messages/en/prReview.json";
 import { FindingCard } from "./FindingCard";
 
 afterEach(cleanup);
@@ -96,5 +97,48 @@ describe("FindingCard eval-case action", () => {
     fireEvent.click(screen.getByText("Dismiss"));
     expect(onAction).toHaveBeenCalledWith("dismiss");
     expect(onEvalCase).not.toHaveBeenCalled();
+  });
+});
+
+describe("FindingCard keyboard, severity name and title markdown", () => {
+  it("the header is operable from the keyboard: Tab reaches the toggle, Enter expands, Space collapses", async () => {
+    const user = userEvent.setup();
+    renderWithIntl(<FindingCard f={FINDING} onAction={() => {}} />);
+    const toggle = screen.getByRole("button", { name: "Show details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Accept")).not.toBeInTheDocument();
+
+    for (let i = 0; i < 10 && document.activeElement !== toggle; i++) await user.tab();
+    expect(toggle).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("Accept")).toBeInTheDocument();
+
+    await user.keyboard(" ");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Accept")).not.toBeInTheDocument();
+  });
+
+  it("a click on the header still toggles exactly once", () => {
+    renderWithIntl(<FindingCard f={FINDING} onAction={() => {}} />);
+    fireEvent.click(screen.getByText("Hardcoded Stripe secret key"));
+    expect(screen.getByRole("button", { name: "Show details" })).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Show details" }));
+    expect(screen.getByRole("button", { name: "Show details" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("the icon-only severity badge has an accessible name", () => {
+    renderWithIntl(<FindingCard f={FINDING} />);
+    expect(screen.getByRole("img", { name: "Critical" })).toBeInTheDocument();
+  });
+
+  it("C10 / AC-67: the title renders through Markdown and never injects raw HTML", () => {
+    renderWithIntl(
+      <FindingCard f={{ ...FINDING, title: 'Unsafe `eval` of **input** <img src=x onerror=alert(1)>' }} />,
+    );
+    expect(screen.getByText("eval").tagName).toBe("CODE");
+    expect(screen.getByText("input").tagName).toBe("STRONG");
+    expect(document.querySelector("img")).toBeNull();
   });
 });

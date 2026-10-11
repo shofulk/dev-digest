@@ -134,6 +134,17 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-11 — `memory` is fed to the review prompt as "trusted, curated", but Learn now writes LLM-steerable text into it
+
+`reviewer-core/src/prompt.ts` (`PromptParts.memory`, the `memoryBlock` join) puts memory items
+into the prompt verbatim, with no `wrapUntrusted()`, because memory was assumed curated. Since
+SPEC-03, `server/src/modules/reviews/learn.ts` stores a finding's title + rationale as a
+`learning` memory row (scope repo), and those strings are model output shaped by the PR diff.
+Nothing reads `memory` into `parts.memory` yet, so there is no live hole. The first retrieval
+that does must wrap each row as untrusted (like the Project Context docs), or a crafted diff
+becomes a stored prompt injection into every later review of that repo.
+**Evidence:** `reviewer-core/src/prompt.ts:109`, `reviewer-core/src/prompt.ts:176`, `server/src/modules/reviews/learn.ts:6`
+
 ### 2026-10-03 — a format check on a freezing state transition must run before the write, not after
 `spec-creator` may edit a spec only while it is `draft` (`scope-guard.sh write spec` reads
 the status from disk). A PostToolUse lint alone would let the `draft → approved` Edit land

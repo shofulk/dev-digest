@@ -6,12 +6,8 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Toggle, EmptyState } from "@devdigest/ui";
 import type { FindingRecord, Severity } from "@devdigest/shared";
-import { FindingCard } from "../FindingCard";
-import { useFindingAction } from "../../../../../../../lib/hooks/reviews";
-import { useCreateEvalCase } from "../../../../../../../lib/hooks/eval";
-import { ApiError } from "../../../../../../../lib/api";
-import { caseErrorKey } from "../../../../../../../lib/eval-metrics";
-import { notify } from "../../../../../../../lib/toast";
+import { FindingCard } from "@/components/finding-card";
+import { useFindingCardActions } from "@/components/finding-card/useFindingCardActions";
 import { KEY_TO_ACTION } from "./constants";
 import { visibleFindings } from "./helpers";
 import { s } from "./styles";
@@ -31,8 +27,7 @@ export function FindingsPanel({
   headSha?: string | null;
 }) {
   const t = useTranslations("prReview");
-  const action = useFindingAction();
-  const evalCase = useCreateEvalCase();
+  const actions = useFindingCardActions(prId);
   const [hideLow, setHideLow] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(0);
 
@@ -55,12 +50,12 @@ export function FindingsPanel({
       if (e.key === "j") setFocusIdx((i) => Math.min(i + 1, shown.length - 1));
       else if (e.key === "k") setFocusIdx((i) => Math.max(i - 1, 0));
       else if (KEY_TO_ACTION[e.key] && shown[focusIdx]) {
-        action.mutate({ findingId: shown[focusIdx]!.id, action: KEY_TO_ACTION[e.key]!, prId });
+        actions.act(shown[focusIdx]!.id, KEY_TO_ACTION[e.key]!);
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [shown, focusIdx, action, prId]);
+  }, [shown, focusIdx, actions]);
 
   return (
     <div>
@@ -81,18 +76,9 @@ export function FindingsPanel({
               f={f}
               focused={i === focusIdx}
               defaultExpanded={i === 0}
-              pending={action.isPending}
               repoFullName={repoFullName}
               headSha={headSha}
-              onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
-              evalPending={evalCase.isPending}
-              onEvalCase={() =>
-                evalCase.mutate(f.id, {
-                  onSuccess: (r) =>
-                    notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
-                  onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
-                })
-              }
+              {...actions.cardProps(f)}
             />
           ))
         )}

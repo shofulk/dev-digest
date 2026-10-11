@@ -10,13 +10,11 @@ import {
   type DiffCommentApi,
   type DiffFindingApi,
 } from "@/components/diff-viewer";
-import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
+import { usePrComments, useCreatePrComment, usePrReviews } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
-import { useCreateEvalCase } from "@/lib/hooks/eval";
-import { ApiError } from "@/lib/api";
-import { caseErrorKey } from "@/lib/eval-metrics";
 import { notify } from "@/lib/toast";
-import { FindingCard } from "../FindingCard";
+import { FindingCard } from "@/components/finding-card";
+import { useFindingCardActions } from "@/components/finding-card/useFindingCardActions";
 import type { PrFile } from "@devdigest/shared";
 
 type Order = "smart" | "original";
@@ -57,8 +55,7 @@ export function DiffTab({
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   const { data: reviews } = usePrReviews(prId);
-  const action = useFindingAction();
-  const evalCase = useCreateEvalCase();
+  const actions = useFindingCardActions(prId);
   const {
     data: smartDiff,
     isLoading: smartDiffLoading,
@@ -106,18 +103,7 @@ export function DiffTab({
         key={f.id}
         f={f}
         defaultExpanded
-        pending={action.isPending}
-        onAction={(a) => {
-          if (prId) action.mutate({ findingId: f.id, action: a, prId });
-        }}
-        evalPending={evalCase.isPending}
-        onEvalCase={() =>
-          evalCase.mutate(f.id, {
-            onSuccess: (r) =>
-              notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
-            onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
-          })
-        }
+        {...actions.cardProps(f)}
         repoFullName={repoFullName}
         headSha={headSha}
       />

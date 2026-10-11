@@ -36,9 +36,12 @@ export const agentRuns = pgTable('agent_runs', {
   blockers: integer('blockers'),
   /** Ordered ids of the skills this run's prompt actually included; null on failed/cancelled runs. */
   skillsUsed: jsonb('skills_used').$type<string[]>(),
+  /** The multi-agent run this run belongs to; NULL for a single run. */
+  multiAgentRunId: uuid('multi_agent_run_id').references(() => multiAgentRuns.id, { onDelete: 'set null' }),
 }, (t) => ({
   // The PR list sums cost per PR (GROUP BY pr_id); nothing indexed pr_id before.
   prIdx: index('agent_runs_pr_idx').on(t.prId),
+  multiIdx: index('agent_runs_multi_idx').on(t.multiAgentRunId),
 }));
 
 /** Whole trace of one run as a SINGLE jsonb document. */
@@ -58,4 +61,6 @@ export const multiAgentRuns = pgTable('multi_agent_runs', {
     .notNull()
     .references(() => pullRequests.id, { onDelete: 'cascade' }),
   ranAt: timestamp('ran_at', { withTimezone: true }).defaultNow().notNull(),
+  /** PR head SHA when the multi-run started; compared to the current head to flag it stale. */
+  headSha: text('head_sha'),
 });

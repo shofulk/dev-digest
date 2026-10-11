@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { Finding, Verdict } from './findings.js';
+import { MemoryKind, MemoryScope } from './knowledge.js';
 import { BlastRadius, BriefPhase, Intent, IntentConfidence, IntentSource, PrBrief, SmartDiff } from './brief.js';
 
 /**
@@ -16,6 +17,8 @@ export const FindingRecord = Finding.extend({
   review_id: z.string(),
   accepted_at: z.string().nullable(),
   dismissed_at: z.string().nullable(),
+  /** True when a memory row from Learn exists for this finding. */
+  learned: z.boolean().nullish(),
 });
 export type FindingRecord = z.infer<typeof FindingRecord>;
 
@@ -115,3 +118,13 @@ export type GenerateBriefCurrent = z.infer<typeof GenerateBriefCurrent>;
 
 export const GenerateBriefResponse = z.union([GenerateBriefAccepted, GenerateBriefCurrent]);
 export type GenerateBriefResponse = z.infer<typeof GenerateBriefResponse>;
+
+/** Response of `POST /findings/:id/learn` (201 when created, 200 when it already existed). */
+export const LearnFindingResult = z.object({
+  id: z.string(),
+  content: z.string(),
+  kind: MemoryKind,
+  scope: MemoryScope,
+  created: z.boolean(),
+});
+export type LearnFindingResult = z.infer<typeof LearnFindingResult>;

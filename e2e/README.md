@@ -106,3 +106,4 @@ a CI artifact by `.github/workflows/e2e-web.yml`).
 | `05-pr-diff` | PR #482 → Files changed tab → seeded file renders in the diff viewer |
 | `06-onboarding` | `/onboarding` → add-repository form renders (no submit) |
 | `07-settings` | `/settings/api-keys` + `/settings/models` → section titles render |
+| `13-multi-agent-review` | PR #482 → Run Review picker → multi-agent run → results page, failed columns show Retry → Configure run (`?pr=`) → second run → Agent runs tab → Learn → Learned. Starts **real** runs: deterministic **only with no provider key** (CI, or a hermetic `./scripts/e2e.sh` on a keyless machine), where every run fails at provider resolution; on a keyed stack the runs make paid model calls and the Retry step times out |

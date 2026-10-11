@@ -72,6 +72,30 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-11 — a late flow fails alone in the full suite; its page shows "Rate limit exceeded, retry in N seconds"
+
+**Cause:** the API registers a global `@fastify/rate-limit` of 120 req/min per IP unless
+`NODE_ENV=test`. The whole suite drives one browser from one IP, and by flow 13 it had sent
+~124 requests in the trailing minute, so the results page's read got 429s; TanStack's quick
+retries all landed inside the window and the page settled on its error state. Run alone, the
+same flow passes.
+**Signal:** a `wait --text` times out only in a full run; the failure screenshot shows an
+error state with "Rate limit exceeded"; `grep '"statusCode": 429'` in the API log hits.
+**Fix:** the hermetic and CI API processes start with `NODE_ENV=test LOG_LEVEL=info` (rate
+limit off, request log kept). A dev stack you point `npm test` at is still throttled.
+**Evidence:** `server/src/app.ts:96`, `scripts/e2e.sh:155`, `.github/workflows/e2e-web.yml`
+
+### 2026-10-11 — `find text "<button label>" click` reports `✓ Done` but a popover closes and nothing fires
+
+**Cause:** the text locator resolved to some node other than the button (the label string
+also lives in the page, e.g. the next-intl messages inside the RSC payload). Its click landed
+outside the Run Review picker, whose outside-`mousedown` handler closed it; no POST was sent.
+**Signal:** the next `wait --url` times out and the API log has no request for the action.
+**Fix:** click buttons by role: `find role button click --name "<label>"` (substring match, so
+a trailing count like "(4)" is fine); add `--exact` when a longer name could also match
+(`Learn` vs `Learned`).
+**Evidence:** `e2e/specs/13-multi-agent-review.flow.json`
+
 ### 2026-10-04 — a `find … click` on a below-the-fold control reports `✓ Done` but nothing happens
 
 **Cause:** the app scrolls the nested `<main>` (`overflow:auto`), not the document. agent-browser

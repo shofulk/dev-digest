@@ -50,6 +50,12 @@ const EnvSchema = z.object({
     (v) => (v === '' ? undefined : v),
     z.coerce.number().int().positive().optional(),
   ),
+  // Max agent runs executing at once, across every PR (blank → default 3;
+  // min 1, where 1 means one after another).
+  REVIEW_AGENT_CONCURRENCY: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.coerce.number().int().min(1).default(3),
+  ),
 });
 
 /** Default search roots when `PROJECT_CONTEXT_ROOTS` is unset (D4). */
@@ -85,6 +91,8 @@ export type AppConfig = {
     budgetTokens: number;
     maxDocBytes: number;
   };
+  /** Max agent runs executing at the same time, across all PRs. Default 3, min 1. */
+  reviewAgentConcurrency: number;
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -110,5 +118,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       budgetTokens: parsed.PROJECT_CONTEXT_BUDGET_TOKENS ?? 8000,
       maxDocBytes: parsed.PROJECT_CONTEXT_MAX_DOC_BYTES ?? 262144,
     },
+    reviewAgentConcurrency: parsed.REVIEW_AGENT_CONCURRENCY,
   };
 }

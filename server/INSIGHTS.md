@@ -36,6 +36,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-11 - a run cancelled while queued or mid-flight was un-cancelled by `RunBus.complete()`, and a second `buildApp` flips gated runs to `failed`
+`RunBus.complete()` used to delete the cancel flag, so a slot granted after cancel-then-complete saw `isCancelled() === false` and started the model; the flag now outlives `complete()` (tiny Set growth per process). `completeAgentRun` is status-guarded (`where status = 'running'`) so a late finish cannot overwrite `cancelled`. In tests, never call `buildApp` a second time while runs are held on a `ScriptedLLM.gate`: the boot reaper marks every `running` row `failed`.
+**Evidence:** server/src/platform/sse.ts:79
+
 ### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
 `brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
 finding title/file, file headers) and never counted the system prompt, the injection guard, the
@@ -512,6 +516,10 @@ rather than parses, so only `test/contracts.test.ts` and future validation actua
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-11 - `p-queue` `pending`/`size` lag behind a burst of `add()` calls, so "is a slot free?" needs its own counter
+`AgentRunLimiter.hasFreeSlot()` counts tasks submitted and not yet settled itself (incremented synchronously in `run`), because the queue only starts a task a tick later: a scheduler asking `hasFreeSlot()` per job in one loop would otherwise see "free" for jobs 3..N (the "waiting for a slot" line would never fire).
+**Evidence:** server/src/platform/run-limiter.ts:14
 
 ### 2026-10-04 — `MockLLMProvider.completeStructured` hardcodes `attempts: 1` and never throws — a test asserting retries or a model failure needs its own fake provider
 

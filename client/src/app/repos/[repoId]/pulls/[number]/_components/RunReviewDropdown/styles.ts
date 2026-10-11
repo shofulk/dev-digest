@@ -1,6 +1,74 @@
 import type { CSSProperties } from "react";
 
-/** Co-located styles for RunReviewDropdown. This component renders only library
-   primitives (Button/Dropdown) and has no inline styles; the map is kept for
-   convention parity and future use. */
-export const s = {} satisfies Record<string, CSSProperties>;
+/** Co-located styles for the RunReviewDropdown agent picker. */
+export const s = {
+  wrap: { position: "relative", display: "inline-block" } satisfies CSSProperties,
+  panel: (width: number): CSSProperties => ({
+    position: "absolute",
+    top: "calc(100% + 6px)",
+    right: 0,
+    width,
+    background: "var(--bg-elevated)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: 9,
+    boxShadow: "var(--shadow-modal)",
+    padding: 10,
+    zIndex: 40,
+  }),
+  header: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "2px 4px 8px",
+  } satisfies CSSProperties,
+  title: {
+    margin: 0,
+    fontSize: 11,
+    fontWeight: 600,
+    letterSpacing: "0.06em",
+    textTransform: "uppercase",
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
+  clear: {
+    background: "none",
+    border: "none",
+    padding: 0,
+    fontSize: 12.5,
+    fontWeight: 600,
+    color: "var(--accent)",
+    cursor: "pointer",
+  } satisfies CSSProperties,
+  row: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: "6px 4px",
+  } satisfies CSSProperties,
+  rowLabel: { flex: 1, minWidth: 0 } satisfies CSSProperties,
+  estimate: {
+    fontSize: 12,
+    color: "var(--text-muted)",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  warn: {
+    padding: "4px 4px 8px",
+    fontSize: 12.5,
+    color: "var(--text-secondary)",
+  } satisfies CSSProperties,
+  footer: { marginTop: 8 } satisfies CSSProperties,
+  configure: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    width: "100%",
+    marginTop: 8,
+    padding: "8px 4px 2px",
+    background: "none",
+    border: "none",
+    borderTop: "1px solid var(--border)",
+    fontSize: 13,
+    color: "var(--text-secondary)",
+    cursor: "pointer",
+    textAlign: "left",
+  } satisfies CSSProperties,
+} as const;

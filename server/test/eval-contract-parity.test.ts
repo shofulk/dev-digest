@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 describe('eval contract mirror parity', () => {
-  for (const file of ['eval-ci.ts', 'knowledge.ts']) {
+  for (const file of ['eval-ci.ts', 'knowledge.ts', 'observability.ts', 'review-api.ts']) {
     it(`${file}: server and client copies are identical`, () => {
       const server = read(`../src/vendor/shared/contracts/${file}`);
       const client = read(`../../client/src/vendor/shared/contracts/${file}`);

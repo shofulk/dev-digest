@@ -147,7 +147,12 @@ log "seeding demo data (isolated db)"
 # tsx directly (not `pnpm start`, which needs a build; not `tsx watch`, to avoid
 # a mid-suite watcher restart).
 log "starting API on :$API_PORT"
-(cd server && pnpm exec tsx src/server.ts) &
+# NODE_ENV=test switches off ONLY the global 120 req/min per-IP rate limit
+# (server/src/app.ts): the whole suite drives one browser from one IP and now
+# crosses that budget within a minute, so a later flow's page read gets a 429
+# (flow 13's results page rendered "Couldn't load this run"). LOG_LEVEL=info
+# keeps the request log that test mode would otherwise silence.
+(cd server && NODE_ENV=test LOG_LEVEL=info pnpm exec tsx src/server.ts) &
 SERVER_PID=$!
 log "waiting for API /health"
 api_up=0

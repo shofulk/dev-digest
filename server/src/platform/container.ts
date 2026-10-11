@@ -13,6 +13,7 @@ import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
 import { JobRunner } from './jobs.js';
 import { runBus, type RunBus } from './sse.js';
+import { AgentRunLimiter } from './run-limiter.js';
 import { LocalSecretsProvider } from '../adapters/secrets/local.js';
 import { LocalNoAuthProvider } from '../adapters/auth/local.js';
 import { OctokitGitHubClient } from '../adapters/github/octokit.js';
@@ -98,6 +99,7 @@ export class Container {
   private _projectDocs?: ProjectDocsSource;
   private _projectContextRepo?: ProjectContextRepository;
   private _agentSkills?: AgentSkillsPort;
+  private _agentRunLimiter?: AgentRunLimiter;
 
   constructor(config: AppConfig, db: Db, private overrides: ContainerOverrides = {}) {
     this.config = config;
@@ -187,6 +189,11 @@ export class Container {
    */
   get agentSkills(): AgentSkillsPort {
     return (this._agentSkills ??= new AgentSkillsRepository(this.db));
+  }
+
+  /** The one cap on concurrently executing agent runs, shared by every route and PR. */
+  get agentRunLimiter(): AgentRunLimiter {
+    return (this._agentRunLimiter ??= new AgentRunLimiter(this.config.reviewAgentConcurrency));
   }
 
   /**

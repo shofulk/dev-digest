@@ -69,7 +69,7 @@ flowchart TB
     polling["polling<br/>/repos/:id/poll"]
   end
   subgraph Review["Review & runs"]
-    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)"]
+    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/multi-agent-run<br/>/multi-agent-runs/:id<br/>/multi-agent-runs/:id/cancel<br/>/multi-agent-runs/:id/agents/:agentId/retry<br/>/run-estimates<br/>/findings/:id/learn"]
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
     blast["blast<br/>/pulls/:id/blast"]
@@ -92,6 +92,19 @@ flowchart TB
   end
   HEALTH["/health (liveness) · /health/ready (DB ping → 200/503)"]
 ```
+
+`reviews` also owns the multi-agent run. `POST /pulls/:id/multi-agent-run` creates one
+`multi_agent_runs` row (recording the PR head SHA) and one linked `running` `agent_runs` row
+per agent, answers with their ids, and only then runs the agents in the background.
+`GET /multi-agent-runs/:id` returns the columns, totals, "where agents disagree" groups and a
+`stale` flag (the PR head moved). Agent work goes through one concurrency cap,
+`REVIEW_AGENT_CONCURRENCY` (default 3), which also caps `POST /pulls/:id/review`; extra runs
+wait for a slot. `POST /multi-agent-runs/:id/cancel` cancels every `running` run (a run that
+finishes after it was cancelled stays `cancelled`); `POST /multi-agent-runs/:id/agents/:agentId/retry`
+re-runs one agent in the same multi-run (409 `agent_running` while it still runs).
+`GET /run-estimates` gives per-agent median time and cost over the last 10 `done` runs, with no
+model call. `POST /findings/:id/learn` stores one `learning` row in `memory` (201 created, 200
+when the finding was already learned); the PR reviews and multi-run reads flag it as `learned`.
 
 `smart-diff` is a deterministic, DB-only route: it groups a PR's files by role
 (core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.
@@ -145,6 +158,7 @@ The client polls the run until every row has left `pending`.
 | `EMBEDDINGS_ENABLED` | `false` | memory/RAG embeddings (OpenAI); off → **zero** OpenAI calls |
 | `REPO_INTEL_ENABLED` | `true` | repo skeleton + callers in the prompt; `false` → ripgrep-only |
 | `DEVDIGEST_CLONE_DIR` | `./clones` | imported-repo checkouts (git-ignored) |
+| `REVIEW_AGENT_CONCURRENCY` | `3` | max agent runs executing at once (min 1), shared by multi-agent runs and `POST /pulls/:id/review` |
 | `LOG_LEVEL` | `info` (`silent` in test) | pino level |
 | `NODE_ENV` | `development` | `test` → silent logs + global rate-limit disabled |
 

@@ -55,6 +55,14 @@ export const s = {
     gap: 12,
     marginTop: 5,
   } satisfies CSSProperties,
+  toggle: {
+    display: "inline-flex",
+    padding: 0,
+    border: "none",
+    background: "none",
+    cursor: "pointer",
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
   chevron: (expanded: boolean): CSSProperties => ({
     color: "var(--text-muted)",
     transform: expanded ? "rotate(180deg)" : "none",
