@@ -190,8 +190,8 @@ workflow cases:
 ### GitHub Actions — `.github/workflows/evals.yml`
 
 The engine is wired into CI on every PR that touches the harness: a `detect` job, then one job per
-tier — `skill evals`, `agent evals`, `workflow evals (informational)` — each its own PR check that
-fails on its own. Only the suites the change can affect run — `scripts/ci-detect.mjs` maps changed
+tier — `skill evals`, `agent evals`, `workflow evals`, all `(informational)` — each its own PR
+check that fails on its own. Only the suites the change can affect run — `scripts/ci-detect.mjs` maps changed
 files onto suites (a tier with nothing to run is a skipped job):
 
 | Changed | Runs |
@@ -213,8 +213,9 @@ when nothing is left to run every tier job is skipped. A PR from a fork gets no 
 | `EVAL_JUDGE_MODEL` | `google/gemini-2.5-flash` | another family than the model under test (self-preference) |
 | `EVAL_WORKFLOW_MODEL` | `google/gemini-2.5-flash` | the workflow tier asserts on subagent dispatch, which only Gemini Flash did reliably (table above) |
 
-Skill and agent evals **block** the PR. The workflow job runs with `continue-on-error` — it is
-informational until its `activation` cases are proven on the CI model. Agent and workflow evals
+No tier blocks the PR yet: every job runs with `continue-on-error`, because one run per case is
+not a stable signal. A suite becomes a gate only after `pnpm eval:repeat <suite> -n 5` shows a
+steady pass rate on the CI model — then drop its `continue-on-error`. Agent and workflow evals
 run sequentially (`--no-file-parallelism`) because OpenRouter throttles parallel tool loops.
 `results/outputs/` and the jsonl records are uploaded as the `eval-outputs` artifact, so a red
 case can be read without re-running it.

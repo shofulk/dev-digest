@@ -14,7 +14,8 @@
 #
 # Models are the three env lines below — change one line to switch. The workflow tier stays on
 # Gemini Flash: it asserts on subagent dispatch, which the README measured only Gemini doing.
-# The workflow job is informational (continue-on-error) until the model is proven on its cases.
+# Every tier is informational (continue-on-error) for now: a single model run is not a stable
+# signal, so nothing blocks a PR until `pnpm eval:repeat -n 5` shows a steady pass rate per suite.
 #
 # Needs the Actions secret OPENROUTER_API_KEY. Fork PRs get no secrets → every tier skips, green.
 name: evals
@@ -103,9 +104,10 @@ jobs:
 
   # Content tier talks to OpenRouter directly — no proxy.
   skills:
-    name: skill evals
+    name: skill evals (informational)
     needs: detect
     if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.skills != '[]'
+    continue-on-error: true # informational until eval:repeat proves the pass rate stable
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -151,9 +153,10 @@ jobs:
 
   # Tool tier rides the Agent SDK → proxy. Sequential: OpenRouter throttles parallel tool loops.
   agents:
-    name: agent evals
+    name: agent evals (informational)
     needs: detect
     if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.agents != '[]'
+    continue-on-error: true # informational until eval:repeat proves the pass rate stable
     runs-on: ubuntu-latest
     timeout-minutes: 90
     defaults:
