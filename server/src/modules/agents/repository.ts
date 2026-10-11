@@ -159,6 +159,15 @@ export class AgentsRepository {
     return row;
   }
 
+  /**
+   * Make sure `row.version` has an `agent_versions` snapshot. Agents created
+   * outside `insert`/`update` (the seed) have none, and an eval run needs the
+   * prompt it ran with to stay readable. Never overwrites an existing snapshot.
+   */
+  async ensureVersionSnapshot(row: AgentRow): Promise<void> {
+    await this.snapshotVersion(row, row.version);
+  }
+
   private async snapshotVersion(row: AgentRow, version: number): Promise<void> {
     const skills = await this.skillIdsForAgent(row.id);
     await this.db

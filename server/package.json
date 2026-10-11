@@ -15,7 +15,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:backfill": "tsx src/db/backfill-cost.ts",
-    "eval:project-context": "tsx evals/project-context/run.ts"
+    "eval:project-context": "tsx evals/project-context/run.ts",
+    "verify:l06": "vitest run src/modules/eval/scoring.test.ts src/modules/eval/frozen-input.test.ts src/modules/eval/executor.test.ts test/eval-contract-parity.test.ts test/contracts.test.ts test/eval.it.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
