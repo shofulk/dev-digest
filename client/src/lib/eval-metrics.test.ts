@@ -11,6 +11,8 @@ import {
   pointsDelta,
   signedDelta,
   startErrorKey,
+  caseErrorKey,
+  CASE_ERROR_KEYS,
   toggleSelected,
 } from "./eval-metrics";
 
@@ -137,5 +139,30 @@ describe("startErrorKey", () => {
     expect(startErrorKey("run_in_flight")).toBe("suite.errors.runInFlight");
     expect(startErrorKey("boom")).toBe("suite.errors.generic");
     expect(startErrorKey(undefined)).toBe("suite.errors.generic");
+  });
+
+  it("never resolves an inherited Object.prototype member", () => {
+    expect(startErrorKey("constructor")).toBe("suite.errors.generic");
+    expect(startErrorKey("toString")).toBe("suite.errors.generic");
+  });
+});
+
+describe("caseErrorKey", () => {
+  it("maps every server capture code to its own message key", () => {
+    expect(caseErrorKey("finding_not_triaged")).toBe("finding.evalCaseErrors.notTriaged");
+    expect(caseErrorKey("expectation_not_grounded")).toBe("finding.evalCaseErrors.notGrounded");
+    expect(Object.keys(CASE_ERROR_KEYS).sort()).toEqual([
+      "expectation_not_grounded",
+      "finding_has_no_agent",
+      "finding_not_triaged",
+      "frozen_diff_too_large",
+      "no_diff_available",
+    ]);
+  });
+
+  it("falls back to the generic failure for unknown, missing and inherited codes", () => {
+    expect(caseErrorKey("boom")).toBe("finding.evalCaseFailed");
+    expect(caseErrorKey(undefined)).toBe("finding.evalCaseFailed");
+    expect(caseErrorKey("constructor")).toBe("finding.evalCaseFailed");
   });
 });

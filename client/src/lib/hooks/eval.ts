@@ -4,6 +4,7 @@
    `@devdigest/shared` 500s the dev server (client/INSIGHTS.md, 2026-09-17). */
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type {
@@ -49,7 +50,8 @@ export function useEvalCases(agentId: string | null | undefined) {
 }
 
 export function useEvalRuns(agentId: string | null | undefined) {
-  return useQuery({
+  const qc = useQueryClient();
+  const query = useQuery({
     queryKey: evalKeys.runs(agentId),
     queryFn: () => api.get<EvalSuiteRun[]>(`/agents/${agentId}/eval-runs`),
     enabled: !!agentId,
@@ -57,6 +59,20 @@ export function useEvalRuns(agentId: string | null | undefined) {
     refetchInterval: (q) =>
       pollInterval(q.state.data?.some((r) => r.status === "running") ? "running" : null),
   });
+
+  // Only the runs query polls, but each case's `last_result` comes from the latest run, so
+  // the cases list and the dashboard refetch once when the last in-flight run settles.
+  const running = query.data?.some((r) => r.status === "running") ?? false;
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current && !running) {
+      void qc.invalidateQueries({ queryKey: evalKeys.cases(agentId) });
+      void qc.invalidateQueries({ queryKey: evalKeys.dashboard });
+    }
+    wasRunning.current = running;
+  }, [running, agentId, qc]);
+
+  return query;
 }
 
 /** `a` is the older run, `b` the newer (the caller orders them). Disabled for `a === b`. */

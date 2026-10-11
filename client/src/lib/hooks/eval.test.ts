@@ -131,3 +131,39 @@ describe("eval reads refetch when the window regains focus", () => {
     await waitFor(() => expect(calls.filter((c) => c.path === path).length).toBe(before + 1));
   });
 });
+
+describe("useEvalRuns refreshes the cases once a run settles", () => {
+  const run = (status: "running" | "completed") => ({ run_id: "r1", status, started_at: "2026-10-11T00:00:00Z" });
+
+  it("invalidates the cases and the dashboard on running -> settled, and not before", async () => {
+    let body: unknown[] = [run("running")];
+    calls = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push({ method: "GET", path: url.replace(/^https?:\/\/[^/]+/, ""), body: undefined });
+        return { ok: true, status: 200, json: async () => body } as Response;
+      }),
+    );
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useEvalRuns("a1"), { wrapper: makeWrapper(qc) });
+    await waitFor(() => expect(result.current.data?.[0]?.status).toBe("running"));
+    expect(spy).not.toHaveBeenCalled();
+
+    body = [run("completed")];
+    await result.current.refetch();
+
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.cases("a1") }));
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.dashboard });
+  });
+
+  it("does not invalidate when the runs were never running", async () => {
+    installFetch([run("completed")]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useEvalRuns("a1"), { wrapper: makeWrapper(qc) });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

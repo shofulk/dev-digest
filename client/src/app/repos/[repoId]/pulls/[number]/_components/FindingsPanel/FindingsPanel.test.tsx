@@ -14,10 +14,12 @@ vi.mock("../../../../../../../lib/hooks/eval", () => ({
 }));
 
 const notifySuccess = vi.fn();
+const notifyError = vi.fn();
 vi.mock("../../../../../../../lib/toast", () => ({
-  notify: { success: (m: string) => notifySuccess(m), error: vi.fn() },
+  notify: { success: (m: string) => notifySuccess(m), error: (m: string) => notifyError(m) },
 }));
 
+import { ApiError } from "../../../../../../../lib/api";
 import { FindingsPanel } from "./FindingsPanel";
 import { visibleFindings } from "./helpers";
 
@@ -133,6 +135,25 @@ describe("FindingsPanel eval-case toast", () => {
     notifySuccess.mockClear();
     clickAndSucceed(false);
     expect(notifySuccess).toHaveBeenCalledWith("Already in the eval set");
+  });
+
+  /** Click the action and let the mutation fail with the given error. */
+  function clickAndFail(err: Error) {
+    createEvalCase.mockImplementationOnce((_id: string, opts: { onError: (e: Error) => void }) => opts.onError(err));
+    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
+    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
+  }
+
+  it("shows the translated message for a known error code, never the server's text", () => {
+    notifyError.mockClear();
+    clickAndFail(new ApiError("server says no", 422, "expectation_not_grounded"));
+    expect(notifyError).toHaveBeenCalledWith("This finding does not point at a line of its own diff");
+  });
+
+  it("falls back to the generic failure for an unknown code or a bare status error", () => {
+    notifyError.mockClear();
+    clickAndFail(new ApiError("500 Internal Server Error", 500));
+    expect(notifyError).toHaveBeenCalledWith("Could not create the eval case");
   });
 });
 

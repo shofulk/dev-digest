@@ -17,7 +17,14 @@
     "evalCaseNeedsTriage": "Accept or dismiss this finding first",
     "evalCaseCreated": "Eval case created",
     "evalCaseExists": "Already in the eval set",
-    "evalCaseFailed": "Could not create the eval case"
+    "evalCaseFailed": "Could not create the eval case",
+    "evalCaseErrors": {
+      "noAgent": "The agent that produced this finding no longer exists",
+      "notTriaged": "Accept or dismiss this finding first",
+      "noDiff": "This file has no stored diff to freeze into a case",
+      "diffTooLarge": "This file's diff is too large to freeze into a case",
+      "notGrounded": "This finding does not point at a line of its own diff"
+    }
   },
   "trifecta": {
     "lethal": "LETHAL TRIFECTA — ALL 3 PRESENT",

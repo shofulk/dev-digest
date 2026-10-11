@@ -13,6 +13,8 @@ import {
 import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
 import { useCreateEvalCase } from "@/lib/hooks/eval";
+import { ApiError } from "@/lib/api";
+import { caseErrorKey } from "@/lib/eval-metrics";
 import { notify } from "@/lib/toast";
 import { FindingCard } from "../FindingCard";
 import type { PrFile } from "@devdigest/shared";
@@ -113,7 +115,7 @@ export function DiffTab({
           evalCase.mutate(f.id, {
             onSuccess: (r) =>
               notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
-            onError: (e) => notify.error(e.message || t("finding.evalCaseFailed")),
+            onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
           })
         }
         repoFullName={repoFullName}

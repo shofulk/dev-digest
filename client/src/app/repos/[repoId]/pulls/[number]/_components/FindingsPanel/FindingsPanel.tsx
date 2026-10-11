@@ -9,6 +9,8 @@ import type { FindingRecord, Severity } from "@devdigest/shared";
 import { FindingCard } from "../FindingCard";
 import { useFindingAction } from "../../../../../../../lib/hooks/reviews";
 import { useCreateEvalCase } from "../../../../../../../lib/hooks/eval";
+import { ApiError } from "../../../../../../../lib/api";
+import { caseErrorKey } from "../../../../../../../lib/eval-metrics";
 import { notify } from "../../../../../../../lib/toast";
 import { KEY_TO_ACTION } from "./constants";
 import { visibleFindings } from "./helpers";
@@ -88,7 +90,7 @@ export function FindingsPanel({
                 evalCase.mutate(f.id, {
                   onSuccess: (r) =>
                     notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
-                  onError: (e) => notify.error(e.message || t("finding.evalCaseFailed")),
+                  onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
                 })
               }
             />

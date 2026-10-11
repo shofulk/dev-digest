@@ -16,6 +16,22 @@ export const START_ERROR_KEYS = {
 
 export const START_ERROR_FALLBACK_KEY = "suite.errors.generic";
 
+/** `ApiError.code` of a rejected "Turn into eval case" -> message key under `prReview`. */
+export const CASE_ERROR_KEYS = {
+  finding_has_no_agent: "finding.evalCaseErrors.noAgent",
+  finding_not_triaged: "finding.evalCaseErrors.notTriaged",
+  no_diff_available: "finding.evalCaseErrors.noDiff",
+  frozen_diff_too_large: "finding.evalCaseErrors.diffTooLarge",
+  expectation_not_grounded: "finding.evalCaseErrors.notGrounded",
+} as const;
+
+export const CASE_ERROR_FALLBACK_KEY = "finding.evalCaseFailed";
+
+/** Own-key lookup, so a code such as `constructor` never resolves to an Object.prototype member. */
+function keyFor(keys: Readonly<Record<string, string>>, code: string | undefined, fallback: string): string {
+  return code !== undefined && Object.hasOwn(keys, code) ? keys[code]! : fallback;
+}
+
 const MINUS = "−";
 const DASH = "—";
 
@@ -93,7 +109,12 @@ export function metricDelta(latest: number | null | undefined, previous: number 
 
 /** Message key (under `eval`) for a failed start, chosen by the API error code. */
 export function startErrorKey(code: string | undefined): string {
-  return (START_ERROR_KEYS as Record<string, string>)[code ?? ""] ?? START_ERROR_FALLBACK_KEY;
+  return keyFor(START_ERROR_KEYS, code, START_ERROR_FALLBACK_KEY);
+}
+
+/** Message key (under `prReview`) for a failed case capture, chosen by the API error code. */
+export function caseErrorKey(code: string | undefined): string {
+  return keyFor(CASE_ERROR_KEYS, code, CASE_ERROR_FALLBACK_KEY);
 }
 
 /** A 0..1 metric as a whole percent (`0.82` -> `82%`); `null` -> `null` (the caller shows the dash). */
