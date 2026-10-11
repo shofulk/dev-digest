@@ -128,11 +128,19 @@ citation accuracy, so two runs of different agent versions can be compared side 
     and labels which type it will create (`must_find` / `must_not_flag`). The card stays
     presentational — the parent owns the mutation, as it does for accept/dismiss. Success
     shows "Eval case created" or "Already in the eval set".
-25. **AgentEditor → Evals tab** (`?tab=evals`): metric tiles for the latest completed run with
-    deltas vs the previous one; the case list (name, type badge, `file:line`, last result,
-    delete); a "Run evals" button that disables and shows progress (`n / total`) while a run is
-    in flight; a run-history table (time, version, recall, precision, citation, passed/total,
-    cost) where selecting exactly two rows enables **Compare**.
+25. **AgentEditor → Evals tab** (`?tab=evals`), top to bottom: an "Eval metrics" label row with a
+    "View full dashboard →" link to `/eval`; four tiles always visible (RECALL, PRECISION,
+    CITATION ACCURACY as whole percents, TRACES PASSED as `passed/total`) showing "—" with no
+    delta before the first completed run, and afterwards the latest completed run with a signed
+    point delta vs the previous one (`▲ 4pt` green, `▼ 2pt` red); an "Eval cases" header with a
+    "n / total passing" badge (shown only after a case has run) and a "Run all evals" button that
+    disables and shows progress (`n / total`) while a run is in flight; the cases as bordered
+    cards — status icon (pass, fail, errored, never run), the case name, an "expected ≥1 finding,
+    got N" / "expected 0 findings, got N" line (N = findings matching the expectation in the
+    newest completed run; "never run" / "errored" otherwise), a single-line ellipsis-truncated
+    `file:line` (full path in the title), a "SEVERITY · category" chip, the type chip and delete;
+    no horizontal scroll. Below, a run-history table (time, version, recall, precision, citation,
+    passed/total, cost) where selecting exactly two rows enables **Compare**.
 26. **Compare modal**: the four metric tiles as `old → new` with signed deltas (green up, red
     down), the system-prompt diff (added/removed lines), and the list of cases that flipped.
 27. **Eval Dashboard** page at `/eval`, linked from the sidebar's SKILLS LAB section ("Eval
@@ -166,6 +174,44 @@ citation accuracy, so two runs of different agent versions can be compared side 
 | GET | `/eval-runs/:runId` | — | `EvalSuiteRunDetail` |
 | GET | `/eval-runs/compare?a&b` | — | `EvalCompare` |
 | GET | `/eval/dashboard` | — | `EvalDashboardOverview` |
+| POST | `/eval/runs/all` | `{ confirm: true }` | `202 EvalRunAllResult` (AC33) |
+| POST | `/agents/:id/versions/:version/restore` | — | `Agent` (AC36) |
+
+### I. Amendment 1 — design alignment (2026-10-11, D10)
+
+31. **Case name is the bare slug** of the finding title, without ` · file:line`; the case card
+    shows the path on its own line. Cases created before this change keep their stored name.
+32. **Eval Dashboard `/eval`** follows the mockup: title, subtitle and a primary **Run all
+    agents** button; an "Agents" section with one card per agent that has ≥ 1 case — agent icon,
+    name, model chip, `Last run v<N> · <date> · <passed>/<total> pass` (or "never run"), a recall
+    sparkline (≥ 2 points), large coloured RECALL / PREC / CITE values and a chevron; the whole
+    card links to `/eval/agents/:id`. Below, "Recent eval runs · all agents": agent, time (mono),
+    version (accent), recall / precision / citation each as a coloured bar plus percent,
+    passed/total.
+33. **Run all agents**: `POST /eval/runs/all` (body `{ confirm: true }`, rate-limited) starts one
+    suite run per agent with ≥ 1 case through the same start path as AC9 and answers
+    `EvalRunAllResult { started: [{ agent_id, agent_name, run_id | null, refused_reason | null }] }`.
+    An agent with a run in flight or no usable provider is refused individually; the call never
+    fails as a whole for one agent. The client confirms first, stating agents × cases = model calls.
+34. **Agent eval page `/eval/agents/:id`** (crumbs Skills Lab › Eval Dashboard › agent): "← All
+    agents"; title with model chip; subtitle `Regression harness · <runs> runs on the <cases>-case
+    set`; an agent picker that switches the route and a **Run eval** button (same action as the
+    Evals tab); a **callout** when the newest completed run moved a metric against the previous
+    one (e.g. "Precision dipped 2pt on v7"), computed in code from those two runs; three metric
+    cards (recall, precision, citation) with value, signed delta and sparkline; a **Metric trend**
+    line chart of the three metrics over completed runs; a **Recent runs** table — checkbox, ran
+    at, version, recall / precision / citation bars, pass, cost — where exactly two selected runs
+    enable **Compare**. Data comes from the existing `GET /agents/:id/eval-runs` and
+    `GET /agents/:id/eval-cases`; no new read route.
+35. **Compare modal** follows the mockup: title `Compare runs · v<a> → v<b>`, subtitle "Old prompt
+    vs new"; tiles RECALL, PRECISION, CITATION and **COST**, each `old → new` with a signed delta (for COST the tone is inverted: an increase is red, a decrease green — user ruling 2026-10-11);
+    "System prompt diff" with a `v<a> (old)` / `v<b> (new)` legend and the full prompt with
+    added / removed lines highlighted; the flipped-cases list stays below; footer **Close** and
+    **Promote v<b>**, hidden when v<b> is already the agent's current version or its prompt is
+    unavailable.
+36. **Promote**: `POST /agents/:id/versions/:version/restore` restores that version's config as a
+    **new** agent version (the `POST /skills/:id/versions/:version/restore` semantics) and returns
+    the updated agent; unknown version or another workspace's agent → 404.
 
 ## Tests
 
@@ -225,14 +271,6 @@ signed deltas.
   deterministic; the trade-off is that a finding needing cross-file context may be harder to
   reproduce — such a case will show as a stable `fail`, which is still a valid regression signal.
 
-## Out of scope
-
-- Skill-owned cases and with/without-skill ablation (`owner_kind = 'skill'` stays unused).
-- Hand-written cases / a case editor ("New eval case" modal), editing a case.
-- "Run all agents", a per-agent eval detail page with trend chart, "Promote version".
-- An LLM judge of any kind; CI export of evals.
-- Running the suite on a different model than the agent's own.
-
 - **D8 — the dataset is triaged live, not seeded.** On 2026-10-11 the local DB held 19 findings
   and **none** triaged. The 12 findings of **Test Quality Reviewer** (PRs #6 and #8) all have a
   stored `pr_files.patch`, so ≥ 8 cases come from triaging those in the UI — a mix of accept
@@ -243,6 +281,19 @@ signed deltas.
   improved, including style and naming."* — expected to put findings on dismissed lines and
   drop precision. Compare v1↔v2 and v1↔v3 in the Compare modal; the v1↔v2 screenshot and the
   screencast are the homework deliverables.
+- **D10 — design alignment pulls four items into scope (Amendment 1).** After comparing the build
+  with the mockups the user moved the dashboard redesign, the per-agent eval page, "Run all
+  agents" and "Promote" into scope. The agent page reuses the existing read routes; only "Run
+  all" and "Promote" add server routes. Promote follows the skills restore semantics (a new
+  version, never a rewrite of history), so earlier eval runs keep pointing at the version they ran.
+
+## Out of scope
+
+- Skill-owned cases and with/without-skill ablation (`owner_kind = 'skill'` stays unused).
+- Hand-written cases / a case editor ("New eval case" modal), editing a case, running one case.
+- The agent page's date-range filter ("30 days") — every run is shown.
+- An LLM judge of any kind; CI export of evals.
+- Running the suite on a different model than the agent's own.
 
 ## Open questions
 
