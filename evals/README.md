@@ -216,7 +216,7 @@ Today that is `architecture-reviewer-lite`, the closed citation A/B against
 |----------|---------|-----|
 | `EVAL_MODEL` | `anthropic/claude-haiku-5.5` | skills + agents under test — the Agent SDK's own model family; on a ~100k-in/9k-out agent case it costs about what `deepseek/deepseek-v4-flash` does (cheaper output, pricier input), which needed 17–36 turns and hit the 4 min timeout |
 | `EVAL_JUDGE_MODEL` | `google/gemini-2.5-flash` | another family than the model under test (self-preference) |
-| `EVAL_WORKFLOW_MODEL` | `google/gemini-2.5-flash` | the workflow tier asserts on subagent dispatch, which only Gemini Flash did reliably (table above) |
+| `EVAL_WORKFLOW_MODEL` | `anthropic/claude-haiku-5.5` | the workflow tier drives a real Claude Code session; its cases are trace-asserted (no judge). Gemini Flash dispatched reliably (table above) but missed `AGENTS.md` reads and skill activation from run to run; Haiku costs 3–5× less per token |
 
 No tier blocks the PR yet: every job runs with `continue-on-error`, because one run per case is
 not a stable signal. A suite becomes a gate only after `pnpm eval:repeat <suite> -n 5` shows a

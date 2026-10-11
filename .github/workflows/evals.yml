@@ -12,8 +12,8 @@
 # An artifact with no evals is logged as "SKIP <name> (no evals)" — never a failure. A tier with
 # nothing to run is a skipped job, not a red one.
 #
-# Models are the three env lines below — change one line to switch. The workflow tier stays on
-# Gemini Flash: it asserts on subagent dispatch, which the README measured only Gemini doing.
+# Models are the three env lines below — change one line to switch. Every session under test
+# runs on Claude Haiku (the Agent SDK's own family); the judge stays on Gemini, another family.
 # Every tier is informational (continue-on-error) for now: a single model run is not a stable
 # signal, so nothing blocks a PR until `pnpm eval:repeat -n 5` shows a steady pass rate per suite.
 #
@@ -46,7 +46,7 @@ env:
   EVAL_BACKEND: openrouter
   EVAL_MODEL: anthropic/claude-haiku-5.5         # skills + agents under test: the Agent SDK's own family
   EVAL_JUDGE_MODEL: google/gemini-2.5-flash       # judge: another family than the model under test
-  EVAL_WORKFLOW_MODEL: google/gemini-2.5-flash    # workflow tier: needs reliable subagent dispatch
+  EVAL_WORKFLOW_MODEL: anthropic/claude-haiku-5.5 # workflow tier: trace-asserted, no judge
 
 jobs:
   detect:
@@ -241,7 +241,6 @@ jobs:
       - name: Workflow evals
         env: # job-level env cannot read the workflow env, so the switch is applied per step
           EVAL_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
-          EVAL_JUDGE_MODEL: ${{ env.EVAL_WORKFLOW_MODEL }}
         run: pnpm exec vitest run --no-file-parallelism workflow/
 
       - name: Proxy logs
