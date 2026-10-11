@@ -13,9 +13,12 @@ export const cases: SkillCase[] = [
     kind: "quality",
     prompt:
       "Do step 3 of the skill only (interpret the data): write the content of advice.txt for this audit. " +
-      `Include the exact command for every removal you propose.\n\n${DEPS}`,
+      "Include the exact command for every removal you propose. " +
+      `Reply with only the lines of advice.txt — no preamble, no code fence.\n\n${DEPS}`,
     // A line count is a fact, not a judgement: the judge once failed a 3-line answer wrapped in a
-    // code fence. maxLines counts it in code; the judge only scores what needs reading.
+    // code fence. maxLines counts it in code; the judge only scores what needs reading. The prompt
+    // asks for the bare file content: with no tools, the model otherwise opens with a line saying
+    // it cannot write the file, and that line is not advice.
     maxLines: 3,
     practices: [
       "Marks the removal of the unused-candidate @fastify/autoload (or tsx) with the words 'confirm before removing' or equivalent, not as certainly unused",
