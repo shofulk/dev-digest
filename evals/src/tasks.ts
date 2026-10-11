@@ -8,7 +8,7 @@
  *     SYSTEMIC effect: does a skill activate, does a subagent dispatch, does CLAUDE.md matter.
  */
 
-import { IS_BASELINE, WORKFLOW_ALLOWED_TOOLS } from "./config.js";
+import { IS_BASELINE, WORKFLOW_ALLOWED_TOOLS, WORKFLOW_DISALLOWED_TOOLS } from "./config.js";
 import { runClaude, type RunOptions } from "./runtime/run-claude.js";
 import { runContent } from "./runtime/dispatch.js";
 import { skillContent, agentContent, agentTools } from "./artifacts/load.js";
@@ -51,6 +51,7 @@ export function workflowTask(prompt: string, opts: RunOptions = {}) {
   return runClaude(prompt, {
     allowedTools: WORKFLOW_ALLOWED_TOOLS,
     ...opts,
+    disallowedTools: WORKFLOW_DISALLOWED_TOOLS,
     settingSources: ["project"],
   });
 }

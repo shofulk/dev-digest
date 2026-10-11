@@ -30,7 +30,10 @@ export interface Result {
 
 export interface RunOptions {
   systemPrompt?: string;
+  /** The ONLY built-in tools the session gets (also auto-approved). `[]` = no tools at all. */
   allowedTools?: string[];
+  /** Removed from the session AND its subagents, even when a subagent definition lists them. */
+  disallowedTools?: string[];
   maxTurns?: number;
   cwd?: string;
   model?: string;
@@ -64,7 +67,11 @@ export async function runClaude(prompt: string, opts: RunOptions = {}): Promise<
     maxTurns: opts.maxTurns ?? MAX_TURNS,
     permissionMode: "bypassPermissions", // safe: evals only read/plan and tools are allow-listed
     systemPrompt,
+    // `allowedTools` only auto-approves — under bypassPermissions it restricts nothing (an eval
+    // once ran Edit on the live repo). `tools` is what actually narrows the session's tool set.
+    tools: allowedTools,
     allowedTools,
+    disallowedTools: opts.disallowedTools,
     cwd: opts.cwd ?? REPO_ROOT,
     // Default: do NOT load on-disk config — isolates the injected artifact. workflowTask overrides.
     settingSources: opts.settingSources ?? [],
