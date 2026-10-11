@@ -76,9 +76,9 @@ flowchart TB
     brief["brief<br/>/pulls/:id/brief · /pulls/:id/brief/generate<br/>/pulls/:id/brief/jobs/:jobId/events"]
   end
   subgraph Agents["Agents"]
-    agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
+    agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId] · /agents/:id/versions[/:v][/restore]"]
     skills["skills<br/>/skills[/:id] · /skills/:id/(versions[/:v][/restore]|stats)<br/>/skills/import[/preview] · /skills/tokens"]
-    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard"]
+    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/agents/:id · /eval/runs/all"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
@@ -128,6 +128,7 @@ is dropped, never rewritten (`src/modules/brief/grounding.ts`). See
 `eval` scores an agent with code only: no LLM judge, and no `agent_runs` or `findings` writes.
 A case is a frozen single-file snapshot taken from a triaged finding, so later edits to the PR do not move it.
 A suite run is not a table: its rows are grouped by `actual_output.run_id`.
+`POST /eval/runs/all` starts one suite run per agent with cases through the same start path and refuses agents one by one.
 The client polls the run until every row has left `pending`.
 
 ## Environment

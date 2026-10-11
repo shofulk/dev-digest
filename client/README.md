@@ -29,22 +29,24 @@ flowchart TD
   ROOT --> CONTEXT["/repos/:repoId/context<br/>Project Context: grouped list + preview"]
 
   AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context · evals)"]
-  EVAL["/eval<br/>Eval Dashboard"]
+  EVAL["/eval<br/>Eval Dashboard"] --> EVALAGENT["/eval/agents/:agentId<br/>agent eval page"]
   SKILLS["/skills<br/>Skills Lab: list + editor<br/>?skill=&tab=config|preview|context|stats|versions"]
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
   PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss) · /findings/:id/eval-case<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/file<br/>POST /repos/:id/context/reindex"| API
-  AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs"| API
-  EVAL -->|"/eval/dashboard · /agents/:id/eval-(cases|runs) · /eval-runs/:runId · /eval-runs/compare"| API
+  AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs · /agents/:id/versions/:v/restore"| API
+  EVAL -->|"/eval/dashboard · POST /eval/runs/all · /agents/:id/eval-(cases|runs) · /eval-runs/:runId · /eval-runs/compare"| API
   SKILLS -->|"/skills · /skills/:id/(versions|stats|restore) · /skills/:id/context-docs · /skills/import[/preview] · /skills/tokens"| API
   SETTINGS -->|"/settings · /providers"| API
 ```
 
 Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
 `g`-then-key shortcuts). Pages are thin; feature logic sits in colocated
-`_components/<Name>/` folders, each with its own `*.test.tsx`.
+`_components/<Name>/` folders, each with its own `*.test.tsx`. Eval pieces used by
+more than one route (`CompareModal`, `MetricTile`, `MetricBar`) live in
+`src/components/eval-ui/`.
 
 The PR detail route's **Overview tab** (`OverviewTab.tsx`) renders, in order,
 the **PR Brief banner** (verdict/score of the latest review plus the brief's
