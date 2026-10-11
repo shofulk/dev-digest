@@ -413,6 +413,17 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-11 — `/pr-self-review` blocks a branch on a critical "vendor edited outside the source" for `client/src/vendor/ui/nav.ts`
+
+**Cause:** severity.md §1 row 6 flags any `*/src/vendor/**` change outside `server/src/vendor/shared`,
+but a new sidebar item has no home except `vendor/ui/nav.ts` (client INSIGHTS 2026-10-03), so
+every feature that adds a nav entry (Conventions, Project Context, Eval Dashboard) trips it.
+**Signal:** verdict `blocked` with exactly one critical, `vendor-mirror-edit` on `nav.ts`, and a
+diff there that only adds a `NAV`/`SHORTCUTS` entry.
+**Fix:** record `--override` citing the client INSIGHTS exception (and the spec decision, if any);
+the durable fix is a row-6 carve-out for append-only `NAV`/`SHORTCUTS` entries in severity.md.
+**Evidence:** `.claude/skills/pr-self-review/severity.md:19`, `client/src/vendor/ui/nav.ts`
+
 ### 2026-10-04 — an agent's `vitest run "client/src/app/repos/[repoId]/…"` is blocked by scope-guard
 
 **Cause:** `pathArgOk` in the scope-guard hook rejects any operand containing `[` or `]`, quoted or
