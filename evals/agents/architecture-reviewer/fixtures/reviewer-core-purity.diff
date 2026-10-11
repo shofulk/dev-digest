@@ -1,0 +1,35 @@
+diff --git a/reviewer-core/src/review/history.ts b/reviewer-core/src/review/history.ts
+new file mode 100644
+index 0000000..832fda8
+--- /dev/null
++++ b/reviewer-core/src/review/history.ts
+@@ -0,0 +1,29 @@
++import { desc, eq } from "drizzle-orm";
++import type { PostgresJsDatabase } from "drizzle-orm/postgres-js";
++import type { Finding } from "@devdigest/shared";
++
++export interface PriorFindingsQuery {
++  repo: string;
++  path: string;
++}
++
++const DEFAULT_LIMIT = 20;
++
++export function historyLimit(): number {
++  const raw = Number(process.env.REVIEW_HISTORY_LIMIT);
++  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_LIMIT;
++}
++
++export async function loadPriorFindings(
++  db: PostgresJsDatabase,
++  table: any,
++  query: PriorFindingsQuery,
++): Promise<Finding[]> {
++  const rows = await db
++    .select()
++    .from(table)
++    .where(eq(table.path, query.path))
++    .orderBy(desc(table.createdAt))
++    .limit(historyLimit());
++  return rows as Finding[];
++}

@@ -1,33 +1,53 @@
 diff --git a/server/src/modules/checkout/domain/checkout.ts b/server/src/modules/checkout/domain/checkout.ts
-index 1111111..2222222 100644
+index c814bcc..fbd4d26 100644
 --- a/server/src/modules/checkout/domain/checkout.ts
 +++ b/server/src/modules/checkout/domain/checkout.ts
-@@ -1,5 +1,6 @@
+@@ -1,10 +1,18 @@
 +import type { FastifyReply } from "fastify";
++
  export interface CheckoutOrder {
    id: string;
-   total: number;
+   items: Array<{ sku: string; qty: number; unitPrice: number }>;
++  couponPercent?: number;
  }
-
+ 
 -export function priceOrder(order: CheckoutOrder): number {
+-  return order.items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
 +export function priceOrder(order: CheckoutOrder, reply?: FastifyReply): number {
-   return order.total;
++  const subtotal = order.items.reduce((sum, item) => sum + item.qty * item.unitPrice, 0);
++  const discount = order.couponPercent ? (subtotal * order.couponPercent) / 100 : 0;
++  if (reply && subtotal === 0) {
++    reply.header("x-checkout-empty", "1");
++  }
++  return Math.round((subtotal - discount) * 100) / 100;
  }
-
+ 
+ export function isEmpty(order: CheckoutOrder): boolean {
 diff --git a/server/src/modules/checkout/service.ts b/server/src/modules/checkout/service.ts
-index 3333333..4444444 100644
+index 3544080..a9c21a0 100644
 --- a/server/src/modules/checkout/service.ts
 +++ b/server/src/modules/checkout/service.ts
-@@ -1,10 +1,14 @@
- import { priceOrder } from "./domain/checkout.js";
+@@ -1,14 +1,21 @@
+ import type { Container } from "../../platform/container.js";
+ import { AppError } from "../../platform/errors.js";
+ import { priceOrder, isEmpty, type CheckoutOrder } from "./domain/checkout.js";
 +import { PgCheckoutRepository } from "./repository.js";
-
+ 
  export class CheckoutService {
-+  private repo = new PgCheckoutRepository();
+-  constructor(private readonly container: Container) {}
++  private readonly repo: PgCheckoutRepository;
 +
-   async checkout(order: { id: string; total: number }) {
-     const price = priceOrder(order);
-+    await this.repo.save(order.id, price);
-     return { price };
++  constructor(container: Container) {
++    this.repo = new PgCheckoutRepository(container.db);
++  }
+ 
+   async checkout(order: CheckoutOrder) {
+     if (isEmpty(order)) {
+       throw new AppError("EMPTY_ORDER", "Order has no items");
+     }
+-    return { orderId: order.id, total: priceOrder(order) };
++    const total = priceOrder(order);
++    await this.repo.saveTotal(order.id, total);
++    return { orderId: order.id, total };
    }
  }
