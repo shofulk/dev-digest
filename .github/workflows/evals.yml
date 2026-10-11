@@ -155,13 +155,14 @@ jobs:
     needs: detect
     if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.agents != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: evals
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_BASE_URL: http://localhost:4000
+      EVAL_TEST_TIMEOUT_MS: "600000" # tool-loop cases run 2-6.5 min via OpenRouter; vitest's local default is 4
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -209,13 +210,14 @@ jobs:
     if: needs.detect.outputs.has_key == 'true' && needs.detect.outputs.run_workflow == 'true'
     continue-on-error: true
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: evals
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       OPENROUTER_BASE_URL: http://localhost:4000
+      EVAL_TEST_TIMEOUT_MS: "600000" # tool-loop cases run 2-6.5 min via OpenRouter; vitest's local default is 4
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
