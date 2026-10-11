@@ -1,5 +1,20 @@
 /* eval-metrics.ts — pure formatting and ordering helpers shared by the Evals tab, the
-   compare modal and the /eval dashboard. No React, no `use` prefix: callable anywhere. */
+   compare modal, the /eval dashboard and the per-agent eval page. No React, no `use`
+   prefix: callable anywhere. */
+
+import type { EvalSuiteRun } from "@devdigest/shared/contracts/eval-ci";
+
+/** Selecting exactly this many runs enables Compare. */
+export const COMPARE_COUNT = 2;
+
+/** `ApiError.code` of a rejected start -> message key under the `eval` namespace. */
+export const START_ERROR_KEYS = {
+  no_cases: "suite.errors.noCases",
+  provider_not_configured: "suite.errors.providerNotConfigured",
+  run_in_flight: "suite.errors.runInFlight",
+} as const;
+
+export const START_ERROR_FALLBACK_KEY = "suite.errors.generic";
 
 const MINUS = "−";
 const DASH = "—";
@@ -48,4 +63,47 @@ export function orderPair(
   const ay = at(y);
   if (ax == null || ay == null) return [x, y];
   return Date.parse(ax) <= Date.parse(ay) ? [x, y] : [y, x];
+}
+
+/** Compare needs exactly two selected runs. */
+export function canCompare(selected: readonly string[]): boolean {
+  return selected.length === COMPARE_COUNT;
+}
+
+/** Add the id when absent, remove it when present; never mutates. */
+export function toggleSelected(selected: readonly string[], id: string): string[] {
+  return selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id];
+}
+
+/** The newest and the second-newest *completed* runs (a newer running run is ignored). */
+export function latestTwoCompleted(runs: readonly EvalSuiteRun[]): {
+  latest: EvalSuiteRun | null;
+  previous: EvalSuiteRun | null;
+} {
+  const done = runs
+    .filter((r) => r.status === "completed")
+    .sort((x, y) => Date.parse(y.started_at) - Date.parse(x.started_at));
+  return { latest: done[0] ?? null, previous: done[1] ?? null };
+}
+
+/** `b - a` for a metric, `undefined` when either side is not computable. */
+export function metricDelta(latest: number | null | undefined, previous: number | null | undefined): number | undefined {
+  return latest == null || previous == null ? undefined : latest - previous;
+}
+
+/** Message key (under `eval`) for a failed start, chosen by the API error code. */
+export function startErrorKey(code: string | undefined): string {
+  return (START_ERROR_KEYS as Record<string, string>)[code ?? ""] ?? START_ERROR_FALLBACK_KEY;
+}
+
+/** A 0..1 metric as a whole percent (`0.82` -> `82%`); `null` -> `null` (the caller shows the dash). */
+export function formatPercent(v: number | null | undefined): string | null {
+  return v == null ? null : `${Math.round(v * 100)}%`;
+}
+
+/** Whole percentage points of a 0..1 delta, signed by `direction`; `undefined` delta -> `undefined`. */
+export function pointsDelta(delta: number | undefined): { direction: "up" | "down" | "flat"; points: number } | undefined {
+  if (delta === undefined) return undefined;
+  const points = Math.round(delta * 100);
+  return { direction: points === 0 ? "flat" : points > 0 ? "up" : "down", points: Math.abs(points) };
 }

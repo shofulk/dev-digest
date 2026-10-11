@@ -10,20 +10,21 @@ import { Button, Checkbox, ErrorState, Icon, Skeleton } from "@devdigest/ui";
 import { ApiError } from "@/lib/api";
 import { notify } from "@/lib/toast";
 import { formatCost } from "@/lib/format-cost";
-import { formatMetric, orderPair, toneColor } from "@/lib/eval-metrics";
-import { useDeleteEvalCase, useEvalCases, useEvalRuns, useStartEvalRun } from "@/lib/hooks/eval";
-import { CompareModal } from "./_components/CompareModal";
 import {
   canCompare,
+  formatMetric,
   formatPercent,
   latestTwoCompleted,
-  locationOf,
   metricDelta,
-  passingCounts,
+  orderPair,
   pointsDelta,
   startErrorKey,
   toggleSelected,
-} from "./helpers";
+} from "@/lib/eval-metrics";
+import { useDeleteEvalCase, useEvalCases, useEvalRuns, useStartEvalRun } from "@/lib/hooks/eval";
+import { CompareModal } from "@/components/eval-ui/CompareModal";
+import { MetricTile } from "@/components/eval-ui/MetricTile";
+import { locationOf, passingCounts } from "./helpers";
 import { s } from "./styles";
 
 const RESULT_KEYS = {
@@ -39,37 +40,6 @@ const STATUS_ICON = {
   errored: { icon: "AlertTriangle", color: "var(--warn)" },
   never_run: { icon: "Dot", color: "var(--text-muted)" },
 } as const;
-
-function MetricTile({
-  label,
-  value,
-  color,
-  delta,
-}: {
-  label: string;
-  value: string;
-  color: string;
-  delta?: { direction: "up" | "down" | "flat"; points: number };
-}) {
-  const t = useTranslations("eval");
-  return (
-    <div style={s.tile}>
-      <div style={s.tileLabel}>{label}</div>
-      <div style={s.tileBody}>
-        <span className="tnum" style={s.tileValue(color)}>
-          {value}
-        </span>
-        {delta && (
-          <span className="tnum" style={s.tileDelta(toneColor(delta.direction))}>
-            {delta.direction === "flat"
-              ? t("suite.deltaFlat")
-              : t(delta.direction === "up" ? "suite.deltaUp" : "suite.deltaDown", { points: delta.points })}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function EvalsTab({ agentId }: { agentId: string }) {
   const t = useTranslations("eval");

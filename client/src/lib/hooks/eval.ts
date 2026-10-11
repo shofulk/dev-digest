@@ -11,6 +11,7 @@ import type {
   EvalCaseView,
   EvalCompare,
   EvalDashboardOverview,
+  EvalRunAllResult,
   EvalStartRunResponse,
   EvalSuiteRun,
 } from "@devdigest/shared/contracts/eval-ci";
@@ -61,10 +62,16 @@ export function useEvalCompare(a: string | null | undefined, b: string | null | 
   });
 }
 
+/** Refetch period for the dashboard: poll while any recent suite run is `running`. */
+export function dashboardPollInterval(data: EvalDashboardOverview | undefined): number | false {
+  return pollInterval(data?.recent_runs.some((r) => r.status === "running") ? "running" : null);
+}
+
 export function useEvalDashboard() {
   return useQuery({
     queryKey: evalKeys.dashboard,
     queryFn: () => api.get<EvalDashboardOverview>("/eval/dashboard"),
+    refetchInterval: (q) => dashboardPollInterval(q.state.data),
   });
 }
 
@@ -97,5 +104,14 @@ export function useStartEvalRun(agentId: string) {
   return useMutation({
     mutationFn: () => api.post<EvalStartRunResponse>(`/agents/${agentId}/eval-runs`),
     onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.runs(agentId) }),
+  });
+}
+
+/** POST /eval/runs/all — start one suite run per agent that has cases (refusals are per agent). */
+export function useRunAllEvals() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<EvalRunAllResult>("/eval/runs/all", { confirm: true }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
   });
 }

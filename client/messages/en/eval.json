@@ -42,7 +42,16 @@
       "citation": "Citation",
       "passed": "Passed",
       "trend": "Recall trend"
-    }
+    },
+    "runAll": "Run all agents",
+    "lastRun": "Last run v{version} · {date} · {passed}/{total} pass",
+    "neverRun": "never run",
+    "short": {
+      "recall": "RECALL",
+      "precision": "PREC",
+      "citation": "CITE"
+    },
+    "recentRunsAll": "Recent eval runs · all agents"
   },
   "caseEditor": {
     "newCase": "New eval case",
@@ -155,6 +164,49 @@
     "onlyInA": "Only in the older run",
     "onlyInB": "Only in the newer run",
     "close": "Close",
-    "loadFailed": "Could not load the comparison"
+    "loadFailed": "Could not load the comparison",
+    "titleVersions": "Compare runs · v{a} → v{b}",
+    "subtitle": "Old prompt vs new",
+    "legendOld": "v{version} (old)",
+    "legendNew": "v{version} (new)",
+    "tile": {
+      "recall": "RECALL",
+      "precision": "PRECISION",
+      "citation": "CITATION",
+      "cost": "COST"
+    },
+    "promote": "Promote v{version}",
+    "promoted": "v{from} restored as v{to}",
+    "promoteFailed": "Couldn't promote v{version}"
+  },
+  "runAll": {
+    "title": "Run all agents?",
+    "body": "{agents, plural, one {# agent} other {# agents}} × their eval cases = {calls, plural, one {# model call} other {# model calls}} ({cases, plural, one {# case} other {# cases}} in total).",
+    "confirm": "Run {calls, plural, one {# call} other {# calls}}",
+    "cancel": "Cancel",
+    "started": "{count, plural, one {# run started} other {# runs started}}",
+    "refusedLine": "{agent}: {reason}",
+    "reason": {
+      "run_in_flight": "a run is already in flight",
+      "provider_not_configured": "provider not configured",
+      "no_cases": "no eval cases",
+      "start_failed": "could not start"
+    },
+    "failed": "Couldn't start the runs"
+  },
+  "agentPage": {
+    "backToAll": "← All agents",
+    "subtitle": "Regression harness · {runs, plural, one {# run} other {# runs}} on the {cases}-case set",
+    "pickerLabel": "Agent",
+    "runEval": "Run eval",
+    "calloutUp": "{metric} rose {points}pt on v{version}",
+    "calloutDown": "{metric} dipped {points}pt on v{version}",
+    "metric": {
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation"
+    },
+    "trendTooFew": "Run the suite twice to see a trend",
+    "loadFailed": "Could not load this agent's evals"
   }
 }

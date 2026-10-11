@@ -1,5 +1,18 @@
 import { describe, it, expect } from "vitest";
-import { deltaTone, formatMetric, orderPair, signedDelta } from "./eval-metrics";
+import type { EvalSuiteRun } from "@devdigest/shared/contracts/eval-ci";
+import {
+  canCompare,
+  deltaTone,
+  formatMetric,
+  formatPercent,
+  latestTwoCompleted,
+  metricDelta,
+  orderPair,
+  pointsDelta,
+  signedDelta,
+  startErrorKey,
+  toggleSelected,
+} from "./eval-metrics";
 
 describe("formatMetric", () => {
   it("formats to two decimals and renders null as a dash", () => {
@@ -50,5 +63,79 @@ describe("orderPair", () => {
 
   it("keeps the given order when a run is unknown", () => {
     expect(orderPair(runs, ["ghost", "old"])).toEqual(["ghost", "old"]);
+  });
+});
+
+const suiteRun = (over: Partial<EvalSuiteRun>): EvalSuiteRun => ({
+  run_id: "r",
+  agent_id: "ag1",
+  status: "completed",
+  agent_version: 1,
+  started_at: "2026-10-01T10:00:00Z",
+  finished_at: "2026-10-01T10:05:00Z",
+  cases_total: 5,
+  cases_done: 5,
+  recall: 0.5,
+  precision: 0.5,
+  citation_accuracy: 1,
+  traces_passed: 3,
+  traces_total: 5,
+  cases_errored: 0,
+  duration_ms: 1000,
+  cost_usd: 0.01,
+  ...over,
+});
+
+describe("canCompare / toggleSelected", () => {
+  it("enables Compare for exactly two selected runs", () => {
+    expect([[], ["a"], ["a", "b"], ["a", "b", "c"]].map((x) => canCompare(x))).toEqual([false, false, true, false]);
+  });
+
+  it("adds and removes an id without mutating the input", () => {
+    const base = ["a"];
+    expect(toggleSelected(base, "b")).toEqual(["a", "b"]);
+    expect(base).toEqual(["a"]);
+    expect(toggleSelected(["a", "b"], "a")).toEqual(["b"]);
+  });
+});
+
+describe("latestTwoCompleted", () => {
+  it("ignores a newer running run", () => {
+    const { latest, previous } = latestTwoCompleted([
+      suiteRun({ run_id: "live", status: "running", started_at: "2026-10-05T00:00:00Z" }),
+      suiteRun({ run_id: "old", started_at: "2026-10-01T00:00:00Z" }),
+      suiteRun({ run_id: "mid", started_at: "2026-10-03T00:00:00Z" }),
+    ]);
+    expect([latest?.run_id, previous?.run_id]).toEqual(["mid", "old"]);
+  });
+});
+
+describe("metricDelta / formatPercent / pointsDelta", () => {
+  it("returns undefined when either side is null", () => {
+    expect(metricDelta(0.8, null)).toBeUndefined();
+    expect(metricDelta(undefined, 0.8)).toBeUndefined();
+    expect(metricDelta(0.8, 0.6)).toBeCloseTo(0.2);
+  });
+
+  it("formats a whole percent and null as null", () => {
+    expect(formatPercent(0.82)).toBe("82%");
+    expect(formatPercent(null)).toBeNull();
+  });
+
+  it("derives direction and whole points, including flat", () => {
+    expect(pointsDelta(0.04)).toEqual({ direction: "up", points: 4 });
+    expect(pointsDelta(-0.02)).toEqual({ direction: "down", points: 2 });
+    expect(pointsDelta(0.004)).toEqual({ direction: "flat", points: 0 });
+    expect(pointsDelta(undefined)).toBeUndefined();
+  });
+});
+
+describe("startErrorKey", () => {
+  it("maps the three codes and falls back for anything else", () => {
+    expect(startErrorKey("no_cases")).toBe("suite.errors.noCases");
+    expect(startErrorKey("provider_not_configured")).toBe("suite.errors.providerNotConfigured");
+    expect(startErrorKey("run_in_flight")).toBe("suite.errors.runInFlight");
+    expect(startErrorKey("boom")).toBe("suite.errors.generic");
+    expect(startErrorKey(undefined)).toBe("suite.errors.generic");
   });
 });

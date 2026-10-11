@@ -16,6 +16,11 @@ export const s = {
   tileLabel: { fontSize: 12, fontWeight: 600, color: "var(--text-muted)" } satisfies CSSProperties,
   tileValues: { fontSize: 16, fontWeight: 600 } satisfies CSSProperties,
   delta: (color: string): CSSProperties => ({ fontSize: 13, fontWeight: 700, color }),
+  headingRow: { display: "flex", alignItems: "center", gap: 14, marginBottom: 8 } satisfies CSSProperties,
+  headingText: { fontSize: 13, fontWeight: 700, marginRight: "auto" } satisfies CSSProperties,
+  legend: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  swatch: (color: string): CSSProperties => ({ width: 10, height: 10, borderRadius: 2, background: color }),
+  footer: { display: "flex", justifyContent: "flex-end", gap: 10 } satisfies CSSProperties,
   heading: { fontSize: 13, fontWeight: 700, marginBottom: 8 } satisfies CSSProperties,
   note: { fontSize: 13, color: "var(--text-muted)" } satisfies CSSProperties,
   diff: {

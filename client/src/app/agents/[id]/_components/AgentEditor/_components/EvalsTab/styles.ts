@@ -13,22 +13,6 @@ export const s = {
   } satisfies CSSProperties,
   dashLink: { marginLeft: "auto", fontSize: 12, color: "var(--accent-text)", textDecoration: "none" } satisfies CSSProperties,
   tiles: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 12 } satisfies CSSProperties,
-  tile: {
-    background: "var(--bg-elevated)",
-    border: "1px solid var(--border)",
-    borderRadius: 8,
-    padding: "14px 16px",
-    minWidth: 0,
-  } satisfies CSSProperties,
-  tileLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: "0.04em",
-    color: "var(--text-muted)",
-  } satisfies CSSProperties,
-  tileBody: { display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 } satisfies CSSProperties,
-  tileValue: (color: string): CSSProperties => ({ fontSize: 28, fontWeight: 700, letterSpacing: "-0.02em", color }),
-  tileDelta: (color: string): CSSProperties => ({ fontSize: 12, fontWeight: 600, color }),
   sectionHead: { display: "flex", alignItems: "center", gap: 12, marginBottom: 10 } satisfies CSSProperties,
   h2: { fontSize: 16, fontWeight: 700 } satisfies CSSProperties,
   passingBadge: {

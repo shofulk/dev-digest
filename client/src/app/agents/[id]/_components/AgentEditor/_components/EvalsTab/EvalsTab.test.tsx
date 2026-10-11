@@ -3,7 +3,6 @@ import { render, screen, cleanup, fireEvent, within } from "@testing-library/rea
 import { NextIntlClientProvider } from "next-intl";
 import type { EvalCaseView, EvalSuiteRun } from "@devdigest/shared/contracts/eval-ci";
 import messages from "../../../../../../../../messages/en/eval.json";
-import { canCompare, latestTwoCompleted, toggleSelected } from "./helpers";
 
 let cases: EvalCaseView[];
 let runs: EvalSuiteRun[];
@@ -14,7 +13,7 @@ vi.mock("@/lib/hooks/eval", () => ({
   useStartEvalRun: () => ({ mutate: startMutate, isPending: false }),
   useDeleteEvalCase: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-vi.mock("./_components/CompareModal", () => ({
+vi.mock("@/components/eval-ui/CompareModal", () => ({
   CompareModal: ({ runA, runB }: { runA: string; runB: string }) => (
     <div data-testid="compare-modal">{`${runA}>${runB}`}</div>
   ),
@@ -290,22 +289,5 @@ describe("EvalsTab case cards", () => {
     expect(path.style.textOverflow).toBe("ellipsis");
     expect(path.style.whiteSpace).toBe("nowrap");
     expect(path.style.overflow).toBe("hidden");
-  });
-});
-
-describe("EvalsTab helpers", () => {
-  it("canCompare / toggleSelected", () => {
-    expect([[], ["a"], ["a", "b"], ["a", "b", "c"]].map((x) => canCompare(x))).toEqual([false, false, true, false]);
-    expect(toggleSelected(["a"], "b")).toEqual(["a", "b"]);
-    expect(toggleSelected(["a", "b"], "a")).toEqual(["b"]);
-  });
-
-  it("latestTwoCompleted ignores a newer running run", () => {
-    const { latest, previous } = latestTwoCompleted([
-      run({ run_id: "live", status: "running", started_at: "2026-10-05T00:00:00Z" }),
-      run({ run_id: "old", started_at: "2026-10-01T00:00:00Z" }),
-      run({ run_id: "mid", started_at: "2026-10-03T00:00:00Z" }),
-    ]);
-    expect([latest?.run_id, previous?.run_id]).toEqual(["mid", "old"]);
   });
 });
