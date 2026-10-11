@@ -78,7 +78,7 @@ flowchart TB
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId] · /agents/:id/versions[/:v][/restore]"]
     skills["skills<br/>/skills[/:id] · /skills/:id/(versions[/:v][/restore]|stats)<br/>/skills/import[/preview] · /skills/tokens"]
-    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/agents/:id · /eval/runs/all"]
+    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/runs/all"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
