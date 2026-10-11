@@ -205,6 +205,11 @@ An artifact with **no** evals is not a failure: the detect step logs `SKIP <name
 when nothing is left to run every tier job is skipped. A PR from a fork gets no secrets, so it logs
 `SKIP: OPENROUTER_API_KEY unavailable` and stays green.
 
+Experiments are not shipped artifacts and never run in CI: an agent listed in
+`CI_EXCLUDED_AGENTS` (`scripts/ci-detect.mjs`) is logged as `SKIP <name> (experiment, not in CI)`.
+Today that is `architecture-reviewer-lite`, the closed citation A/B against
+`architecture-reviewer`; run it by hand with `pnpm eval:repeat`.
+
 **Models** are three `env` lines at the top of the workflow — change one line to switch:
 
 | Variable | Default | Why |

@@ -11,6 +11,8 @@
  *
  * A changed artifact with NO written evals is NOT a failure: it is reported on the `skipped_*`
  * outputs so the job can print a visible "SKIP <name> (no evals)" line instead of going red.
+ * An agent in CI_EXCLUDED_AGENTS is an experiment, not a shipped artifact: it never runs in CI
+ * (logged as "SKIP <name> (experiment, not in CI)") and stays runnable by hand via eval:repeat.
  *
  * Emits GitHub Actions step outputs (skills, agents, run_workflow, needs_proxy, anything,
  * skipped_skills, skipped_agents)
@@ -57,6 +59,10 @@ function allWithEvals(tier) {
   return readdirSync(dir).filter((n) => hasEvals(tier, n)).sort();
 }
 
+// Experiments, not shipped artifacts — run them by hand (pnpm eval:repeat), never on a PR.
+// architecture-reviewer-lite: the citation A/B, closed with no measurable effect.
+const CI_EXCLUDED_AGENTS = new Set(["architecture-reviewer-lite"]);
+
 const skillNames = touched(
   /^\.claude\/skills\/([^/]+)\//,
   /^evals\/skills\/([^/]+)\//,
@@ -68,7 +74,9 @@ const agentNames = touched(
 
 const skills = runAll ? allWithEvals("skills") : skillNames.filter((n) => hasEvals("skills", n));
 const skippedSkills = skillNames.filter((n) => !hasEvals("skills", n));
-const agents = runAll ? allWithEvals("agents") : agentNames.filter((n) => hasEvals("agents", n));
+const agentCandidates = runAll ? allWithEvals("agents") : agentNames.filter((n) => hasEvals("agents", n));
+const agents = agentCandidates.filter((n) => !CI_EXCLUDED_AGENTS.has(n));
+const excludedAgents = agentCandidates.filter((n) => CI_EXCLUDED_AGENTS.has(n));
 const skippedAgents = agentNames.filter((n) => !hasEvals("agents", n));
 
 // The workflow tier measures the LIVE harness, so anything that changes it re-triggers it.
@@ -108,4 +116,5 @@ console.error(`run all       : ${runAll}`);
 console.error(`workflow tier : ${workflow ? "run" : runWorkflow ? "SKIP (no evals/workflow/*.eval.ts)" : "skip (not triggered)"}`);
 if (skippedSkills.length) console.error(`SKIP skills (no evals): ${skippedSkills.join(", ")}`);
 if (skippedAgents.length) console.error(`SKIP agents (no evals): ${skippedAgents.join(", ")}`);
+if (excludedAgents.length) console.error(`SKIP agents (experiment, not in CI): ${excludedAgents.join(", ")}`);
 if (!skills.length && !agents.length && !workflow) console.error("nothing to evaluate — no changed artifact has evals");
