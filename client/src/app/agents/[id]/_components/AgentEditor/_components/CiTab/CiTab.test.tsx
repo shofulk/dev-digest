@@ -161,8 +161,17 @@ describe("CiTab", () => {
   it("AC-34: Update CI config is disabled without an installation", async () => {
     data = { installations: [], runs: [] };
     renderTab();
-    await screen.findByText("CI deployment");
-    await waitFor(() => expect(screen.getByRole("button", { name: /Update CI config/ })).toBeDisabled());
+    // "Add repository" renders only once the data has loaded; before that the button is disabled anyway.
+    await screen.findByRole("button", { name: /Add repository/ });
+    expect(screen.getByRole("button", { name: /Update CI config/ })).toBeDisabled();
+  });
+
+  it("AC-33: a run under a minute old reads \"just now\", not \"now ago\"", async () => {
+    data = { installations: [inst({ id: "i1", status: "active", last_run: { verdict: "passed", ran_at: ago(0) } })], runs: [] };
+    renderTab();
+    const [row] = await screen.findAllByTestId("ci-installation");
+    expect(within(row!).getByText("just now")).toBeInTheDocument();
+    expect(within(row!).queryByText(/ago/)).toBeNull();
   });
 
   it("AC-38: Add to CI and Add repository open the wizard in add mode", async () => {

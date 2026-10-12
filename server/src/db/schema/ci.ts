@@ -7,6 +7,7 @@ import {
   jsonb,
   timestamp,
   doublePrecision,
+  index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { agents } from './agents';
@@ -62,5 +63,7 @@ export const ciRuns = pgTable(
   },
   (t) => ({
     githubRunUq: uniqueIndex('ci_runs_github_run_installation_uq').on(t.githubRunId, t.ciInstallationId),
+    installationIdx: index('ci_runs_installation_idx').on(t.ciInstallationId),
+    agentRunIdx: index('ci_runs_agent_run_idx').on(t.agentRunId),
   }),
 );

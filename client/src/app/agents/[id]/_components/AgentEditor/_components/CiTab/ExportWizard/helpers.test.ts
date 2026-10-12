@@ -31,6 +31,12 @@ describe("replaceTriggerTypes", () => {
     const broken = "on: [unclosed\n  - : :";
     expect(replaceTriggerTypes(broken, ["opened"])).toBe(broken);
   });
+
+  it("AC-41: leaves a workflow whose `on` is a scalar or a sequence unchanged instead of throwing", () => {
+    for (const text of ["on: push\njobs: {}\n", "on: [push]\njobs: {}\n"]) {
+      expect(replaceTriggerTypes(text, ["opened"])).toBe(text);
+    }
+  });
 });
 
 describe("zip helpers", () => {

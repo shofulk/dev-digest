@@ -152,6 +152,13 @@ const clampNum = (n: number, max: number): number => Math.min(max, Math.max(0, n
 const clampCount = (n: number): number => Math.floor(clampNum(n, COUNT_MAX));
 const clampText = <T extends string | null>(s: T): T => (s === null ? s : (s.slice(0, TEXT_MAX) as T));
 
+const PG_INT_MAX = 2_147_483_647;
+
+/** An artifact's PR number is untrusted: only a positive `int4` is stored, anything else is null. */
+export function artifactPrNumber(n: number): number | null {
+  return Number.isInteger(n) && n > 0 && n <= PG_INT_MAX ? n : null;
+}
+
 /** Bound an untrusted artifact result before it is stored: counts, cost, duration and text. */
 export function clampAgentResult(r: CiAgentResult): CiAgentResult {
   return {

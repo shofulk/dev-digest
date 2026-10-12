@@ -26,25 +26,6 @@ export function CiTab({ agent }: { agent: Agent }) {
   const active = installations.filter((i) => i.status === "active").length;
   const failOnOptions = CI_FAIL_ON_VALUES.map((v) => ({ value: v, label: t(`ciTab.failOn.${v}`) }));
 
-  const status = (i: CiInstallation) => {
-    if (i.last_run)
-      return (
-        <>
-          <Badge dot>{t(`runs.verdict.${i.last_run.verdict}`)}</Badge>
-          <span style={s.muted}>{t("ciTab.agoSuffix", { time: relativeTime(i.last_run.ran_at) })}</span>
-        </>
-      );
-    if (i.status === "pr_open")
-      return isGithubUrl(i.pr_url) ? (
-        <a href={i.pr_url} target="_blank" rel="noopener noreferrer" style={s.link}>
-          {t("ciTab.prOpen")}
-        </a>
-      ) : (
-        <span style={s.muted}>{t("ciTab.prOpen")}</span>
-      );
-    return <span style={s.muted}>{t("ciTab.manualInstall")}</span>;
-  };
-
   return (
     <div style={s.wrap}>
       <div style={s.header}>
@@ -85,7 +66,7 @@ export function CiTab({ agent }: { agent: Agent }) {
               </span>
               <Badge icon="Workflow">{t("ciTab.ghaChip")}</Badge>
               <span className="mono" style={s.muted}>{`v${i.installed_agent_version}`}</span>
-              {status(i)}
+              <InstallationStatus installation={i} />
             </div>
           ))}
           <button type="button" style={s.addRow} onClick={() => setWizard("add")}>
@@ -120,4 +101,27 @@ export function CiTab({ agent }: { agent: Agent }) {
       )}
     </div>
   );
+}
+
+/** One installation's status cell: its newest run, the open PR, or a manual install. */
+function InstallationStatus({ installation: i }: { installation: CiInstallation }) {
+  const t = useTranslations("ci");
+  if (i.last_run) {
+    const rel = relativeTime(i.last_run.ran_at);
+    return (
+      <>
+        <Badge dot>{t(`runs.verdict.${i.last_run.verdict}`)}</Badge>
+        <span style={s.muted}>{rel === "now" ? t("ciTab.justNow") : t("ciTab.agoSuffix", { time: rel })}</span>
+      </>
+    );
+  }
+  if (i.status === "pr_open")
+    return isGithubUrl(i.pr_url) ? (
+      <a href={i.pr_url} target="_blank" rel="noopener noreferrer" style={s.link}>
+        {t("ciTab.prOpen")}
+      </a>
+    ) : (
+      <span style={s.muted}>{t("ciTab.prOpen")}</span>
+    );
+  return <span style={s.muted}>{t("ciTab.manualInstall")}</span>;
 }

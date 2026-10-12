@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { CiAgentResult } from '@devdigest/shared/contracts/eval-ci';
-import { clampAgentResult } from '../src/modules/ci/helpers.js';
+import { CiResultArtifact, type CiAgentResult } from '@devdigest/shared/contracts/eval-ci';
+import { artifactPrNumber, clampAgentResult } from '../src/modules/ci/helpers.js';
 
 const base: CiAgentResult = {
   agent_id: 'a1',
@@ -64,5 +64,25 @@ describe('clampAgentResult', () => {
     expect(out.model).toHaveLength(500);
     expect(out.error_code).toHaveLength(500);
     expect(clampAgentResult({ ...base, model: null }).model).toBeNull();
+  });
+});
+
+describe('artifactPrNumber', () => {
+  it('AC-23: keeps a positive int4 PR number', () => {
+    expect(artifactPrNumber(7)).toBe(7);
+    expect(artifactPrNumber(2_147_483_647)).toBe(2_147_483_647);
+  });
+
+  it('AC-23: turns 0, negatives and values past int4 into null instead of failing the insert', () => {
+    for (const n of [0, -1, 2_147_483_648, 99_999_999_999]) expect(artifactPrNumber(n)).toBeNull();
+  });
+});
+
+describe('CiResultArtifact', () => {
+  const artifact = { pr_number: 7, head_sha: 'abc', results: [base] };
+
+  it('AC-18: accepts the current version and rejects any other, so the run counts as skipped', () => {
+    expect(CiResultArtifact.safeParse({ version: 1, ...artifact }).success).toBe(true);
+    expect(CiResultArtifact.safeParse({ version: 2, ...artifact }).success).toBe(false);
   });
 });

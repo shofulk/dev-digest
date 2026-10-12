@@ -9,13 +9,19 @@ export function sortTriggers(triggers: CiTrigger[]): CiTrigger[] {
   return CI_TRIGGERS.filter((t) => triggers.includes(t));
 }
 
-/** Replace only `on.pull_request.types` in an edited workflow; text that does not parse is returned unchanged. */
+/** Replace only `on.pull_request.types` in an edited workflow; text that does not parse, or whose
+ *  `on` is not a mapping, is returned unchanged. */
 export function replaceTriggerTypes(text: string, triggers: CiTrigger[]): string {
   const doc = parseDocument(text);
   if (doc.errors.length > 0) return text;
   const types = doc.createNode(sortTriggers(triggers));
   types.flow = true;
-  doc.setIn(["on", "pull_request", "types"], types);
+  try {
+    // Throws when `on` is a scalar (`on: push`) or a sequence (`on: [push]`).
+    doc.setIn(["on", "pull_request", "types"], types);
+  } catch {
+    return text;
+  }
   return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 }
 

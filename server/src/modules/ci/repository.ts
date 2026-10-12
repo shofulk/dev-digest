@@ -119,8 +119,13 @@ export class CiRepository {
       .where(eq(t.ciInstallations.agentId, agentId))
       .orderBy(asc(t.ciInstallations.installedAt), asc(t.ciInstallations.id));
     if (installs.length === 0) return [];
+    // One row per installation: its newest run (DISTINCT ON keeps the first row of each group).
     const runs = await this.db
-      .select({ installationId: t.ciRuns.ciInstallationId, verdict: t.ciRuns.verdict, ranAt: t.agentRuns.ranAt })
+      .selectDistinctOn([t.ciRuns.ciInstallationId], {
+        installationId: t.ciRuns.ciInstallationId,
+        verdict: t.ciRuns.verdict,
+        ranAt: t.agentRuns.ranAt,
+      })
       .from(t.ciRuns)
       .innerJoin(t.agentRuns, eq(t.agentRuns.id, t.ciRuns.agentRunId))
       .where(
@@ -129,7 +134,7 @@ export class CiRepository {
           installs.map((i) => i.id),
         ),
       )
-      .orderBy(desc(t.agentRuns.ranAt), desc(t.ciRuns.id));
+      .orderBy(asc(t.ciRuns.ciInstallationId), desc(t.agentRuns.ranAt), desc(t.ciRuns.id));
     return installs.map((i) => {
       const last = runs.find((r) => r.installationId === i.id);
       return { ...i, lastRun: last ? { verdict: last.verdict, ranAt: last.ranAt } : null };

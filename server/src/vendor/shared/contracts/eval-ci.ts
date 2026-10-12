@@ -589,7 +589,7 @@ export type CiAgentResult = z.infer<typeof CiAgentResult>;
  * Pulled back on refresh to populate `agent_runs` + `ci_runs`.
  */
 export const CiResultArtifact = z.object({
-  version: z.number().int(),
+  version: z.literal(CI_RESULT_VERSION),
   pr_number: z.number().int(),
   head_sha: z.string(),
   results: z.array(CiAgentResult),
