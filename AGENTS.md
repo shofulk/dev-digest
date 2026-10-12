@@ -1,6 +1,6 @@
 # DevDigest
 
-Local-first AI review of pull requests. Five **standalone** packages — no monorepo
+Local-first AI review of pull requests. Six **standalone** packages — no monorepo
 workspace: each has its own `package.json` and lockfile, cross-package code is
 shared through tsconfig path aliases, not published modules (`mcp-server` is the one
 exception — it imports nothing from `server/`, by design; see its own `AGENTS.md`).
@@ -39,6 +39,7 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 | `client/` | Next.js studio; routes `src/app/**`, data hooks `src/lib/hooks/*` |
 | `reviewer-core/` | pure engine: diff → prompt → LLM → grounded findings |
 | `e2e/` | deterministic browser flows (`specs/NN-name.flow.json`) |
+| `ci/` | CI runner — builds the one-file `ci/dist/index.js` exported into a repository's GitHub Actions |
 | `mcp-server/` | local stdio MCP server — a thin HTTP-API client exposing reviewer agents, PR review runs, findings and conventions to MCP clients (Claude Code) |
 | `docs/agent-prompts/` | built-in reviewer system prompts |
 | `docs/retros/` | committed run retros (`<feature>.md`) and `ledger.md`, one row per `/sdd-run` |
@@ -47,7 +48,7 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 ## Read when
 
 - **Touching any package** → read `<pkg>/AGENTS.md` first
-  (`server` · `client` · `reviewer-core` · `e2e` · `mcp-server`).
+  (`server` · `client` · `reviewer-core` · `e2e` · `mcp-server` · `ci`).
 - **Need architecture, diagrams or data flow** → read `<pkg>/README.md`.
   It is the source of truth; never restate it here.
 - **Implementing a feature** → read `<pkg>/.spec/<feature>.spec.md` (one package) or

@@ -28,9 +28,10 @@ flowchart TD
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
   ROOT --> CONTEXT["/repos/:repoId/context<br/>Project Context: grouped list + preview"]
 
-  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context · evals)"]
+  AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context · evals · ci)"]
   EVAL["/eval<br/>Eval Dashboard"] --> EVALAGENT["/eval/agents/:agentId<br/>agent eval page"]
   SKILLS["/skills<br/>Skills Lab: list + editor<br/>?skill=&tab=config|preview|context|stats|versions"]
+  CIRUNS["/ci-runs<br/>CI Runs: table of finished CI reviews"]
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
@@ -39,6 +40,8 @@ flowchart TD
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs · /agents/:id/versions/:v/restore"| API
   EVAL -->|"/eval/dashboard · POST /eval/runs/all · /agents/:id/eval-(cases|runs) · /eval-cases/:id[/runs] · /agents/:id/eval-cases/dry-run · /eval-runs/:runId · /eval-runs/compare"| API
   SKILLS -->|"/skills · /skills/:id/(versions|stats|restore) · /skills/:id/context-docs · /skills/import[/preview] · /skills/tokens"| API
+  AGENT -->|"CI tab: /agents/:id/ci · /agents/:id/ci/preview · /agents/:id/export-ci · POST /ci/refresh"| API
+  CIRUNS -->|"GET /ci/runs · POST /ci/refresh"| API
   SETTINGS -->|"/settings · /providers"| API
 ```
 

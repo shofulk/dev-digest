@@ -147,6 +147,20 @@ export interface CommitFilesPayload {
   files: CommitFile[];
 }
 
+/** One completed GitHub Actions workflow run (the CI refresh reads these). */
+export interface WorkflowRunMeta {
+  id: number;
+  htmlUrl: string;
+  headRepoFullName: string | null;
+  prNumber: number | null;
+  createdAt: string;
+}
+
+/** Outcome of reading one run's result artifact. */
+export type ArtifactRead =
+  | { status: 'ok'; text: string }
+  | { status: 'missing' | 'too_large' | 'invalid' };
+
 export interface GitHubClient {
   listPullRequests(repo: RepoRef): Promise<PrMeta[]>;
   getPullRequest(repo: RepoRef, n: number): Promise<PrDetail>;
@@ -191,6 +205,25 @@ export interface GitHubClient {
     n: number,
     opts?: { timeoutMs?: number },
   ): Promise<{ owner: string; name: string; number: number }[]>;
+  /** Point `branch` at the current head of `toBranch` (create or force-update the ref). */
+  resetBranch(repo: RepoRef, branch: string, toBranch: string): Promise<{ sha: string }>;
+  /** Completed runs of `workflowFile` created at or after `createdSince`, at most `perPage`. */
+  listWorkflowRuns(
+    repo: RepoRef,
+    workflowFile: string,
+    opts: { createdSince: string; perPage: number },
+  ): Promise<WorkflowRunMeta[]>;
+  /** Read the single `entry` file of run artifact `name`, never inflating more than `maxBytes`. */
+  downloadRunArtifact(
+    repo: RepoRef,
+    runId: number,
+    opts: { name: string; entry: string; maxBytes: number },
+  ): Promise<ArtifactRead>;
+}
+
+/** The built CI runner (`ci/dist/index.js`), read from disk on each preview / export. */
+export interface RunnerBundleSource {
+  read(): Promise<{ contents: string; sizeBytes: number } | null>;
 }
 
 // ---------- Git (simple-git, heavy) ----------

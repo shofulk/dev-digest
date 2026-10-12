@@ -14,6 +14,11 @@
       "allStatuses": "All statuses"
     },
     "table": {
+      "repository": "Repository",
+      "agent": "Agent",
+      "verdict": "Verdict",
+      "duration": "Duration",
+      "viewJob": "View job",
       "timestamp": "Timestamp",
       "pullRequest": "Pull request",
       "source": "Source",
@@ -27,7 +32,14 @@
       "noFindings": "No findings",
       "failed": "Failed",
       "running": "Running"
-    }
+    },
+    "verdict": {
+      "blocked": "Blocked",
+      "passed": "Passed",
+      "no_findings": "No findings",
+      "failed": "Failed"
+    },
+    "degraded": "CI results could not be refreshed ({repos}: {reason}). Showing stored data."
   },
   "exportWizard": {
     "title": "Export to CI",
@@ -72,17 +84,52 @@
     "installCardTitle": "Open a PR with these files",
     "installCardBody": "DevDigest opens a PR in {repo} titled “Add DevDigest CI review” with the {count} generated files.",
     "ownerRepo": "owner/repo",
-    "secretNote": "Add {key} to the repo's Actions secrets before the workflow runs."
+    "secretNote": "Add {key} to the repo's Actions secrets before the workflow runs.",
+    "secretsHint": "Add OPENROUTER_API_KEY to the repository’s Actions secrets. GITHUB_TOKEN is provided by Actions.",
+    "installZip": "Copy files as a zip",
+    "prOpened": "Pull request opened",
+    "viewPr": "View pull request",
+    "close": "Close",
+    "runnerSize": "Bundled runner, {size} bytes. Not editable.",
+    "previewError": "Could not generate the preview.",
+    "workflowLabel": "Workflow",
+    "errorLine": "Line {line}",
+    "errorPermissions": "Required permissions: {list}",
+    "triggers": {
+      "opened": "opened",
+      "synchronize": "synchronize",
+      "reopened": "reopened"
+    }
   },
   "ciTab": {
-    "heading": "Continuous Integration",
+    "heading": "CI deployment",
     "subtitle": "Run this agent automatically on pull requests in a target repo.",
     "exportToCi": "Export to CI",
     "publish": "Publish to CI",
     "update": "Update CI",
     "noRepo": "Connect a repository first",
     "empty": "Not deployed to CI yet. Use “Publish to CI” to open a PR that adds the workflow + agent config.",
-    "installed": "installed {date}"
+    "installed": "installed {date}",
+    "activeIn": "Active in {count} repos",
+    "updateConfig": "Update CI config",
+    "addToCi": "Add to CI",
+    "addRepository": "Add repository",
+    "ghaChip": "GitHub Actions",
+    "prOpen": "PR open",
+    "manualInstall": "Manual install",
+    "failOnLabel": "Fail CI on",
+    "failOn": {
+      "never": "Never block — comment only",
+      "critical": "Block on critical (recommended)",
+      "warning": "Block on warning or critical",
+      "any": "Block on any finding"
+    },
+    "allRuns": "All runs",
+    "retry": "Retry",
+    "recentRuns": "Recent CI runs",
+    "agoSuffix": "{time} ago",
+    "justNow": "just now",
+    "degraded": "CI results could not be refreshed ({repos}: {reason}). Showing stored data."
   },
   "publishDialog": {
     "title": "Publish to CI",

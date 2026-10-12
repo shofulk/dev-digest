@@ -39,3 +39,11 @@ export class ConfigError extends AppError {
     super('config_error', message, 500, details);
   }
 }
+
+/** GitHub refused a write (HTTP 403/404): the token lacks a permission. Raised by the adapter. */
+export class GitHubAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GitHubAccessError';
+  }
+}

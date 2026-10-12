@@ -134,6 +134,25 @@ A case can also be written by hand or edited, and every run row stores the expec
 A one-case run (`POST /eval-cases/:id/runs`) is stored like a suite run but left out of history, the dashboard and compare; a dry run stores nothing.
 Suite, one-case and dry runs share one 5/min start budget (`plugins/rate-limit-store.ts` gives routes with the same `groupId` one counter); `POST /eval/runs/all` keeps its own.
 
+### CI export (`src/modules/ci/`)
+
+Exports one agent into a workspace repository's GitHub Actions (manifest, skills, memory,
+the one-file runner and a shared workflow) and pulls finished CI runs back. Routes:
+
+- `GET /agents/:id/ci` — the agent's installations and its last 20 CI runs
+- `POST /agents/:id/ci/preview` — the bundle; the runner is returned as size only
+- `POST /agents/:id/export-ci` — open the `devdigest/ci` pull request, or return the files
+- Preview and export answer only loopback callers whose `Host` header is also a loopback name (`localhost`, `127.0.0.1`, `[::1]`; DNS-rebinding guard) — else `403 loopback_only`.
+- `POST /ci/refresh` — pull finished runs back; returns `{ stored, skipped, degraded }`
+- `GET /ci/runs` — the latest 100 CI runs of the workspace
+
+The runner is a build output, not committed: run `pnpm --dir ci build` once, otherwise
+preview and export answer `500 config_error`. Ingest is pull-only: a refresh lists the
+completed `devdigest-review.yml` runs of the last 30 days (at most 100 per repository),
+reads each run's `devdigest-result` artifact (at most 1 MiB), clamps it and writes one
+`agent_runs` row (`source='ci'`, `pr_id` NULL, so it never reaches the pull request feed)
+plus a linked `ci_runs` row in one transaction. No model is called.
+
 ## Environment
 
 `server/.env` (copied from `.env.example`):

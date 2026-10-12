@@ -44,6 +44,16 @@ a documented dead end saves the next session the whole detour.
 Both components render their native element without forwarding `id`, so `getByLabelText` finds nothing (and throws outright when `htmlFor` points at a span or pre). `EvalCaseModal` uses native `<select>`/`<textarea>` where a labelled control is needed. Separately, an `afterEach` that asserts on the DOM must call `cleanup()` first, or the previous test's tree is still mounted.
 **Evidence:** client/src/vendor/ui/kit/Textarea.tsx, client/src/vendor/ui/kit/SelectInput.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
 
+### 2026-10-11 — `@devdigest/shared/contracts/eval-ci` is not a safe runtime import either: the contract file itself imports `.js` siblings
+The 2026-09-17 fix (import the contract file directly) only works for a contract file with
+no sibling imports. `contracts/eval-ci.ts` starts with `import … from './findings.js'`, so a
+value import (`CiTrigger.options`) passed typecheck and all vitest runs, then `next dev`
+answered 500 on `/agents/<id>?tab=ci` with `Can't resolve './findings.js'`. The CI wizard keeps
+its option lists as `as const satisfies readonly CiTrigger[]` constants instead (types stay
+checked against the contract, nothing runs from it). Check a contract's own imports before
+choosing it for a value import; `curl` the route in dev.
+**Evidence:** `client/src/app/agents/[id]/_components/AgentEditor/_components/CiTab/ExportWizard/constants.ts:6`
+
 ### 2026-10-04 — a job-stream hook keyed only on the job id never recovers when the server hands back the SAME running job id
 After `onerror` marks the job `failed`, Retry/Generate can resolve with the id of the
 job that is still running (`POST /brief/generate` → `{job_id: <same>, reused: true}`,

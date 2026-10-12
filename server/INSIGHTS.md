@@ -277,6 +277,10 @@ files are byte-identical (`eval-ci.ts`, `knowledge.ts`); when it fails, re-mirro
 contract is mirrored.
 **Evidence:** `server/test/eval-contract-parity.test.ts:12`
 
+### 2026-10-11 - "Local-first" is not a trust boundary: a route that writes outside with a stored token needs its own caller gate
+The API listens on `0.0.0.0` with `LocalNoAuthProvider`, so any LAN host can call every route, and a DNS-rebinding page in the user's browser arrives from 127.0.0.1. Only the security review caught this on `POST /agents/:id/export-ci`, which commits a user-editable workflow with the user's GitHub token. For any new route that writes to GitHub or another outside system, add an `onRequest` guard in `routes.ts` that checks both the socket IP (`req.ip`, never `X-Forwarded-For`; there is no `trustProxy`) and a loopback `Host` allowlist, and say so in the spec as a requirement. `app.inject` sends `Host: localhost:80`, so existing tests pass; simulate other callers with `remoteAddress` and an explicit `headers.host`.
+**Evidence:** server/src/server.ts:29, server/src/modules/ci/routes.ts:20-36, server/test/ci-export.it.test.ts
+
 ### 2026-10-03 - `pnpm arch` stays at baseline while a ring-1 function takes a raw `Db`
 depcruise checks import edges, and `_shared/agent-skills.ts` already imports the `Db` type, so a
 new ring-1 function with a `db: Db` parameter (or a service field typed `Container['db']`) is

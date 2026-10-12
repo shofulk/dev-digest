@@ -127,6 +127,20 @@
       "when": 1791114729111,
       "tag": "0017_useful_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791747926500,
+      "tag": "0018_supreme_hawkeye",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791824410038,
+      "tag": "0019_dry_starjammers",
+      "breakpoints": true
     }
   ]
 }
