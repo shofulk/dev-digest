@@ -31,6 +31,7 @@ import { ReviewRepository } from '../modules/reviews/repository.js';
 import type { RepoIntel } from '../modules/repo-intel/types.js';
 import { RepoIntelService } from '../modules/repo-intel/service.js';
 import { RepoRepository } from '../modules/repos/repository.js';
+import { EvalRepository } from '../modules/eval/repository.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
 import { fileURLToPath } from 'node:url';
@@ -93,6 +94,7 @@ export class Container {
   // `container.agentsRepo` instead of reaching into another module's folder.
   private _agentsRepo?: AgentsRepository;
   private _reviewRepo?: ReviewRepository;
+  private _evalRepo?: EvalRepository;
   private _reposRepo?: RepoRepository;
   private _repoIntel?: RepoIntel;
   private _depgraph?: DepGraph;
@@ -124,6 +126,11 @@ export class Container {
 
   get reviewRepo(): ReviewRepository {
     return (this._reviewRepo ??= new ReviewRepository(this.db));
+  }
+
+  /** Eval cases and suite-run rows; `modules/eval` is the only consumer. */
+  get evalRepo(): EvalRepository {
+    return (this._evalRepo ??= new EvalRepository(this.db));
   }
 
   /**

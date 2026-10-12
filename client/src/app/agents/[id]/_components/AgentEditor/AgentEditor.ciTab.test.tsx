@@ -45,8 +45,8 @@ function renderEditor(tab: string) {
 }
 
 describe("AgentEditor CI tab", () => {
-  it("AC-32: the tab order ends Context, CI", () => {
-    expect(TABS.map((t) => t.key).slice(-2)).toEqual(["context", "ci"]);
+  it("AC-32: CI is the last tab, after Context and Evals", () => {
+    expect(TABS.map((t) => t.key).slice(-3)).toEqual(["context", "evals", "ci"]);
   });
 
   it("AC-32: tab=ci renders the CI tab", () => {

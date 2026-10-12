@@ -36,6 +36,22 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - a strict Zod field inside a jsonb read-back envelope drops the whole row when one pinned value is invalid
+`EvalRunActualOutput.expectation` was `EvalExpectation.nullish()`, while `EvalRepository.updateCase` pins the case's raw pre-edit `expected_output` into older `eval_runs` rows. One legacy expectation that no longer matched the schema made `EvalRunActualOutput.safeParse` fail, `parseRow` returned null, and those past runs silently vanished from history, metrics and Compare - the opposite of "an edit never changes past results". Read nested jsonb leniently (`z.unknown().nullish()`) and parse the field on its own with a fallback, or pin only an already-parsed value. Same edit: lock the parent row first (`select … for update`) before touching child rows, or it inverts the lock order of a cascading DELETE.
+**Evidence:** server/src/vendor/shared/contracts/eval-ci.ts, server/src/modules/eval/helpers.ts, server/src/modules/eval/repository.ts
+
+### 2026-10-12 - an eval IT test cannot count LLM calls through `MockLLMProvider.calls`
+`ScriptedLLM` wraps a fresh `MockLLMProvider` per call, so the instance the test holds never records anything and `llm.calls` stays empty; a "the LLM was not called" assertion on it passes vacuously. Count through the wrapper's own `callCount`.
+**Evidence:** server/test/eval.it.test.ts:58-70
+
+### 2026-10-12 - `config.rateLimit.groupId` does not make several routes share one counter
+The `groupId` only suffixes the rate-limit key. Each route with its own `config.rateLimit` gets its own `LocalStore` (`store.child(...)`), so three routes with the same `groupId` still count separately (5 + 5 + 5, not 15). A shared budget needs one store shared by the routes (a custom `child()` returning itself, registered in `app.ts`) or one encapsulated plugin; `groupId` alone is not enough.
+**Evidence:** server/node_modules/@fastify/rate-limit/index.js:190-196, server/node_modules/@fastify/rate-limit/store/LocalStore.js:46
+
+### 2026-10-12 - a Zod `.optional()` body schema answers 422 to a bodyless POST
+Fastify hands the validator `null` for a missing body, which `.optional()` rejects; use `.nullish()` and pass `req.body ?? undefined` to the service.
+**Evidence:** server/src/modules/eval/routes.ts (`POST /findings/:id/eval-case`)
+
 ### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
 `brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
 finding title/file, file headers) and never counted the system prompt, the injection guard, the
@@ -233,6 +249,33 @@ does, treat a conventions scan of a monorepo as source-only.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-11 — an eval "suite run" has no table: rows are grouped by `actual_output->>'run_id'`, and every late write is guarded on `status = 'pending'`
+
+`eval_runs` holds one row per (case, run); the run itself exists only as the `run_id` string
+inside each row's `actual_output`. Completing or erroring a row is an `UPDATE ... WHERE
+status = 'pending'`, so a row that was reconciled (or whose case was deleted) while the LLM call
+was in flight is never resurrected by the late result. Keep that guard on any new write path.
+For deterministic 409 / per-case-error tests, subclass the mock LLM and hold its call on a
+promise gate (`ScriptedLLM.gate`) instead of racing timers.
+**Evidence:** `server/src/modules/eval/repository.ts:155`, `server/test/eval.it.test.ts:57`
+
+### 2026-10-11 — seeded agents have no `agent_versions` row, so anything that records "the prompt this run used" must snapshot first
+
+`seed.ts` inserts agents directly; only `AgentsRepository.insert/update` write a version
+snapshot. An eval run therefore calls `ensureVersionSnapshot` before inserting its rows, or
+run compare has no prompt to show for the seeded Security Reviewer. It never overwrites an
+existing snapshot, so it is safe to call on every start.
+**Evidence:** `server/src/modules/agents/repository.ts:167`, `server/src/modules/eval/service.ts:191`
+
+### 2026-10-11 — the client `vendor/shared` mirror had silently drifted from the server copy at the base commit
+
+`client/src/vendor/shared/contracts/eval-ci.ts` differed from the server source before the
+eval work started and nothing noticed. `test/eval-contract-parity.test.ts` now asserts the two
+files are byte-identical (`eval-ci.ts`, `knowledge.ts`); when it fails, re-mirror from
+`server/src/vendor/shared`, never edit the client copy. Add a file to its list when a new
+contract is mirrored.
+**Evidence:** `server/test/eval-contract-parity.test.ts:12`
 
 ### 2026-10-11 - "Local-first" is not a trust boundary: a route that writes outside with a stored token needs its own caller gate
 The API listens on `0.0.0.0` with `LocalNoAuthProvider`, so any LAN host can call every route, and a DNS-rebinding page in the user's browser arrives from 127.0.0.1. Only the security review caught this on `POST /agents/:id/export-ci`, which commits a user-editable workflow with the user's GitHub token. For any new route that writes to GitHub or another outside system, add an `onRequest` guard in `routes.ts` that checks both the socket IP (`req.ip`, never `X-Forwarded-For`; there is no `trustProxy`) and a loopback `Host` allowlist, and say so in the spec as a requirement. `app.inject` sends `Host: localhost:80`, so existing tests pass; simulate other callers with `remoteAddress` and an explicit `headers.host`.
@@ -663,6 +706,10 @@ is not a promise that the run's side documents are on disk.
 Dated summaries of sessions worth remembering as a whole.
 
 <!-- newest first: session-notes -->
+
+### 2026-10-12 - the eval suite separates a precision regression from a recall regression, and also exposes a prompt edit that did nothing
+Security Reviewer (deepseek-v4-flash) on four hand-written cases (2 `must_find`, 2 `must_not_flag`), one suite run per version: v1 baseline 1.0/1.0; v2 = an appended "security is out of scope" line → no change at all (the long security prompt outweighed one trailing line); v3 = "flag every changed line" → precision 0.6, `benign-local-rename` pass→fail; v4 = prompt replaced by a performance-only reviewer → recall 0.5, `hardcoded-admin-password` pass→fail. Compare names the flipped case and the prompt diff each time. Appending a scope override to the end of a focused prompt is not a reliable way to change an agent's behaviour - measure it. One run per version is a demonstration, not a statistic.
+**Evidence:** docs/eval-regression-experiment.md (run ids b2999286, b45e6b18, 3b48ace4, 349031dc on the isolated `devdigest_l06` database)
 
 ## Open Questions
 

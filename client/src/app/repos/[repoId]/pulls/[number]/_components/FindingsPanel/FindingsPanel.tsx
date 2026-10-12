@@ -6,11 +6,18 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Toggle, EmptyState } from "@devdigest/ui";
 import type { FindingRecord, Severity } from "@devdigest/shared";
-import { FindingCard } from "../FindingCard";
+import { FindingCard, evalSourceFor } from "../FindingCard";
 import { useFindingAction } from "../../../../../../../lib/hooks/reviews";
+import { useEvalCaseDraft } from "../../../../../../../lib/hooks/eval";
+import { ApiError } from "../../../../../../../lib/api";
+import { caseErrorKey } from "../../../../../../../lib/eval-metrics";
+import { notify } from "../../../../../../../lib/toast";
+import { EvalCaseModal, type EvalCaseModalSource } from "../../../../../../../components/eval-ui/EvalCaseModal";
 import { KEY_TO_ACTION } from "./constants";
 import { visibleFindings } from "./helpers";
 import { s } from "./styles";
+
+type EvalModalState = { agentId: string; source: EvalCaseModalSource; opener: HTMLElement };
 
 export function FindingsPanel({
   findings,
@@ -28,6 +35,8 @@ export function FindingsPanel({
 }) {
   const t = useTranslations("prReview");
   const action = useFindingAction();
+  const evalDraft = useEvalCaseDraft();
+  const [evalModal, setEvalModal] = React.useState<EvalModalState | null>(null);
   const [hideLow, setHideLow] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(0);
 
@@ -45,8 +54,11 @@ export function FindingsPanel({
   // j/k navigation + a/d shortcuts on the focused finding (keyboard).
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if (evalModal !== null) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (target?.isContentEditable || target?.closest?.("[role=dialog]")) return;
       if (e.key === "j") setFocusIdx((i) => Math.min(i + 1, shown.length - 1));
       else if (e.key === "k") setFocusIdx((i) => Math.max(i - 1, 0));
       else if (KEY_TO_ACTION[e.key] && shown[focusIdx]) {
@@ -55,7 +67,7 @@ export function FindingsPanel({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [shown, focusIdx, action, prId]);
+  }, [shown, focusIdx, action, prId, evalModal]);
 
   return (
     <div>
@@ -80,10 +92,29 @@ export function FindingsPanel({
               repoFullName={repoFullName}
               headSha={headSha}
               onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
+              evalPending={evalDraft.isPending}
+              onEvalCase={(opener) =>
+                evalDraft.mutate(f.id, {
+                  onSuccess: (r) => {
+                    const source = evalSourceFor(f.id, r);
+                    if (source) setEvalModal({ agentId: r.agent_id, source, opener });
+                    else notify.error(t(caseErrorKey(undefined)));
+                  },
+                  onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
+                })
+              }
             />
           ))
         )}
       </div>
+      {evalModal && (
+        <EvalCaseModal
+          agentId={evalModal.agentId}
+          source={evalModal.source}
+          returnFocusTo={evalModal.opener}
+          onClose={() => setEvalModal(null)}
+        />
+      )}
     </div>
   );
 }

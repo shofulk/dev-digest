@@ -14,6 +14,7 @@ import smartDiff from './smart-diff/routes.js';
 import blast from './blast/routes.js';
 import projectContext from './project-context/routes.js';
 import brief from './brief/routes.js';
+import evals from './eval/routes.js';
 import ci from './ci/routes.js';
 
 /**
@@ -45,5 +46,6 @@ export const modules: Record<string, FastifyPluginAsync> = {
   blast,
   projectContext,
   brief,
+  evals,
   ci,
 };
