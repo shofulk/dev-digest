@@ -202,6 +202,7 @@ d('eval module (Testcontainers pg)', () => {
     line?: number;
     file?: string;
     workspaceId?: string;
+    rationale?: string;
   }): Promise<string> {
     const db = pg.handle.db;
     const [review] = await db
@@ -228,7 +229,7 @@ d('eval module (Testcontainers pg)', () => {
         severity: 'WARNING',
         category: 'test',
         title: `Original finding at line ${line}`,
-        rationale: 'The branch is never asserted.',
+        rationale: opts.rationale ?? 'The branch is never asserted.',
         confidence: 0.9,
         acceptedAt: opts.triage === 'accepted' ? new Date() : null,
         dismissedAt: opts.triage === 'dismissed' ? new Date() : null,
@@ -962,6 +963,19 @@ d('eval module (Testcontainers pg)', () => {
       );
       expect(await countOf(t.evalCases)).toBe(before);
       expect(llm.callCount).toBe(0);
+    });
+
+    it('AC42: a draft of a finding with an over-long rationale is clipped to 4096 and saves unedited (201)', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted', line: 3, rationale: 'r'.repeat(5000) });
+
+      const draft = (await app.inject({ url: `/findings/${findingId}/eval-case-draft` })).json().draft;
+      expect(draft.notes).toHaveLength(4096);
+
+      const save = await app.inject({ method: 'POST', url: `/findings/${findingId}/eval-case`, payload: draft });
+      expect(save.statusCode).toBe(201);
+      expect((await caseRow(save.json().id)).notes).toHaveLength(4096);
     });
 
     it('AC40: refuses to draft an untriaged finding (422 finding_not_triaged)', async () => {

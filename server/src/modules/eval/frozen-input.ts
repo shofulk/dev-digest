@@ -8,7 +8,14 @@ import type {
   UnifiedDiff,
 } from '@devdigest/shared';
 import { groundFindings } from '@devdigest/reviewer-core';
-import { CASE_NAME_MAX, CASE_NAME_SLUG_MAX, MAX_FROZEN_DIFF_BYTES } from './constants.js';
+import {
+  CASE_NAME_MAX,
+  CASE_NAME_SLUG_MAX,
+  CASE_NOTES_MAX,
+  CASE_PR_BODY_MAX,
+  CASE_PR_TITLE_MAX,
+  MAX_FROZEN_DIFF_BYTES,
+} from './constants.js';
 
 /**
  * Freezing a triaged finding into an eval case — ring 1, PURE. Everything a case
@@ -143,12 +150,13 @@ export function freezeCase(input: {
         source_finding_id: finding.id,
         source_review_id: input.reviewId,
         pr_number: pull.number,
-        pr_title: pull.title,
-        pr_body: pull.body,
+        // Clipped to the request caps, so a prefilled draft always saves unedited.
+        pr_title: pull.title.slice(0, CASE_PR_TITLE_MAX),
+        pr_body: pull.body === null ? null : pull.body.slice(0, CASE_PR_BODY_MAX),
         created_at: input.now.toISOString(),
       },
       expected_output: expectation,
-      notes: finding.rationale,
+      notes: finding.rationale.slice(0, CASE_NOTES_MAX),
     },
   };
 }

@@ -69,6 +69,25 @@ describe('case name (AC33: the bare title slug, via freezeCase)', () => {
   });
 });
 
+describe('freezeCase caps', () => {
+  it('clips notes, title and body to the request caps, keeps exact-cap text and a null body', () => {
+    const clipped = freeze({
+      finding: { ...finding, rationale: 'r'.repeat(5000) },
+      pull: { number: 7, title: 't'.repeat(301), body: 'b'.repeat(65537) },
+    });
+    expect(clipped.ok).toBe(true);
+    if (!clipped.ok) return;
+    expect(clipped.value.notes).toHaveLength(4096);
+    expect(clipped.value.input_meta).toMatchObject({ pr_title: 't'.repeat(300), pr_body: 'b'.repeat(65536) });
+
+    const exact = freeze({ finding: { ...finding, rationale: 'r'.repeat(4096) }, pull: { number: 7, title: 'ok', body: null } });
+    expect(exact.ok).toBe(true);
+    if (!exact.ok) return;
+    expect(exact.value.notes).toBe('r'.repeat(4096));
+    expect(exact.value.input_meta).toMatchObject({ pr_title: 'ok', pr_body: null });
+  });
+});
+
 describe('freezeCase', () => {
   it('freezes a grounded expectation with every field', () => {
     const r = freeze();

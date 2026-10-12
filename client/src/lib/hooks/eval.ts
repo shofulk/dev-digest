@@ -185,6 +185,8 @@ export function useUpdateEvalCase(agentId: string) {
       void qc.invalidateQueries({ queryKey: evalKeys.cases(agentId) });
       void qc.invalidateQueries({ queryKey: evalKeys.runs(agentId) });
       void qc.invalidateQueries({ queryKey: evalKeys.dashboard });
+      // Compare rows carry the live case name, so a rename must refresh them too.
+      void qc.invalidateQueries({ queryKey: ["eval", "compare"] });
     },
   });
 }

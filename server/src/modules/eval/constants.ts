@@ -26,6 +26,11 @@ export const CASE_NAME_SLUG_MAX = 60;
 /** Longest case name accepted from a form. */
 export const CASE_NAME_MAX = 120;
 
+/** Length caps of a case's free-text fields — the same numbers as `EvalCaseFields` in eval-ci.ts. */
+export const CASE_NOTES_MAX = 4096;
+export const CASE_PR_TITLE_MAX = 300;
+export const CASE_PR_BODY_MAX = 65536;
+
 /** A dry run gives up (and releases its lock) after this long. */
 export const EVAL_DRY_RUN_TIMEOUT_MS = 120_000;
 

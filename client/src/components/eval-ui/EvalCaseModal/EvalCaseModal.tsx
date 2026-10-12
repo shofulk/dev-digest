@@ -22,6 +22,8 @@ import { formatCost } from "@/lib/format-cost";
 import {
   CATEGORIES,
   EXPECTATION_TYPES,
+  NOTES_MAX,
+  PR_BODY_MAX,
   SEVERITIES,
   diffFilePaths,
   emptyForm,
@@ -317,6 +319,7 @@ export function EvalCaseModal({
                     rows={5}
                     style={s.textarea}
                     value={form.pr_body}
+                    maxLength={PR_BODY_MAX}
                     placeholder={t("caseEditor.bodyPlaceholder")}
                     onChange={(e) => set("pr_body", e.target.value)}
                   />
@@ -413,6 +416,7 @@ export function EvalCaseModal({
               rows={3}
               style={s.textarea}
               value={form.notes}
+              maxLength={NOTES_MAX}
               placeholder={t("caseEditor.notesPlaceholder")}
               onChange={(e) => set("notes", e.target.value)}
             />

@@ -185,6 +185,24 @@ describe("formFromCase", () => {
   });
 });
 
+describe("formFromCase caps", () => {
+  it("AC68: clips stored notes, title and body over the caps and keeps text exactly at the cap", () => {
+    const over = formFromCase(
+      evalCase({ notes: "n".repeat(5000), input_meta: { pr_title: "t".repeat(301), pr_body: "b".repeat(65537) } }),
+    );
+    expect(over.notes).toHaveLength(4096);
+    expect(over.pr_title).toHaveLength(300);
+    expect(over.pr_body).toHaveLength(65536);
+
+    const exact = formFromCase(
+      evalCase({ notes: "n".repeat(4096), input_meta: { pr_title: "t".repeat(300), pr_body: "b".repeat(65536) } }),
+    );
+    expect(exact.notes).toBe("n".repeat(4096));
+    expect(exact.pr_title).toBe("t".repeat(300));
+    expect(exact.pr_body).toBe("b".repeat(65536));
+  });
+});
+
 describe("formFromDraft", () => {
   const draft: EvalCaseDraft = {
     name: "original-finding-at-line-3",
@@ -219,6 +237,18 @@ describe("formFromDraft", () => {
       category: "test",
       title: "Original finding",
     });
+  });
+
+  it("AC68: clips over-long notes, title and body to the caps and keeps text exactly at the cap", () => {
+    const over = formFromDraft({ ...draft, notes: "n".repeat(5000), pr_title: "t".repeat(301), pr_body: "b".repeat(65537) });
+    expect(over.notes).toHaveLength(4096);
+    expect(over.pr_title).toHaveLength(300);
+    expect(over.pr_body).toHaveLength(65536);
+
+    const exact = formFromDraft({ ...draft, notes: "n".repeat(4096), pr_title: "t".repeat(300), pr_body: "b".repeat(65536) });
+    expect(exact.notes).toBe("n".repeat(4096));
+    expect(exact.pr_title).toBe("t".repeat(300));
+    expect(exact.pr_body).toBe("b".repeat(65536));
   });
 
   it("AC68: shows a null notes or PR text as an empty field", () => {

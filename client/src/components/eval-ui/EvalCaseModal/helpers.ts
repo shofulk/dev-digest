@@ -61,6 +61,14 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
+
+/** Length caps of the free-text fields — the same numbers as `EvalCaseFields` in eval-ci.ts. */
+export const NOTES_MAX = 4096;
+export const PR_TITLE_MAX = 300;
+export const PR_BODY_MAX = 65536;
+
+/** A case stored before the caps existed opens clipped, so Save never fails on an untouched field. */
+const clip = (v: string, max: number): string => v.slice(0, max);
 const lineText = (v: unknown): string => (typeof v === "number" && Number.isFinite(v) ? String(v) : "");
 
 function oneOf<T extends string>(allowed: readonly T[], v: unknown, fallback: T): T {
@@ -70,9 +78,9 @@ function oneOf<T extends string>(allowed: readonly T[], v: unknown, fallback: T)
 export function formFromDraft(d: EvalCaseDraft): CaseForm {
   return {
     name: d.name,
-    notes: d.notes ?? "",
-    pr_title: d.pr_title ?? "",
-    pr_body: d.pr_body ?? "",
+    notes: clip(d.notes ?? "", NOTES_MAX),
+    pr_title: clip(d.pr_title ?? "", PR_TITLE_MAX),
+    pr_body: clip(d.pr_body ?? "", PR_BODY_MAX),
     input_diff: d.input_diff,
     type: d.expectation.type,
     file: d.expectation.file,
@@ -90,9 +98,9 @@ export function formFromCase(c: EvalCase): CaseForm {
   const exp = asRecord(c.expected_output);
   return {
     name: c.name,
-    notes: c.notes ?? "",
-    pr_title: str(meta?.pr_title),
-    pr_body: str(meta?.pr_body),
+    notes: clip(c.notes ?? "", NOTES_MAX),
+    pr_title: clip(str(meta?.pr_title), PR_TITLE_MAX),
+    pr_body: clip(str(meta?.pr_body), PR_BODY_MAX),
     input_diff: c.input_diff,
     type: oneOf(EXPECTATION_TYPES, exp?.type, "must_find"),
     file: str(exp?.file),
