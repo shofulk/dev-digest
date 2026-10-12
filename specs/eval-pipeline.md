@@ -290,7 +290,8 @@ signed deltas.
 ## Out of scope
 
 - Skill-owned cases and with/without-skill ablation (`owner_kind = 'skill'` stays unused).
-- Hand-written cases / a case editor ("New eval case" modal), editing a case, running one case.
+- ~~Hand-written cases / a case editor, editing a case, running one case.~~ Moved into scope
+  by Amendment 2 (D11): `specs/eval-case-editor.spec.md` (SPEC-03), criteria AC-37 to AC-82.
 - The agent page's date-range filter ("30 days") — every run is shown.
 - An LLM judge of any kind; CI export of evals.
 - Running the suite on a different model than the agent's own.

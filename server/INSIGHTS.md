@@ -36,6 +36,22 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - a strict Zod field inside a jsonb read-back envelope drops the whole row when one pinned value is invalid
+`EvalRunActualOutput.expectation` was `EvalExpectation.nullish()`, while `EvalRepository.updateCase` pins the case's raw pre-edit `expected_output` into older `eval_runs` rows. One legacy expectation that no longer matched the schema made `EvalRunActualOutput.safeParse` fail, `parseRow` returned null, and those past runs silently vanished from history, metrics and Compare - the opposite of "an edit never changes past results". Read nested jsonb leniently (`z.unknown().nullish()`) and parse the field on its own with a fallback, or pin only an already-parsed value. Same edit: lock the parent row first (`select … for update`) before touching child rows, or it inverts the lock order of a cascading DELETE.
+**Evidence:** server/src/vendor/shared/contracts/eval-ci.ts, server/src/modules/eval/helpers.ts, server/src/modules/eval/repository.ts
+
+### 2026-10-12 - an eval IT test cannot count LLM calls through `MockLLMProvider.calls`
+`ScriptedLLM` wraps a fresh `MockLLMProvider` per call, so the instance the test holds never records anything and `llm.calls` stays empty; a "the LLM was not called" assertion on it passes vacuously. Count through the wrapper's own `callCount`.
+**Evidence:** server/test/eval.it.test.ts:58-70
+
+### 2026-10-12 - `config.rateLimit.groupId` does not make several routes share one counter
+The `groupId` only suffixes the rate-limit key. Each route with its own `config.rateLimit` gets its own `LocalStore` (`store.child(...)`), so three routes with the same `groupId` still count separately (5 + 5 + 5, not 15). A shared budget needs one store shared by the routes (a custom `child()` returning itself, registered in `app.ts`) or one encapsulated plugin; `groupId` alone is not enough.
+**Evidence:** server/node_modules/@fastify/rate-limit/index.js:190-196, server/node_modules/@fastify/rate-limit/store/LocalStore.js:46
+
+### 2026-10-12 - a Zod `.optional()` body schema answers 422 to a bodyless POST
+Fastify hands the validator `null` for a missing body, which `.optional()` rejects; use `.nullish()` and pass `req.body ?? undefined` to the service.
+**Evidence:** server/src/modules/eval/routes.ts (`POST /findings/:id/eval-case`)
+
 ### 2026-10-11 - a run cancelled while queued or mid-flight was un-cancelled by `RunBus.complete()`, and a second `buildApp` flips gated runs to `failed`
 `RunBus.complete()` used to delete the cancel flag, so a slot granted after cancel-then-complete saw `isCancelled() === false` and started the model; the flag now outlives `complete()` (tiny Set growth per process). `completeAgentRun` is status-guarded (`where status = 'running'`) so a late finish cannot overwrite `cancelled`. In tests, never call `buildApp` a second time while runs are held on a `ScriptedLLM.gate`: the boot reaper marks every `running` row `failed`.
 **Evidence:** server/src/platform/sse.ts:79
@@ -694,6 +710,10 @@ is not a promise that the run's side documents are on disk.
 Dated summaries of sessions worth remembering as a whole.
 
 <!-- newest first: session-notes -->
+
+### 2026-10-12 - the eval suite separates a precision regression from a recall regression, and also exposes a prompt edit that did nothing
+Security Reviewer (deepseek-v4-flash) on four hand-written cases (2 `must_find`, 2 `must_not_flag`), one suite run per version: v1 baseline 1.0/1.0; v2 = an appended "security is out of scope" line → no change at all (the long security prompt outweighed one trailing line); v3 = "flag every changed line" → precision 0.6, `benign-local-rename` pass→fail; v4 = prompt replaced by a performance-only reviewer → recall 0.5, `hardcoded-admin-password` pass→fail. Compare names the flipped case and the prompt diff each time. Appending a scope override to the end of a focused prompt is not a reliable way to change an agent's behaviour - measure it. One run per version is a demonstration, not a statistic.
+**Evidence:** docs/eval-regression-experiment.md (run ids b2999286, b45e6b18, 3b48ace4, 349031dc on the isolated `devdigest_l06` database)
 
 ## Open Questions
 

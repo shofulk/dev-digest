@@ -2,16 +2,30 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import React from "react";
 import { renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
-import type { EvalDashboardOverview } from "@devdigest/shared/contracts/eval-ci";
+import type {
+  EvalCaseFields,
+  EvalCaseFromFindingInput,
+  EvalCaseView,
+  EvalDashboardOverview,
+  EvalSuiteRun,
+} from "@devdigest/shared/contracts/eval-ci";
 import {
   EVAL_POLL_MS,
+  agentRunBusy,
+  casesPollInterval,
   dashboardPollInterval,
   evalKeys,
   pollInterval,
+  useCreateEvalCaseByHand,
+  useDryRunEvalCase,
+  useEvalCaseDraft,
   useEvalCases,
   useEvalDashboard,
   useEvalRuns,
   useRunAllEvals,
+  useSaveEvalCaseFromFinding,
+  useStartCaseRun,
+  useUpdateEvalCase,
 } from "./eval";
 
 interface Call {
@@ -164,6 +178,176 @@ describe("useEvalRuns refreshes the cases once a run settles", () => {
     const spy = vi.spyOn(qc, "invalidateQueries");
     const { result } = renderHook(() => useEvalRuns("a1"), { wrapper: makeWrapper(qc) });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
+
+/* ---- case editor (SPEC-03, rev 6) ---- */
+
+const caseView = (id: string, running: boolean): EvalCaseView => ({
+  case: {
+    id,
+    owner_kind: "agent",
+    owner_id: "a1",
+    name: `case ${id}`,
+    input_diff: "diff",
+    input_files: [],
+    input_meta: null,
+    expected_output: null,
+    notes: null,
+  },
+  expectation: null,
+  last_result: "never_run",
+  last_run_id: null,
+  last_matched: null,
+  running,
+});
+
+const suiteRun = (status: "running" | "completed"): EvalSuiteRun => ({
+  run_id: "r1",
+  agent_id: "a1",
+  status,
+  agent_version: 1,
+  started_at: "2026-10-12T10:00:00Z",
+  finished_at: null,
+  cases_total: 1,
+  cases_done: 0,
+  recall: null,
+  precision: null,
+  citation_accuracy: null,
+  traces_passed: 0,
+  traces_total: 1,
+  cases_errored: 0,
+  duration_ms: 0,
+  cost_usd: null,
+});
+
+describe("casesPollInterval", () => {
+  it("AC80: polls every EVAL_POLL_MS while any case is running and stops otherwise", () => {
+    expect(casesPollInterval([caseView("c1", false), caseView("c2", true)])).toBe(2000);
+    expect(casesPollInterval([caseView("c1", false)])).toBe(false);
+    expect(casesPollInterval([])).toBe(false);
+    expect(casesPollInterval(undefined)).toBe(false);
+  });
+});
+
+describe("agentRunBusy", () => {
+  it("AC81: is busy while a suite run is running", () => {
+    expect(agentRunBusy([suiteRun("running")], [caseView("c1", false)])).toBe(true);
+  });
+
+  it("AC81: is busy while a one-case run is running", () => {
+    expect(agentRunBusy([suiteRun("completed")], [caseView("c1", true)])).toBe(true);
+  });
+
+  it("AC81: is idle when neither is running, or when nothing has loaded", () => {
+    expect(agentRunBusy([suiteRun("completed")], [caseView("c1", false)])).toBe(false);
+    expect(agentRunBusy(undefined, undefined)).toBe(false);
+  });
+});
+
+describe("case editor hooks", () => {
+  const fields: EvalCaseFields = {
+    name: "hand-written",
+    notes: null,
+    pr_title: "T",
+    pr_body: "B",
+    input_diff: "diff --git a/a b/a",
+    expectation: {
+      type: "must_find",
+      file: "a",
+      start_line: 1,
+      end_line: 2,
+      severity: "WARNING",
+      category: "bug",
+      title: "t",
+    },
+  };
+  const body: EvalCaseFromFindingInput = {
+    name: "renamed",
+    notes: "n",
+    pr_title: "T",
+    pr_body: "B",
+    expectation: { file: "a", start_line: 1, end_line: 2, severity: "WARNING", category: "bug", title: "t" },
+  };
+  const client = () => new QueryClient({ defaultOptions: { mutations: { retry: false }, queries: { retry: false } } });
+
+  it("AC66: useEvalCaseDraft GETs the draft and resolves the answer, writing no cache", async () => {
+    const answer = { agent_id: "a1", existing_case: null, draft: null };
+    installFetch(answer);
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useEvalCaseDraft(), { wrapper: makeWrapper(qc) });
+
+    await expect(result.current.mutateAsync("f1")).resolves.toEqual(answer);
+    expect(calls).toContainEqual({ method: "GET", path: "/findings/f1/eval-case-draft", body: undefined });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("AC72: useSaveEvalCaseFromFinding POSTs the body to the finding and invalidates the eval root", async () => {
+    installFetch({ id: "c1", created: true });
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useSaveEvalCaseFromFinding(), { wrapper: makeWrapper(qc) });
+
+    await expect(result.current.mutateAsync({ findingId: "f1", body })).resolves.toEqual({ id: "c1", created: true });
+    expect(calls).toContainEqual({ method: "POST", path: "/findings/f1/eval-case", body });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.all });
+  });
+
+  it("AC74: useCreateEvalCaseByHand POSTs the fields to the agent and invalidates the eval root", async () => {
+    installFetch({ id: "c2" });
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useCreateEvalCaseByHand("a1"), { wrapper: makeWrapper(qc) });
+
+    await expect(result.current.mutateAsync(fields)).resolves.toEqual({ id: "c2" });
+    expect(calls).toContainEqual({ method: "POST", path: "/agents/a1/eval-cases", body: fields });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.all });
+  });
+
+  it("AC74: useUpdateEvalCase PUTs the fields to the case and invalidates only that agent's cases, runs, the dashboard and compare", async () => {
+    installFetch({ id: "c1" });
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useUpdateEvalCase("a1"), { wrapper: makeWrapper(qc) });
+
+    // Before the mutation settles nothing is invalidated.
+    expect(spy).not.toHaveBeenCalled();
+    await expect(result.current.mutateAsync({ caseId: "c1", fields })).resolves.toEqual({ id: "c1" });
+    expect(calls).toContainEqual({ method: "PUT", path: "/eval-cases/c1", body: fields });
+
+    expect(spy).toHaveBeenCalledTimes(4);
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.cases("a1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.runs("a1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.dashboard });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["eval", "compare"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: evalKeys.all });
+    // Another agent's cases are not in the invalidated set (scoped key).
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: evalKeys.cases("a2") });
+  });
+
+  it("AC80: useStartCaseRun POSTs to the case's runs and invalidates only that agent's cases", async () => {
+    installFetch({ run_id: "r1", cases_total: 1 });
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useStartCaseRun("a1"), { wrapper: makeWrapper(qc) });
+
+    await expect(result.current.mutateAsync("c1")).resolves.toEqual({ run_id: "r1", cases_total: 1 });
+    expect(calls).toContainEqual({ method: "POST", path: "/eval-cases/c1/runs", body: undefined });
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["eval", "cases", "a1"] });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: evalKeys.all });
+  });
+
+  it("AC84: useDryRunEvalCase POSTs the fields to the agent's dry-run route and invalidates nothing", async () => {
+    const result200 = { pass: true, findings: [], grounding_kept: 0, grounding_dropped: 0, cost_usd: null, duration_ms: 1, agent_version: 1 };
+    installFetch(result200);
+    const qc = client();
+    const spy = vi.spyOn(qc, "invalidateQueries");
+    const { result } = renderHook(() => useDryRunEvalCase("a1"), { wrapper: makeWrapper(qc) });
+
+    await expect(result.current.mutateAsync(fields)).resolves.toEqual(result200);
+    expect(calls).toContainEqual({ method: "POST", path: "/agents/a1/eval-cases/dry-run", body: fields });
     expect(spy).not.toHaveBeenCalled();
   });
 });

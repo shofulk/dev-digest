@@ -40,7 +40,7 @@ export function TabsView({
   pendingAgentId: string | null;
 }) {
   const t = useTranslations("multiAgentResults");
-  const { cardProps } = useFindingCardActions(prId);
+  const { cardProps, evalModal } = useFindingCardActions(prId);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Derived, not an effect: a selection that vanished falls back to the first agent.
   const column = columns.find((c) => c.agent_id === selectedId) ?? columns[0];
@@ -127,6 +127,7 @@ export function TabsView({
         ))}
         {status !== "running" && findings.length === 0 && <div style={s.empty}>{t("tabs.noFindings")}</div>}
       </div>
+      {evalModal}
     </div>
   );
 }

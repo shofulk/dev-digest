@@ -18,8 +18,6 @@
     "evalCaseMustFind": "as must_find",
     "evalCaseMustNotFlag": "as must_not_flag",
     "evalCaseNeedsTriage": "Accept or dismiss this finding first",
-    "evalCaseCreated": "Eval case created",
-    "evalCaseExists": "Already in the eval set",
     "evalCaseFailed": "Could not create the eval case",
     "evalCaseErrors": {
       "noAgent": "The agent that produced this finding no longer exists",

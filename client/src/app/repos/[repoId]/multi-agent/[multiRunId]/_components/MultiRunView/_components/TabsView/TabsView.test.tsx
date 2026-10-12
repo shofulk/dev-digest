@@ -237,6 +237,51 @@ describe("Tabs view", () => {
     expect(panel.getByRole("button", { name: /Turn into eval case/ })).toBeDisabled();
   });
 
+  it("AC-58: Turn into eval case loads the finding's draft and opens the eval-case editor on it", async () => {
+    const base = seed();
+    base.records.f1 = { ...base.records.f1!, dismissed_at: "2026-10-01T10:05:00Z" };
+    const { calls } = serve({
+      records: base.records,
+      columns: base.columns,
+      extra: {
+        "GET /findings/f1/eval-case-draft": {
+          status: 200,
+          body: {
+            agent_id: "a1",
+            existing_case: null,
+            draft: {
+              name: "Drafted SQL injection case",
+              input_diff: "diff --git a/src/a.ts b/src/a.ts",
+              input_files: ["src/a.ts"],
+              pr_title: "Harden auth",
+              pr_body: null,
+              expectation: {
+                type: "must_not_flag",
+                file: "src/a.ts",
+                start_line: 10,
+                end_line: 10,
+                severity: "CRITICAL",
+                category: "security",
+                title: "SQL injection",
+              },
+              notes: null,
+            },
+          },
+        },
+      },
+    });
+    renderView();
+
+    await expand("SQL injection");
+    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByDisplayValue("Drafted SQL injection case")).toBeInTheDocument();
+    expect(calls().map((c) => `${c.method} ${c.path}`)).toContain("GET /findings/f1/eval-case-draft");
+    // opening the editor stores nothing
+    expect(actionCalls(calls)).toEqual([]);
+  });
+
   it("AC-61: a failing eval-case action toasts the API message and leaves the card unchanged", async () => {
     const base = seed();
     base.records.f1 = { ...base.records.f1!, dismissed_at: "2026-10-01T10:05:00Z" };
@@ -244,7 +289,7 @@ describe("Tabs view", () => {
       records: base.records,
       columns: base.columns,
       extra: {
-        "POST /findings/f1/eval-case": {
+        "GET /findings/f1/eval-case-draft": {
           status: 422,
           body: { error: { code: "expectation_not_grounded", message: "Expectation cites no line of the diff" } },
         },
@@ -257,9 +302,11 @@ describe("Tabs view", () => {
 
     // the API's own message reaches the user (the card's translated hint may sit beside it)
     expect(await screen.findByText("Expectation cites no line of the diff")).toBeInTheDocument();
+    expect(calls().map((c) => `${c.method} ${c.path}`)).toContain("GET /findings/f1/eval-case-draft");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
-    // nothing about the finding changed: still dismissed, no accept/dismiss call
-    expect(actionCalls(calls).map((c) => c.path)).toEqual(["/findings/f1/eval-case"]);
+    // nothing about the finding changed: still dismissed, no accept/dismiss/eval-case POST
+    expect(actionCalls(calls)).toEqual([]);
     const panel = within(screen.getByRole("tabpanel"));
     expect(panel.getByText("dismissed")).toBeInTheDocument();
     expect(panel.queryByText("accepted")).not.toBeInTheDocument();

@@ -12,6 +12,7 @@ import type {
 } from "@devdigest/shared";
 import { configure } from "@testing-library/react";
 import common from "../../messages/en/common.json";
+import evalMessages from "../../messages/en/eval.json";
 import multiAgentResults from "../../messages/en/multiAgentResults.json";
 import prReview from "../../messages/en/prReview.json";
 import runs from "../../messages/en/runs.json";
@@ -39,7 +40,7 @@ export function ResultsTestProviders({ children }: { children: React.ReactNode }
   return (
     <QueryClientProvider client={qc}>
       <ToastProvider>
-        <NextIntlClientProvider locale="en" messages={{ common, multiAgentResults, prReview, runs }}>
+        <NextIntlClientProvider locale="en" messages={{ common, eval: evalMessages, multiAgentResults, prReview, runs }}>
           {children}
         </NextIntlClientProvider>
       </ToastProvider>

@@ -78,7 +78,7 @@ flowchart TB
   subgraph Agents["Agents"]
     agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId] · /agents/:id/versions[/:v][/restore]"]
     skills["skills<br/>/skills[/:id] · /skills/:id/(versions[/:v][/restore]|stats)<br/>/skills/import[/preview] · /skills/tokens"]
-    evals["eval<br/>/findings/:id/eval-case · /agents/:id/(eval-cases|eval-runs)<br/>/eval-cases/:id · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/runs/all"]
+    evals["eval<br/>/findings/:id/(eval-case|eval-case-draft) · /agents/:id/(eval-cases[/dry-run]|eval-runs)<br/>/eval-cases/:id[/runs] · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/runs/all"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
@@ -144,6 +144,9 @@ A case is a frozen single-file snapshot taken from a triaged finding, so later e
 A suite run is not a table: its rows are grouped by `actual_output.run_id`.
 `POST /eval/runs/all` starts one suite run per agent with cases through the same start path and refuses agents one by one.
 The client polls the run until every row has left `pending`.
+A case can also be written by hand or edited, and every run row stores the expectation it was scored with, so an edit never re-scores history.
+A one-case run (`POST /eval-cases/:id/runs`) is stored like a suite run but left out of history, the dashboard and compare; a dry run stores nothing.
+Suite, one-case and dry runs share one 5/min start budget (`plugins/rate-limit-store.ts` gives routes with the same `groupId` one counter); `POST /eval/runs/all` keeps its own.
 
 ## Environment
 

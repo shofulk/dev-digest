@@ -41,8 +41,9 @@ export function FindingCard({
   defaultExpanded?: boolean;
   onAction?: (action: FindingActionKind, reply?: string) => void;
   pending?: boolean;
-  /** Freeze this finding into an eval case; the parent owns the mutation. */
-  onEvalCase?: () => void;
+  /** Freeze this finding into an eval case; the parent owns the mutation and the modal.
+      Called with the clicked button so the parent can return focus to it on close. */
+  onEvalCase?: (opener: HTMLElement) => void;
   evalPending?: boolean;
   /** Save this finding as a repo learning; the parent owns the mutation. Button hidden when absent. */
   onLearn?: () => void;
@@ -133,7 +134,7 @@ export function FindingCard({
               icon="FlaskConical"
               disabled={evalType === null || evalPending}
               title={evalType === null ? t("finding.evalCaseNeedsTriage") : undefined}
-              onClick={() => onEvalCase?.()}
+              onClick={(e) => onEvalCase?.(e.currentTarget)}
             >
               {t("finding.evalCase")}
               {evalType && ` ${t(evalType === "must_find" ? "finding.evalCaseMustFind" : "finding.evalCaseMustNotFlag")}`}

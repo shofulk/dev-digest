@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest';
 import type { EvalCaseRow, EvalRunJoinedRow } from '../../db/rows.js';
 import {
   casesOnlyIn,
+  caseIsRunning,
   diffLines,
   EVAL_TASK_LINE,
   evalPrDescription,
+  isOneCaseSuite,
+  parseRow,
   sanitizeErrorReason,
   groupSuites,
   latestCompletedResult,
@@ -13,8 +16,10 @@ import {
   toCaseOutcome,
   toCaseView,
   toDashboard,
+  toScoredCase,
   type Suite,
 } from './helpers.js';
+import { scoreRun } from './scoring.js';
 
 const expectation = (file = 'src/a.ts') => ({
   type: 'must_find',
@@ -52,6 +57,11 @@ interface RowSpec {
   pass?: boolean | null;
   findings?: { file: string; start_line: number; end_line: number }[];
   finishedAt?: string;
+  /** The expectation stored in the row's `actual_output` (rev 6); absent = a legacy row. */
+  stored?: unknown;
+  /** The case's CURRENT `expected_output`, when it differs from the default fixture. */
+  caseExpected?: unknown;
+  oneCase?: boolean;
 }
 
 function runRow(s: RowSpec): EvalRunJoinedRow {
@@ -62,15 +72,19 @@ function runRow(s: RowSpec): EvalRunJoinedRow {
     category: 'bug' as const,
     title: 'f',
   }));
+  const rev6 = {
+    ...(s.stored !== undefined ? { expectation: s.stored } : {}),
+    ...(s.oneCase ? { one_case: true } : {}),
+  };
   return {
-    evalCase: caseRow(s.caseId),
+    evalCase: caseRow(s.caseId, s.caseExpected !== undefined ? { expectedOutput: s.caseExpected } : {}),
     run: {
       id: `row-${s.runId}-${s.caseId}`,
       caseId: s.caseId,
       ranAt: new Date(s.at),
       actualOutput:
         status === 'pending'
-          ? { run_id: s.runId, agent_id: s.agentId ?? 'agent-1', agent_version: s.version ?? 1, status }
+          ? { run_id: s.runId, agent_id: s.agentId ?? 'agent-1', agent_version: s.version ?? 1, status, ...rev6 }
           : {
               run_id: s.runId,
               agent_id: s.agentId ?? 'agent-1',
@@ -80,6 +94,7 @@ function runRow(s: RowSpec): EvalRunJoinedRow {
               grounding_kept: findings.length,
               grounding_dropped: 0,
               finished_at: s.finishedAt ?? s.at,
+              ...rev6,
             },
       pass: status === 'completed' ? (s.pass ?? true) : null,
       recall: null,
@@ -324,5 +339,161 @@ describe('runAllRefusal', () => {
 
   it('AC35: a missing code (a non-AppError) maps to start_failed', () => {
     expect(runAllRefusal(undefined)).toBe('start_failed');
+  });
+});
+
+// ------------------------------------------------------------------ rev 6 (T35)
+
+/** An expectation on src/a.ts covering `lo..hi`. */
+const expectationAt = (lo: number, hi: number) => ({ ...expectation(), start_line: lo, end_line: hi });
+const FINDING_AT_3 = [{ file: 'src/a.ts', start_line: 3, end_line: 3 }];
+
+describe('AC52: a row is scored against the expectation stored in it', () => {
+  // The stored expectation (1-5) and the case's current one (40-45) disagree on purpose,
+  // so a re-read of the case scores the same finding differently.
+  const suiteOf = () =>
+    groupSuites([
+      runRow({
+        caseId: '1',
+        runId: 'r',
+        at: '2026-10-01T10:00:00Z',
+        findings: FINDING_AT_3,
+        stored: expectationAt(1, 5),
+        caseExpected: expectationAt(40, 45),
+      }),
+    ]);
+
+  it('AC52: toCaseOutcome marks the finding matched against the stored expectation', () => {
+    const outcome = toCaseOutcome(suiteOf()[0]!.rows[0]!);
+    expect(outcome.findings.map((f) => f.matched)).toEqual([true]);
+    expect(outcome.expectation).toMatchObject({ start_line: 1, end_line: 5 });
+  });
+
+  it('AC52: latestCompletedResult counts the finding as matched', () => {
+    expect(latestCompletedResult('1', suiteOf())).toEqual({ result: 'pass', run_id: 'r', matched: 1 });
+  });
+
+  it('AC52: scoreRun over toScoredCase counts the finding as a TP, not an FP', () => {
+    const run = scoreRun(suiteOf()[0]!.rows.map(toScoredCase));
+    expect(run).toMatchObject({ recall: 1, precision: 1 });
+  });
+
+  it('AC52: a legacy row with no stored expectation still uses the case’s current one (guard)', () => {
+    const [suite] = groupSuites([
+      runRow({
+        caseId: '1',
+        runId: 'r',
+        at: '2026-10-01T10:00:00Z',
+        findings: FINDING_AT_3,
+        caseExpected: expectationAt(1, 5),
+      }),
+    ]);
+    expect(toCaseOutcome(suite!.rows[0]!).findings.map((f) => f.matched)).toEqual([true]);
+    expect(latestCompletedResult('1', [suite!]).matched).toBe(1);
+  });
+});
+
+describe('AC57: the latest result is row-level', () => {
+  it('AC57: takes a completed row of a newer suite that is still running', () => {
+    const suites = groupSuites([
+      runRow({ caseId: '1', runId: 'older', at: '2026-10-01T10:00:00Z', pass: false }),
+      runRow({ caseId: '1', runId: 'newer', at: '2026-10-02T10:00:00Z', pass: true }),
+      runRow({ caseId: '2', runId: 'newer', at: '2026-10-02T10:00:00Z', status: 'pending' }),
+    ]);
+    expect(suites.find((s) => s.summary.run_id === 'newer')!.summary.status).toBe('running');
+    expect(latestCompletedResult('1', suites)).toEqual({ result: 'pass', run_id: 'newer', matched: 0 });
+  });
+
+  it('AC57: still skips the case’s own pending row and falls back to the older completed one', () => {
+    const suites = groupSuites([
+      runRow({ caseId: '1', runId: 'older', at: '2026-10-01T10:00:00Z', pass: false }),
+      runRow({ caseId: '1', runId: 'newer', at: '2026-10-02T10:00:00Z', status: 'pending' }),
+    ]);
+    expect(latestCompletedResult('1', suites)).toMatchObject({ result: 'fail', run_id: 'older' });
+  });
+
+  it('AC57: a one-case run counts like a suite run', () => {
+    const suites = groupSuites([
+      runRow({ caseId: '1', runId: 'suite', at: '2026-10-01T10:00:00Z', pass: false }),
+      runRow({ caseId: '1', runId: 'single', at: '2026-10-02T10:00:00Z', pass: true, oneCase: true }),
+    ]);
+    expect(latestCompletedResult('1', suites)).toMatchObject({ result: 'pass', run_id: 'single' });
+  });
+});
+
+describe('AC55: isOneCaseSuite', () => {
+  it('AC55: is true for a suite whose rows are all one_case', () => {
+    const [suite] = groupSuites([
+      runRow({ caseId: '1', runId: 'r', at: '2026-10-01T10:00:00Z', oneCase: true }),
+    ]);
+    expect(isOneCaseSuite(suite!)).toBe(true);
+  });
+
+  it('AC55: is false for a normal suite, and for one with a row that is not one_case', () => {
+    const [normal] = groupSuites([
+      runRow({ caseId: '1', runId: 'n', at: '2026-10-01T10:00:00Z' }),
+      runRow({ caseId: '2', runId: 'n', at: '2026-10-01T10:00:00Z' }),
+    ]);
+    expect(isOneCaseSuite(normal!)).toBe(false);
+    const [mixed] = groupSuites([
+      runRow({ caseId: '1', runId: 'm', at: '2026-10-01T10:00:00Z', oneCase: true }),
+      runRow({ caseId: '2', runId: 'm', at: '2026-10-01T10:00:00Z' }),
+    ]);
+    expect(isOneCaseSuite(mixed!)).toBe(false);
+  });
+});
+
+describe('AC58: caseIsRunning', () => {
+  it('AC58: is true when the case has a pending row', () => {
+    const rows = [
+      runRow({ caseId: '1', runId: 'a', at: '2026-10-01T10:00:00Z' }),
+      runRow({ caseId: '1', runId: 'b', at: '2026-10-02T10:00:00Z', status: 'pending' }),
+    ];
+    expect(caseIsRunning('1', rows)).toBe(true);
+  });
+
+  it('AC58: is false when only another case has a pending row', () => {
+    expect(caseIsRunning('1', [runRow({ caseId: '2', runId: 'a', at: '2026-10-01T10:00:00Z', status: 'pending' })])).toBe(
+      false,
+    );
+  });
+
+  it('AC58: is false for completed and errored rows', () => {
+    const rows = [
+      runRow({ caseId: '1', runId: 'a', at: '2026-10-01T10:00:00Z' }),
+      runRow({ caseId: '1', runId: 'b', at: '2026-10-02T10:00:00Z', status: 'errored' }),
+    ];
+    expect(caseIsRunning('1', rows)).toBe(false);
+  });
+});
+
+describe('lenient read-back: an unparseable stored expectation degrades, it does not drop the row', () => {
+  // Stored (1-5) and current (40-45) disagree, so which one scored the finding at line 3 is observable.
+  const rowWith = (stored: unknown, caseExpected: unknown = expectationAt(1, 5)) =>
+    runRow({ caseId: '1', runId: 'r', at: '2026-10-01T10:00:00Z', findings: FINDING_AT_3, stored, caseExpected });
+  const { file: _file, ...noFile } = expectationAt(40, 45);
+
+  it('keeps a row whose stored expectation is invalid and scores it against the case’s current one; a valid stored one still wins', () => {
+    // Invalid category and a missing file: both used to drop the row from every suite.
+    for (const bad of [{ ...expectationAt(40, 45), category: 'docs' }, noFile, 'garbage', null]) {
+      const parsed = parseRow(rowWith(bad));
+      expect(parsed).not.toBeNull();
+      expect(parsed!.expectation).toMatchObject({ start_line: 1, end_line: 5 });
+      const suites = groupSuites([rowWith(bad)]);
+      expect(suites).toHaveLength(1);
+      expect(toCaseOutcome(suites[0]!.rows[0]!).findings.map((f) => f.matched)).toEqual([true]);
+      expect(scoreRun(suites[0]!.rows.map(toScoredCase))).toMatchObject({ recall: 1, precision: 1 });
+    }
+
+    // A valid stored expectation wins over the current one: line 3 is outside 40-45.
+    const stored = parseRow(rowWith(expectationAt(1, 5), expectationAt(40, 45)));
+    expect(stored!.expectation).toMatchObject({ start_line: 1, end_line: 5 });
+    const [suite] = groupSuites([rowWith(expectationAt(40, 45), expectationAt(1, 5))]);
+    expect(toCaseOutcome(suite!.rows[0]!).findings.map((f) => f.matched)).toEqual([false]);
+
+    // Rejected input: when neither side parses the row is kept with no expectation, not crashed on.
+    const neither = parseRow(rowWith({ ...expectationAt(1, 5), category: 'docs' }, { type: 'bogus' }));
+    expect(neither).not.toBeNull();
+    expect(neither!.expectation).toBeNull();
   });
 });

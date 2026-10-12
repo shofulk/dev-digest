@@ -85,6 +85,8 @@ describe("FindingCard eval-case action", () => {
     renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onEvalCase={onEvalCase} />);
     fireEvent.click(evalButton());
     expect(onEvalCase).toHaveBeenCalledTimes(1);
+    // The parent gets the clicked button, to return focus to it when the modal closes.
+    expect(onEvalCase).toHaveBeenCalledWith(evalButton());
     cleanup();
     renderWithIntl(<FindingCard f={ACCEPTED} defaultExpanded onEvalCase={onEvalCase} evalPending />);
     expect(evalButton()).toBeDisabled();

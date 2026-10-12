@@ -15,6 +15,10 @@
     { "cmd": ["wait", "--url", "/agents/"], "label": "agent editor route reached" },
     { "cmd": ["find", "role", "button", "click", "--name", "Evals"], "label": "switch to the Evals tab" },
     { "cmd": ["wait", "--url", "tab=evals"], "label": "tab is reflected in the URL" },
-    { "cmd": ["wait", "--text", "Run all evals"], "label": "the Run all evals button renders" }
+    { "cmd": ["wait", "--text", "Run all evals"], "label": "the Run all evals button renders" },
+    { "cmd": ["find", "role", "button", "click", "--name", "New eval case"], "label": "open the new eval case modal" },
+    { "cmd": ["wait", "--text", "Run case"], "label": "the modal footer renders its Run case button (never clicked)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Cancel"], "label": "cancel the untouched modal, nothing is saved" },
+    { "cmd": ["wait", "--text", "Run all evals"], "label": "back on the Evals tab" }
   ]
 }

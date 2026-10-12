@@ -175,6 +175,8 @@ export function DiffTab({
       ) : (
         <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} focus={viewerFocus} />
       )}
+
+      {actions.evalModal}
     </section>
   );
 }
