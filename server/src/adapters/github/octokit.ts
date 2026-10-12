@@ -11,8 +11,12 @@ import type {
   OpenPrPayload,
   CommitFilesPayload,
   IssueMeta,
+  WorkflowRunMeta,
+  ArtifactRead,
 } from '@devdigest/shared';
+import { unzipSync } from 'fflate';
 import { withRetry, withTimeout } from '../../platform/resilience.js';
+import { GitHubAccessError } from '../../platform/errors.js';
 
 const TIMEOUT = 30_000;
 
@@ -20,6 +24,36 @@ function mapStatus(state: string, merged: boolean | undefined): PrStatus {
   if (merged) return 'merged';
   if (state === 'closed') return 'closed';
   return 'open';
+}
+
+/**
+ * A 403/404 from a write call means the token lacks a permission (GitHub answers 404 for a
+ * repo it hides). Anything else is returned unchanged for the caller to throw.
+ */
+export function toGitHubError(err: unknown): unknown {
+  const status = (err as { status?: number } | null)?.status;
+  if (status === 403 || status === 404) {
+    return new GitHubAccessError(err instanceof Error ? err.message : `GitHub answered ${status}`);
+  }
+  return err;
+}
+
+/**
+ * Read one entry out of an Actions artifact zip. The cap is checked on the compressed bytes,
+ * and an entry whose declared size is over the cap is filtered out before it is inflated.
+ */
+export function readResultFromZip(bytes: Uint8Array, entry: string, maxBytes: number): ArtifactRead {
+  if (bytes.byteLength > maxBytes) return { status: 'too_large' };
+  try {
+    const files = unzipSync(bytes, {
+      filter: (f) => f.name === entry && f.originalSize <= maxBytes,
+    });
+    const data = files[entry];
+    if (!data) return { status: 'invalid' };
+    return { status: 'ok', text: new TextDecoder().decode(data) };
+  } catch {
+    return { status: 'invalid' };
+  }
 }
 
 /**
@@ -243,7 +277,8 @@ export class OctokitGitHubClient implements GitHubClient {
   }
 
   async openPullRequest(repo: RepoRef, payload: OpenPrPayload): Promise<{ url: string }> {
-    return withRetry(() =>
+    return this.guarded(() =>
+      withRetry(() =>
       withTimeout(
         (async () => {
           const res = await this.octokit.rest.pulls.create({
@@ -258,6 +293,7 @@ export class OctokitGitHubClient implements GitHubClient {
         })(),
         TIMEOUT,
       ),
+      ),
     );
   }
 
@@ -265,7 +301,8 @@ export class OctokitGitHubClient implements GitHubClient {
     repo: RepoRef,
     payload: CommitFilesPayload,
   ): Promise<{ branch: string }> {
-    return withRetry(() =>
+    return this.guarded(() =>
+      withRetry(() =>
       withTimeout(
         (async () => {
           const owner = repo.owner;
@@ -326,11 +363,13 @@ export class OctokitGitHubClient implements GitHubClient {
         })(),
         TIMEOUT,
       ),
+      ),
     );
   }
 
   async findOpenPr(repo: RepoRef, branch: string): Promise<{ url: string } | null> {
-    return withRetry(() =>
+    return this.guarded(() =>
+      withRetry(() =>
       withTimeout(
         (async () => {
           const res = await this.octokit.rest.pulls.list({
@@ -345,7 +384,113 @@ export class OctokitGitHubClient implements GitHubClient {
         })(),
         TIMEOUT,
       ),
+      ),
     );
+  }
+
+  async resetBranch(repo: RepoRef, branch: string, toBranch: string): Promise<{ sha: string }> {
+    return this.guarded(() =>
+      withRetry(() =>
+        withTimeout(
+          (async () => {
+            const g = this.octokit.rest.git;
+            const { data: base } = await g.getRef({
+              owner: repo.owner,
+              repo: repo.name,
+              ref: `heads/${toBranch}`,
+            });
+            const sha = base.object.sha;
+            try {
+              await g.updateRef({
+                owner: repo.owner,
+                repo: repo.name,
+                ref: `heads/${branch}`,
+                sha,
+                force: true,
+              });
+            } catch (err) {
+              if ((err as { status?: number }).status !== 422 && (err as { status?: number }).status !== 404) throw err;
+              await g.createRef({
+                owner: repo.owner,
+                repo: repo.name,
+                ref: `refs/heads/${branch}`,
+                sha,
+              });
+            }
+            return { sha };
+          })(),
+          TIMEOUT,
+        ),
+      ),
+    );
+  }
+
+  async listWorkflowRuns(
+    repo: RepoRef,
+    workflowFile: string,
+    opts: { createdSince: string; perPage: number },
+  ): Promise<WorkflowRunMeta[]> {
+    return withRetry(() =>
+      withTimeout(
+        (async () => {
+          const res = await this.octokit.rest.actions.listWorkflowRuns({
+            owner: repo.owner,
+            repo: repo.name,
+            workflow_id: workflowFile,
+            status: 'completed',
+            created: `>=${opts.createdSince}`,
+            per_page: opts.perPage,
+          });
+          return res.data.workflow_runs.map((r) => ({
+            id: r.id,
+            htmlUrl: r.html_url,
+            headRepoFullName: r.head_repository?.full_name ?? null,
+            prNumber: r.pull_requests?.[0]?.number ?? null,
+            createdAt: r.created_at,
+          }));
+        })(),
+        TIMEOUT,
+      ),
+    );
+  }
+
+  async downloadRunArtifact(
+    repo: RepoRef,
+    runId: number,
+    opts: { name: string; entry: string; maxBytes: number },
+  ): Promise<ArtifactRead> {
+    return withRetry(() =>
+      withTimeout(
+        (async () => {
+          const list = await this.octokit.rest.actions.listWorkflowRunArtifacts({
+            owner: repo.owner,
+            repo: repo.name,
+            run_id: runId,
+            per_page: 100,
+          });
+          const art = list.data.artifacts.find((a) => a.name === opts.name);
+          if (!art || art.expired) return { status: 'missing' as const };
+          if (art.size_in_bytes > opts.maxBytes) return { status: 'too_large' as const };
+          const dl = await this.octokit.rest.actions.downloadArtifact({
+            owner: repo.owner,
+            repo: repo.name,
+            artifact_id: art.id,
+            archive_format: 'zip',
+          });
+          return readResultFromZip(new Uint8Array(dl.data as ArrayBuffer), opts.entry, opts.maxBytes);
+        })(),
+        TIMEOUT,
+      ),
+    );
+  }
+
+  /** Run a GitHub write and turn a 403/404 into `GitHubAccessError` (after retries). */
+  private async guarded<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      throw toGitHubError(err);
+    }
   }
 
   async getIssue(repo: RepoRef, n: number): Promise<IssueMeta> {

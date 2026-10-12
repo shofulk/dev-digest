@@ -24,7 +24,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PACKAGES = ["server", "client", "reviewer-core", "e2e", "mcp-server"];
+const PACKAGES = ["server", "client", "reviewer-core", "e2e", "mcp-server", "ci"];
 const ROLE_RE = new RegExp(`^(?:(?:${PACKAGES.join("|")})/\\.spec|specs)/[^/]+\\.spec\\.md$`);
 const SECTIONS_BASE = [
   "Problem and user",
@@ -233,7 +233,7 @@ export function lint(content, rel, root) {
 }
 
 function acSentence(t, rel) {
-  const m = t.match(/^\[([a-z-]+)\]\s*(.*)$/s);
+  const m = t.match(/^\[([a-z0-9-]+)\]\s*(.*)$/s);
   const tag = m && PACKAGES.includes(m[1]) ? m[1] : null;
   return { tag, sentence: (m ? m[2] : t).trim() };
 }
@@ -370,6 +370,9 @@ function selfTest() {
   run("AC without Verify", R, sub("above the Description. *Verify: e2e*", "above the Description."), false);
   run("AC with bad Verify", R, sub("above the Description. *Verify: e2e*", "above the Description. *Verify: browser*"), false);
   run("AC without package tag in specs/", R, sub("**AC-1** [client] WHEN", "**AC-1** WHEN"), false);
+  run("[ci] tag is accepted in specs/", R, sub("**AC-1** [client] WHEN", "**AC-1** [ci] WHEN"), true);
+  run("[e2e] tag is accepted in specs/", R, sub("**AC-1** [client] WHEN", "**AC-1** [e2e] WHEN"), true);
+  run("unknown [foo] tag still errors", R, sub("**AC-1** [client] WHEN", "**AC-1** [foo] WHEN"), false);
   run("AC vague word", R, sub("show\n  the intent card above", "quickly show\n  the intent card above"), false);
   run("vague word inside quotes is fine", R, sub("\"No intent derived yet\"", "\"Easy start\""), true);
   run("duplicate AC ID", R, sub("**AC-2** [client]", "**AC-1** [client]"), false);

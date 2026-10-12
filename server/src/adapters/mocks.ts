@@ -17,6 +17,9 @@ import type {
   OpenPrPayload,
   CommitFilesPayload,
   IssueMeta,
+  WorkflowRunMeta,
+  ArtifactRead,
+  RunnerBundleSource,
   GitClient,
   CloneOptions,
   UnifiedDiff,
@@ -37,6 +40,7 @@ import type {
   ProjectDocsListResult,
 } from '@devdigest/shared';
 import { parseUnifiedDiff } from './git/diff-parser.js';
+import { GitHubAccessError } from '../platform/errors.js';
 
 /**
  * Deterministic MOCK adapters for tests/dev — NO real network. Each mirrors the
@@ -143,12 +147,33 @@ export interface MockGitHubOptions {
   /** Closing-issue refs returned by listClosingIssueRefs, keyed by PR number.
    *  `'never'` never resolves — a slow-fetch probe fixture, same as `files`. */
   closingRefs?: Record<number, { owner: string; name: string; number: number }[] | 'never'>;
+  /** The open PR `findOpenPr` reports (overrides the one derived from `openedPrs`). */
+  openPr?: { url: string } | null;
+  /** Completed workflow runs per `owner/name`; `'error'` makes the listing throw. */
+  workflowRuns?: Record<string, WorkflowRunMeta[] | 'error'>;
+  /** Artifact reads keyed by GitHub run id (missing key → `{ status: 'missing' }`). */
+  artifacts?: Record<number, ArtifactRead>;
+  /** Make a write-path method fail as a permission refusal or a generic GitHub error. */
+  failOn?: Partial<
+    Record<'findOpenPr' | 'resetBranch' | 'commitFiles' | 'openPullRequest', 'permission' | 'error'>
+  >;
 }
 
 export class MockGitHubClient implements GitHubClient {
   public posted: { n: number; review: GitHubReviewPayload }[] = [];
   public openedPrs: OpenPrPayload[] = [];
-  public committed: CommitFilesPayload[] = [];
+  public committed: (CommitFilesPayload & { repo: RepoRef })[] = [];
+  public resets: { repo: RepoRef; branch: string; toBranch: string }[] = [];
+  public listRunsCalls: {
+    repo: RepoRef;
+    workflowFile: string;
+    opts: { createdSince: string; perPage: number };
+  }[] = [];
+  public artifactCalls: {
+    repo: RepoRef;
+    runId: number;
+    opts: { name: string; entry: string; maxBytes: number };
+  }[] = [];
   public createdComments: CreateReviewCommentInput[] = [];
 
   constructor(private opts: MockGitHubOptions = {}) {}
@@ -233,17 +258,53 @@ export class MockGitHubClient implements GitHubClient {
     };
   }
 
+  private maybeFail(method: 'findOpenPr' | 'resetBranch' | 'commitFiles' | 'openPullRequest'): void {
+    const mode = this.opts.failOn?.[method];
+    if (mode === 'permission') throw new GitHubAccessError(`mock: ${method} refused`);
+    if (mode === 'error') throw new Error(`mock: ${method} failed`);
+  }
+
   async openPullRequest(_repo: RepoRef, payload: OpenPrPayload): Promise<{ url: string }> {
+    this.maybeFail('openPullRequest');
     this.openedPrs.push(payload);
     return { url: 'https://github.com/mock/mock/pull/1' };
   }
 
-  async commitFiles(_repo: RepoRef, payload: CommitFilesPayload): Promise<{ branch: string }> {
-    this.committed.push(payload);
+  async commitFiles(repo: RepoRef, payload: CommitFilesPayload): Promise<{ branch: string }> {
+    this.maybeFail('commitFiles');
+    this.committed.push({ ...payload, repo });
     return { branch: payload.branch };
   }
 
+  async resetBranch(repo: RepoRef, branch: string, toBranch: string): Promise<{ sha: string }> {
+    this.maybeFail('resetBranch');
+    this.resets.push({ repo, branch, toBranch });
+    return { sha: 'mock-base-sha' };
+  }
+
+  async listWorkflowRuns(
+    repo: RepoRef,
+    workflowFile: string,
+    opts: { createdSince: string; perPage: number },
+  ): Promise<WorkflowRunMeta[]> {
+    this.listRunsCalls.push({ repo, workflowFile, opts });
+    const runs = this.opts.workflowRuns?.[`${repo.owner}/${repo.name}`] ?? [];
+    if (runs === 'error') throw new Error('mock: listWorkflowRuns failed');
+    return runs;
+  }
+
+  async downloadRunArtifact(
+    repo: RepoRef,
+    runId: number,
+    opts: { name: string; entry: string; maxBytes: number },
+  ): Promise<ArtifactRead> {
+    this.artifactCalls.push({ repo, runId, opts });
+    return this.opts.artifacts?.[runId] ?? { status: 'missing' };
+  }
+
   async findOpenPr(_repo: RepoRef, branch: string): Promise<{ url: string } | null> {
+    this.maybeFail('findOpenPr');
+    if (this.opts.openPr !== undefined) return this.opts.openPr;
     const pr = this.openedPrs.find((p) => p.head === branch);
     return pr ? { url: 'https://github.com/mock/mock/pull/1' } : null;
   }
@@ -280,6 +341,17 @@ export class MockGitHubClient implements GitHubClient {
     const fixture = this.opts.closingRefs?.[n];
     if (fixture === 'never') return new Promise<never>(() => {}); // slow-fetch probe fixture
     return fixture ?? [];
+  }
+}
+
+// ---------- Mock runner bundle ----------
+/** `RunnerBundleSource` over a fixed string; `null` simulates "not built yet". */
+export class MockRunnerBundleSource implements RunnerBundleSource {
+  constructor(private readonly contents: string | null = '// mock runner\n') {}
+  async read(): Promise<{ contents: string; sizeBytes: number } | null> {
+    return this.contents === null
+      ? null
+      : { contents: this.contents, sizeBytes: Buffer.byteLength(this.contents, 'utf-8') };
   }
 }
 

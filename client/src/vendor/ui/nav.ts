@@ -46,6 +46,10 @@ export const NAV: NavGroup[] = [
       },
     ],
   },
+  {
+    section: "GLOBAL",
+    items: [{ key: "ci-runs", label: "CI Runs", icon: "Workflow", href: "/ci-runs" }],
+  },
 ];
 
 export const SETTINGS_ITEM: NavItemDef = {

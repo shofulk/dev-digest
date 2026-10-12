@@ -713,9 +713,9 @@ bash_eval() {
       return false;
     }
 
-    // Only the four package names -- --dir/-C pointing anywhere else (server/clones/<x>,
+    // Only the five package names -- --dir/-C pointing anywhere else (server/clones/<x>,
     // an absolute path) is a way to run an untrusted or production script (C3, S15).
-    const ALLOWED_DIRS = new Set(["server", "client", "reviewer-core", "e2e"]);
+    const ALLOWED_DIRS = new Set(["server", "client", "reviewer-core", "e2e", "ci"]);
 
     // Every --dir/-C value in the segment, in order.
     function dirValues(rawArgs) {
@@ -1105,7 +1105,7 @@ bash_eval() {
           }
           const dirs = dirValues(rawArgs);
           if (dirs.some(function (d) { return !ALLOWED_DIRS.has(d); })) {
-            return "`--dir`/`-C` must be exactly one of server, client, reviewer-core, e2e";
+            return "`--dir`/`-C` must be exactly one of server, client, reviewer-core, e2e, ci";
           }
           // P5: each --dir/-C value must resolve to exactly rootReal/<name> — a symlink
           // planted at that name (client -> server/clones/x) is judged on where it
@@ -1263,11 +1263,15 @@ write_eval() {
       "{server,client,reviewer-core}/**/__tests__/**",
       "{server,client,reviewer-core}/**/__snapshots__/**",
       "e2e/specs/*.flow.json",
+      "ci/**/*.test.ts",
+      "ci/test/**",
     ];
     const TESTS_DENY = [
       "*/src/vendor/**",
       "server/clones/**",
       "node_modules/**",
+      "ci/node_modules/**",
+      "ci/dist/**",
       "server/src/adapters/mocks.ts",
       "server/src/db/seed.ts",
       "e2e/lib/**",
@@ -1281,7 +1285,7 @@ write_eval() {
     function testsPolicy(rel) {
       if (matchAny(rel, TESTS_DENY)) return "`" + rel + "` matches a denied path (vendor mirror, server/clones, mocks.ts, seed.ts, e2e harness, config or lockfile)";
       if (matchAny(rel, TESTS_ALLOW)) return null;
-      return "`" + rel + "` is outside the test-writer scope (*.test.{ts,tsx} in server/client/reviewer-core, server/test/**, reviewer-core/test/**, client/src/test/**, e2e/specs/*.flow.json)";
+      return "`" + rel + "` is outside the test-writer scope (*.test.{ts,tsx} in server/client/reviewer-core, *.test.ts in ci, server/test/**, reviewer-core/test/**, ci/test/**, client/src/test/**, e2e/specs/*.flow.json)";
     }
 
     const DOCS_ALLOW = [
@@ -1486,7 +1490,7 @@ self_test() {
     return 1
   fi
   trap 'rm -rf "$BASE_FIXTURE"' RETURN
-  mkdir -p "$BASE_FIXTURE/server/clones/x" "$BASE_FIXTURE/client" "$BASE_FIXTURE/reviewer-core" \
+  mkdir -p "$BASE_FIXTURE/server/clones/x" "$BASE_FIXTURE/client" "$BASE_FIXTURE/reviewer-core" "$BASE_FIXTURE/ci/test" \
     "$BASE_FIXTURE/e2e" "$BASE_FIXTURE/.claude/hooks" "$BASE_FIXTURE/.claude/scripts" "$BASE_FIXTURE/docs/plans" \
     "$BASE_FIXTURE/.harness/retros" "$BASE_FIXTURE/.harness/analysis"
   FIXTURE_ROOT="$BASE_FIXTURE"
@@ -1821,6 +1825,42 @@ EOF"                                                                          1
   runb "T12 dir tmp"               checks "pnpm --dir /tmp test"                                                              0
   runb "T12 dir two values"        checks "pnpm --dir server --dir /tmp test"                                                 0
   runb "T12 e2e test blocked"      checks "pnpm --dir e2e test"                                                               0
+
+  # -- CI-PKG: the ci package is a fifth allowed --dir, tests only under ci/test and ci/**/*.test.ts --
+  runj "CI-PKG test allowed"            checks "pnpm --dir ci test"                                        "$FIXTURE_ROOT" 0
+  runj "CI-PKG typecheck allowed"       checks "pnpm --dir ci typecheck"                                   "$FIXTURE_ROOT" 0
+  runj "CI-PKG lint allowed"            checks "pnpm --dir ci lint"                                        "$FIXTURE_ROOT" 0
+  runj "CI-PKG exec vitest run allowed" checks "pnpm --dir ci exec vitest run test/run.test.ts"            "$FIXTURE_ROOT" 0
+  runw "CI-PKG write test/run.test.ts"  tests "ci/test/run.test.ts"                                        1
+  runw "CI-PKG write src/x.test.ts"     tests "ci/src/x.test.ts"                                           1
+  runj "CI-PKG build blocked"           checks "pnpm --dir ci build"                                       "$FIXTURE_ROOT" 2
+  runj "CI-PKG exec node dist blocked"  checks "pnpm --dir ci exec node dist/index.js"                     "$FIXTURE_ROOT" 2
+  runj "CI-PKG dir traversal blocked"   checks "pnpm --dir ci/../server test"                              "$FIXTURE_ROOT" 2
+  runj "CI-PKG dir dot-slash blocked"   checks "pnpm --dir ./ci test"                                      "$FIXTURE_ROOT" 2
+  runj "CI-PKG test path escape blocked" checks "pnpm --dir ci test ../server/test/x.test.ts"              "$FIXTURE_ROOT" 2
+  runw "CI-PKG write src/run.ts blocked"      tests "ci/src/run.ts"        0
+  runw "CI-PKG write build.mjs blocked"       tests "ci/build.mjs"         0
+  runw "CI-PKG write package.json blocked"    tests "ci/package.json"      0
+  runw "CI-PKG write vitest.config blocked"   tests "ci/vitest.config.ts"  0
+  runw "CI-PKG write dist blocked"            tests "ci/dist/index.js"     0
+  runrd "CI-PKG full dispatch node_modules test blocked" tests Write "ci/node_modules/x/a.test.ts" none "x" none 2
+  runrd "CI-PKG full dispatch dist test blocked"         tests Write "ci/dist/a.test.ts"           none "x" none 2
+  runrd "CI-PKG full dispatch pnpm-store node_modules test blocked" tests Write "ci/node_modules/.pnpm/a/test/b.ts" none "x" none 2
+  runrd "CI-PKG full dispatch nested dist test blocked"  tests Write "ci/dist/sub/b.test.ts"       none "x" none 2
+  runrd "CI-PKG full dispatch test/run.test.ts allowed (control)" tests Write "ci/test/run.test.ts" none "x" none 0
+  # ci symlinked into server/clones: judged on where it points
+  CIPKG_FAKE_ROOT=$(mktemp -d) || CIPKG_FAKE_ROOT=""
+  if [ -n "$CIPKG_FAKE_ROOT" ]; then
+    mkdir -p "$CIPKG_FAKE_ROOT/server/clones/x"
+    ln -s server/clones/x "$CIPKG_FAKE_ROOT/ci"
+    FIXTURE_ROOT="$CIPKG_FAKE_ROOT"
+    runj "CI-PKG dir ci symlinked into clones blocked" checks "pnpm --dir ci test" "$FIXTURE_ROOT" 2
+    rm -rf "$CIPKG_FAKE_ROOT"
+    FIXTURE_ROOT="$BASE_FIXTURE"
+  else
+    printf 'FAIL  %s (could not create the fake project root)\n' "CI-PKG dir ci symlinked into clones blocked"
+    fails=$((fails + 1))
+  fi
 
   # -- T12: (b) vitest/depcruise/eslint config flags rejected --
   runb "T12 vitest --config"       checks "pnpm --dir server exec vitest run --config src/db/seed.ts"                        0

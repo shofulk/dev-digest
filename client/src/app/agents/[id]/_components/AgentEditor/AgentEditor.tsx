@@ -1,5 +1,5 @@
 /* AgentEditor — agent config editor (Config) and its linked skills (Skills). Tab state
-   lives in ?tab=; later lessons add Evals/Stats/CI. */
+   lives in ?tab=; later lessons add Evals/Stats. */
 "use client";
 
 import React from "react";
@@ -9,6 +9,7 @@ import type { Agent } from "@devdigest/shared";
 import { ConfigTab } from "./_components/ConfigTab";
 import { SkillsTab } from "./_components/SkillsTab";
 import { ContextTab } from "./_components/ContextTab";
+import { CiTab } from "./_components/CiTab";
 import { TABS } from "./constants";
 import { s } from "./styles";
 
@@ -25,6 +26,8 @@ export function AgentEditor({ agent, tab, onTab }: { agent: Agent; tab: string; 
           <SkillsTab agentId={agent.id} />
         ) : tab === "context" ? (
           <ContextTab agent={agent} />
+        ) : tab === "ci" ? (
+          <CiTab agent={agent} />
         ) : (
           <ConfigTab agent={agent} />
         )}

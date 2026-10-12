@@ -1,0 +1,62 @@
+# CI runner suite — @devdigest/ci.
+# Typecheck + lint + hermetic vitest, then builds the one-file runner and checks its size
+# (NFR-2: at most 5,242,880 bytes). reviewer-core, the shared contracts and the diff parser
+# are bundled into the runner, so a change to any of them re-runs this job.
+name: ci-runner
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ci/**'
+      - 'reviewer-core/**'
+      - 'server/src/vendor/shared/**'
+      - 'server/src/adapters/git/diff-parser.ts'
+      - '.github/workflows/ci-runner.yml'
+  pull_request:
+    paths:
+      - 'ci/**'
+      - 'reviewer-core/**'
+      - 'server/src/vendor/shared/**'
+      - 'server/src/adapters/git/diff-parser.ts'
+      - '.github/workflows/ci-runner.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-runner-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ci/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      - run: pnpm test
+
+      - run: pnpm build
+
+      - name: Runner size (NFR-2)
+        run: test "$(wc -c < dist/index.js)" -le 5242880

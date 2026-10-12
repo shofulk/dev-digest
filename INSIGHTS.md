@@ -134,6 +134,16 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-11 — `ci/` bundles `reviewer-core` and the shared contracts, which have no `node_modules` of their own to lean on
+`ci/` imports `../reviewer-core/src` and `server/src/vendor/shared` by path alias; those
+sources `import 'zod'`/`'openai'`, and resolution walks up from *their* directory, so it finds
+nothing in a CI job that installs only `ci/`. The scaffold therefore pins `zod`, `openai`,
+`yaml` to `ci/node_modules` three times: tsconfig `paths`, a vitest regex `alias`, and an
+esbuild `onResolve` plugin in `ci/build.mjs`. Drop any one and that tool alone fails
+(`Cannot find module 'zod'`). Separately, `pnpm --dir server typecheck` needs
+`npm ci` in `reviewer-core/` for the same reason.
+**Evidence:** `ci/build.mjs:15`
+
 ### 2026-10-03 — a format check on a freezing state transition must run before the write, not after
 `spec-creator` may edit a spec only while it is `draft` (`scope-guard.sh write spec` reads
 the status from disk). A PostToolUse lint alone would let the `draft → approved` Edit land

@@ -90,7 +90,7 @@
     "githubActionStatus": "A4 owns",
     "githubActionDesc": "Run agents inside CI on every PR",
     "installInRepo": "Install in a repo",
-    "ciNote": "Export-to-CI wizard + CI Runs view are owned by A4.",
+    "ciNote": "Export an agent to CI from its CI tab; its results appear under CI Runs.",
     "pluginExportTitle": "Plugin Export",
     "pluginExportDesc": "Skills, agents, learnings, eval cases as a portable package",
     "exportWorkspace": "Export workspace as plugin",

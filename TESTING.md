@@ -32,8 +32,9 @@ If a test wouldn't catch a class of regression we care about, we don't write it.
 | reviewer-core | `reviewer-core/` | unit (engine) | vitest | `reviewer-core.yml` | no |
 | e2e web | `e2e/` | browser e2e (deterministic) | agent-browser + `run.ts` | `e2e-web.yml` | yes (stack) |
 | mcp-server | `mcp-server/` | unit (hermetic MCP client + fake API) | vitest | `mcp-server.yml` | no |
+| ci | `ci/` | unit (hermetic runner, injected deps) | vitest | `ci-runner.yml` | no |
 
-`client`, `server-unit`, `reviewer-core`, `e2e web` and `mcp-server` also run `lint`
+`client`, `server-unit`, `reviewer-core`, `e2e web`, `mcp-server` and `ci` also run `lint`
 (ESLint 10, flat config) before their tests. `server-integration` does not: `server-unit`
 already lints the same package, and this lane exists to spend its time on Postgres. See
 **Lint** below.

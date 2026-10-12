@@ -88,7 +88,7 @@ run() {
           if [ $docker = 1 ]; then cmds+=("it|pnpm --dir server exec vitest run .it.test")
           else rows+=("| \`pnpm --dir server exec vitest run .it.test\` | skipped | Docker not available |"); fi
         fi ;;
-      client|reviewer-core|mcp-server) cmds+=("unit|pnpm --dir $p test") ;;
+      client|reviewer-core|mcp-server|ci) cmds+=("unit|pnpm --dir $p test") ;;
       e2e) ;; # flows need a running stack: manual acceptance, never here
     esac
     for c in "${cmds[@]}"; do

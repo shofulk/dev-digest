@@ -8,6 +8,7 @@ import type {
   Embedder,
   LLMProvider,
   ProjectDocsSource,
+  RunnerBundleSource,
 } from '@devdigest/shared';
 import type { AppConfig } from './config.js';
 import type { Db } from '../db/client.js';
@@ -32,6 +33,8 @@ import { RepoIntelService } from '../modules/repo-intel/service.js';
 import { RepoRepository } from '../modules/repos/repository.js';
 import { type DepGraph, DepCruiseGraph } from '../adapters/depgraph/index.js';
 import { type Tokenizer, TiktokenTokenizer } from '../adapters/tokenizer/index.js';
+import { fileURLToPath } from 'node:url';
+import { FsRunnerBundleSource } from '../adapters/ci-runner/index.js';
 import { FsProjectDocsSource } from '../adapters/project-docs/index.js';
 import { ProjectContextRepository } from '../modules/project-context/repository.js';
 import type { AgentSkillsPort } from '../modules/_shared/agent-skills.js';
@@ -60,6 +63,8 @@ export interface ContainerOverrides {
   tokenizer?: Tokenizer;
   /** Project Context file search/read (server-controlled checkout, not the network). */
   projectDocs?: ProjectDocsSource;
+  /** The built CI runner file — tests inject a `MockRunnerBundleSource`. */
+  runnerBundle?: RunnerBundleSource;
 }
 
 /** The secret each LLM provider is built from — see `Container.buildLlm`. */
@@ -94,6 +99,7 @@ export class Container {
   private _tokenizer?: Tokenizer;
   private _priceBook?: PriceBook;
   private _projectDocs?: ProjectDocsSource;
+  private _runnerBundle?: RunnerBundleSource;
   private _projectContextRepo?: ProjectContextRepository;
   private _agentSkills?: AgentSkillsPort;
 
@@ -165,6 +171,15 @@ export class Container {
     if (this.overrides.projectDocs) return this.overrides.projectDocs;
     this._projectDocs ??= new FsProjectDocsSource();
     return this._projectDocs;
+  }
+
+  /** The built CI runner (`ci/dist/index.js`), read on each CI preview / export. */
+  get runnerBundle(): RunnerBundleSource {
+    if (this.overrides.runnerBundle) return this.overrides.runnerBundle;
+    this._runnerBundle ??= new FsRunnerBundleSource(
+      fileURLToPath(new URL('../../../ci/dist/index.js', import.meta.url)),
+    );
+    return this._runnerBundle;
   }
 
   /** The `agents`/`skills` `context_docs` columns — Project Context attachments. */
