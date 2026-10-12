@@ -25,6 +25,8 @@ export interface RunTraceDrawerProps {
   findings?: FindingRecord[];
   /** When true, the drawer defaults to the live log and streams SSE. */
   running?: boolean;
+  /** Load state of `findings` (default `ready`): pending / error must not read as "no findings". */
+  findingsState?: "pending" | "error" | "ready";
   onClose: () => void;
 }
 
@@ -39,6 +41,7 @@ export default function RunTraceDrawer({
   prNumber,
   findings = [],
   running = false,
+  findingsState = "ready",
   onClose,
 }: RunTraceDrawerProps) {
   const t = useTranslations("runs");
@@ -94,7 +97,7 @@ export default function RunTraceDrawer({
               {stillRunning ? t("drawer.tracePending") : t("drawer.loadingTrace")}
             </div>
           ) : trace ? (
-            <TraceBody trace={trace} findings={findings} />
+            <TraceBody trace={trace} findings={findings} findingsState={findingsState} />
           ) : (
             <div style={s.emptyNote}>{t("drawer.noTrace")}</div>
           )

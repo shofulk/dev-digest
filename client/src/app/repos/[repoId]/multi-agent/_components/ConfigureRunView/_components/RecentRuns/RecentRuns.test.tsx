@@ -281,4 +281,21 @@ describe("RecentRuns", () => {
     expect(screen.getByText("#20 · PR 20")).toBeInTheDocument();
     expect(screen.queryByText("#21 · PR 21")).toBeNull();
   });
+
+  it("C17 / AC-90: the agent count is pluralised, so one agent reads '1 agent' and four read '4 agents'", async () => {
+    routes[LIST] = {
+      status: 200,
+      body: [
+        runSummary({ id: "m1", pr_number: 1, pr_title: "Solo", agent_count: 1 }),
+        runSummary({ id: "m4", pr_number: 4, pr_title: "Quartet", agent_count: 4 }),
+      ],
+    };
+    setup();
+    await screen.findByText("#1 · Solo");
+
+    const [solo, quartet] = rowsOf();
+    expect(within(solo!).getByText("1 agent")).toBeInTheDocument();
+    expect(within(quartet!).getByText("4 agents")).toBeInTheDocument();
+    expect(screen.queryByText("1 agents")).not.toBeInTheDocument();
+  });
 });

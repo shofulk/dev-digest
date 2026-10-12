@@ -7,7 +7,7 @@ import { Icon } from "@devdigest/ui";
 import type { Agent, RunEstimate } from "@devdigest/shared";
 import { agentLook } from "@/lib/agent-look";
 import { estimateFor } from "@/lib/multi-agent-estimates";
-import { formatCost } from "@/lib/format-cost";
+import { NO_COST, formatCost } from "@/lib/format-cost";
 import { s } from "./styles";
 
 export function AgentCard({
@@ -47,7 +47,7 @@ export function AgentCard({
       </div>
       <span className="mono" style={s.estimate}>
         {hasEstimate
-          ? t("configure.estimate", { seconds: seconds ?? "—", cost: formatCost(costUsd) })
+          ? t("configure.estimate", { time: seconds == null ? NO_COST : t("configure.seconds", { seconds }), cost: formatCost(costUsd) })
           : t("configure.noEstimate")}
       </span>
     </div>

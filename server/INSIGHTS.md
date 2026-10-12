@@ -254,6 +254,10 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-12 - a check-then-insert at READ COMMITTED needs `pg_advisory_xact_lock`, not a schema change
+Two concurrent retries of the same multi-run agent both read "no active run", then both inserted, because READ COMMITTED does not stop the second reader seeing the same empty set. When the invariant has no unique index to lean on (and adding one is a migration), take `pg_advisory_xact_lock(hashtext(<key>))` as the first statement of the ring-2 repository transaction, then check and insert inside it. The lock releases on commit, needs no schema change, and keeps the transaction out of ring 1 (the service gets a plain result and maps it to `AppError`s).
+**Evidence:** server/src/modules/reviews/repository/multi-run.repo.ts, server/src/modules/reviews/multi-run-service.ts
+
 ### 2026-10-11 — an eval "suite run" has no table: rows are grouped by `actual_output->>'run_id'`, and every late write is guarded on `status = 'pending'`
 
 `eval_runs` holds one row per (case, run); the run itself exists only as the `run_id` string
@@ -532,6 +536,10 @@ rather than parses, so only `test/contracts.test.ts` and future validation actua
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-12 - a plain `Promise.all` of 5 injects does not reproduce a check-then-insert race; a temporary `pg_sleep` trigger does
+Five concurrent `app.inject` retries each finished their check and insert in a few ms on a local Postgres, so the unlocked code passed the race test. To make the window deterministic, create a `BEFORE INSERT ON agent_runs` trigger that calls `pg_sleep(0.2)` inside the test, fire the concurrent injects, and drop the trigger in `finally` (a leaked trigger slows every later `*.it.test.ts` in the same container). Prove the test is not vacuous by running it once against the unlocked code: it must fail.
+**Evidence:** server/test/multi-agent.it.test.ts
 
 ### 2026-10-11 - `p-queue` `pending`/`size` lag behind a burst of `add()` calls, so "is a slot free?" needs its own counter
 `AgentRunLimiter.hasFreeSlot()` counts tasks submitted and not yet settled itself (incremented synchronously in `run`), because the queue only starts a task a tick later: a scheduler asking `hasFreeSlot()` per job in one loop would otherwise see "free" for jobs 3..N (the "waiting for a slot" line would never fire).

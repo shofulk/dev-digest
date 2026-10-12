@@ -210,6 +210,11 @@ export class ReviewRepository {
     return multiRunRepo.runsForMultiRun(this.db, workspaceId, multiRunId);
   }
 
+  /** Atomic retry guard + insert of a new run for one agent of a multi-run. */
+  createRetryRun(v: Parameters<typeof multiRunRepo.createRetryRun>[1]): Promise<multiRunRepo.RetryRunResult> {
+    return multiRunRepo.createRetryRun(this.db, v);
+  }
+
   /** Reviews + findings for the given run ids (workspace-scoped through `reviews`). */
   reviewsWithFindingsForRuns(workspaceId: string, runIds: string[]) {
     return multiRunRepo.reviewsWithFindingsForRuns(this.db, workspaceId, runIds);

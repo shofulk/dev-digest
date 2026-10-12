@@ -34,6 +34,7 @@ vi.mock("@/lib/repo-context", () => ({
     reposLoaded: true,
   }),
   useRepoNotFound: () => false,
+  RepoProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/components/app-shell", () => ({

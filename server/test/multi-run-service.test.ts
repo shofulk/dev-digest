@@ -3,7 +3,7 @@ import { RunBus } from '../src/platform/sse.js';
 import { AppError, NotFoundError } from '../src/platform/errors.js';
 
 /**
- * SPEC-03 — `MultiRunService` use cases and `learnFromFinding`, hermetic: a
+ * SPEC-05 — `MultiRunService` use cases and `learnFromFinding`, hermetic: a
  * fake repo/agents pair stands in for Postgres and the executor is stubbed, so
  * nothing runs a model. Also pins NFR-6 (log lines carry ids/counts/statuses/
  * durations only).
@@ -66,6 +66,7 @@ function build(over: { repo?: Record<string, unknown>; agents?: Record<string, u
     findLearnings: vi.fn(async () => new Set<string>()),
     cancelRunIfRunning: vi.fn(async () => true),
     createAgentRun: vi.fn(async () => 'run-retry'),
+    createRetryRun: vi.fn(async (): Promise<unknown> => ({ status: 'created', runId: 'run-retry' })),
     estimateRunRows: vi.fn(async () => []),
     ...over.repo,
   };
@@ -161,29 +162,81 @@ describe('MultiRunService.cancel', () => {
   });
 });
 
-describe('MultiRunService.retry', () => {
-  const runsFor = (status: string) => vi.fn(async () => [{ run: { id: 'old', agentId: A1, status }, agentName: 'x' }]);
-
-  it('re-runs one agent inside the same multi-run', async () => {
-    const { svc, repo } = build({ repo: { runsForMultiRun: runsFor('failed') } });
-    const res = await svc.retry(WS, MULTI, A1);
-    expect(res).toEqual({ run_id: 'run-retry' });
-    expect(repo.createAgentRun).toHaveBeenCalledWith(expect.objectContaining({ agentId: A1, multiAgentRunId: MULTI }));
-    expect(executeRuns).toHaveBeenCalledTimes(1);
+describe('MultiRunService.retry (D15)', () => {
+  it('D15: hands the whole decision to repo.createRetryRun once, and never reads runs or creates a run itself', async () => {
+    const { svc, repo } = build();
+    await svc.retry(WS, MULTI, A1);
+    expect(repo.createRetryRun).toHaveBeenCalledTimes(1);
+    expect(repo.createRetryRun).toHaveBeenCalledWith({
+      workspaceId: WS,
+      multiRunId: MULTI,
+      agentId: A1,
+      prId: PR,
+      provider: 'openai',
+      model: 'm',
+    });
+    expect(repo.createAgentRun).not.toHaveBeenCalled();
+    expect(repo.runsForMultiRun).not.toHaveBeenCalled();
   });
 
-  it('a still-running agent -> 409 agent_running; no run is created', async () => {
-    const { svc, repo } = build({ repo: { runsForMultiRun: runsFor('running') } });
+  it('D15: { status: running } -> AppError 409 agent_running and the executor is not called', async () => {
+    const { svc } = build({ repo: { createRetryRun: vi.fn(async () => ({ status: 'running' })) } });
     const err = await svc.retry(WS, MULTI, A1).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppError);
     expect((err as AppError).statusCode).toBe(409);
-    expect(repo.createAgentRun).not.toHaveBeenCalled();
+    expect((err as AppError).code).toBe('agent_running');
+    expect(executeRuns).not.toHaveBeenCalled();
   });
 
-  it('unknown multi-run, unknown agent, or an agent without a run -> NotFoundError', async () => {
-    await expect(build({ repo: { getMultiRun: vi.fn(async () => undefined) } }).svc.retry(WS, MULTI, A1)).rejects.toBeInstanceOf(NotFoundError);
-    await expect(build().svc.retry(WS, MULTI, 'nope')).rejects.toBeInstanceOf(NotFoundError);
-    await expect(build().svc.retry(WS, MULTI, A1)).rejects.toBeInstanceOf(NotFoundError);
+  it('D15: { status: no_run } -> NotFoundError and the executor is not called', async () => {
+    const { svc } = build({ repo: { createRetryRun: vi.fn(async () => ({ status: 'no_run' })) } });
+    await expect(svc.retry(WS, MULTI, A1)).rejects.toBeInstanceOf(NotFoundError);
+    expect(executeRuns).not.toHaveBeenCalled();
+  });
+
+  it('D15: { status: created, runId } -> answers { run_id } and hands exactly one job to the executor', async () => {
+    const { svc } = build({ repo: { createRetryRun: vi.fn(async () => ({ status: 'created', runId: 'run-new' })) } });
+    const res = await svc.retry(WS, MULTI, A1);
+    expect(res).toEqual({ run_id: 'run-new' });
+    expect(executeRuns).toHaveBeenCalledTimes(1);
+    const jobs = executeRuns.mock.calls[0]![3] as { runId: string }[];
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.runId).toBe('run-new');
+  });
+
+  it('AC-45: unknown multi-run or unknown agent -> NotFoundError and no retry is attempted', async () => {
+    const gone = build({ repo: { getMultiRun: vi.fn(async () => undefined) } });
+    await expect(gone.svc.retry(WS, MULTI, A1)).rejects.toBeInstanceOf(NotFoundError);
+    const noAgent = build();
+    await expect(noAgent.svc.retry(WS, MULTI, 'nope')).rejects.toBeInstanceOf(NotFoundError);
+    expect(gone.repo.createRetryRun).not.toHaveBeenCalled();
+    expect(noAgent.repo.createRetryRun).not.toHaveBeenCalled();
+  });
+});
+
+describe('MultiRunService.assertRunsInMultiRun (D17)', () => {
+  const R1 = '44444444-4444-4444-8444-444444444441';
+  const R2 = '44444444-4444-4444-8444-444444444442';
+  const OTHER = '44444444-4444-4444-8444-444444444449';
+  const two = () =>
+    vi.fn(async () => [
+      { run: { id: R1, agentId: A1, status: 'done' }, agentName: 'x' },
+      { run: { id: R2, agentId: A2, status: 'done' }, agentName: 'y' },
+    ]);
+
+  it('D17: resolves when every id is a run of the multi-run', async () => {
+    const { svc } = build({ repo: { runsForMultiRun: two() } });
+    await expect(svc.assertRunsInMultiRun(WS, MULTI, [R1, R2])).resolves.toBeUndefined();
+  });
+
+  it('D17: an id that is not a run of the multi-run rejects with NotFoundError', async () => {
+    const { svc } = build({ repo: { runsForMultiRun: two() } });
+    await expect(svc.assertRunsInMultiRun(WS, MULTI, [R1, OTHER])).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('D17: an unknown multi-run rejects with NotFoundError', async () => {
+    const { svc } = build({ repo: { getMultiRun: vi.fn(async () => undefined), runsForMultiRun: two() } });
+    await expect(svc.assertRunsInMultiRun(WS, MULTI, [R1])).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 

@@ -6,7 +6,7 @@ import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine, toReviewIntent } from './helpers.js';
+import { errorText, taskLine, toReviewIntent } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
 import { scheduleAgentRuns, type SlotLimiter } from './scheduling.js';
 import { formatSkillBlock, skillsForPrompt, type AgentSkillSet } from '../_shared/agent-skills.js';
@@ -128,7 +128,7 @@ export class ReviewRunExecutor {
         kind: 'tool',
       });
     } catch (err) {
-      const message = (err as Error).message;
+      const message = errorText(err);
       const reason = message.startsWith('PR diff unavailable') ? message : `Failed to load PR diff: ${message}`;
       runLog.error(reason);
       await failAll(reason);
@@ -193,7 +193,7 @@ export class ReviewRunExecutor {
         { kind: 'tool' },
       );
     } catch (err) {
-      runLog.info(`intent unavailable: ${(err as Error).message} — reviewing without intent`);
+      runLog.info(`intent unavailable: ${errorText(err)} — reviewing without intent`);
       return undefined;
     }
   }
@@ -399,7 +399,7 @@ export class ReviewRunExecutor {
       // run (and WHY it failed) is visible on the UI after a reload.
       const cancelled = err instanceof RunCancelledError;
       const status = cancelled ? 'cancelled' : 'failed';
-      const msg = cancelled ? 'Cancelled by user' : (err as Error).message;
+      const msg = cancelled ? 'Cancelled by user' : errorText(err);
       runLog.error(cancelled ? 'Run cancelled by user' : `Run failed: ${msg}`);
       await this.repo
         .completeAgentRun(runId, {
@@ -474,7 +474,7 @@ export class ReviewRunExecutor {
       rows = await this.container.repoIntel.getCallerSignatures(repoId, changedFiles, 10);
     } catch (err) {
       // Never let an enrichment break the run — surface only as a Live Log info.
-      runLog.info(`callers digest: repoIntel failed — ${(err as Error).message}`);
+      runLog.info(`callers digest: repoIntel failed — ${errorText(err)}`);
       return undefined;
     }
     if (rows.length === 0) return undefined;
@@ -509,7 +509,7 @@ export class ReviewRunExecutor {
       runLog.info(`repo map: ${map.tokens} token(s) attached (cached=${map.cached})`);
       return map.text;
     } catch (err) {
-      runLog.info(`repo map: repoIntel failed — ${(err as Error).message}`);
+      runLog.info(`repo map: repoIntel failed — ${errorText(err)}`);
       return undefined;
     }
   }

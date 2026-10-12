@@ -2,7 +2,7 @@ import * as t from '../../src/db/schema.js';
 import type { PgFixture } from './pg.js';
 
 /**
- * Seed helpers for the SPEC-04 run-list suites. Unlike `seedMultiRun`
+ * Seed helpers for the SPEC-06 run-list suites. Unlike `seedMultiRun`
  * (helpers/multi-agent.ts) these control the multi-run's own `ran_at` and `id`,
  * which the list order and tie-break tests need, and can write rows in bulk.
  */

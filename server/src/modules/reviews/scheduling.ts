@@ -63,6 +63,10 @@ export async function scheduleAgentRuns<J extends ScheduledJob>(jobs: J[], deps:
           await deps.run(job);
           logger?.info({ ...ids, status: 'done', durationMs: Date.now() - startedAt }, 'agent run finished');
         } catch {
+          if (deps.isCancelled(job.runId)) {
+            logger?.info({ ...ids, status: 'cancelled', durationMs: Date.now() - startedAt }, 'agent run cancelled');
+            return;
+          }
           logger?.error({ ...ids, status: 'failed', durationMs: Date.now() - startedAt }, 'agent run failed');
         }
       })

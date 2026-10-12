@@ -20,16 +20,17 @@
     "pickPrFirstBody": "Choose a pull request above to see the agents you can run on it.",
     "selectAll": "Select all",
     "run": "Run multi-agent review ({count})",
-    "estimate": "{seconds}s · {cost}",
+    "estimate": "{time} · {cost}",
+    "seconds": "{seconds}s",
     "noEstimate": "— · —",
-    "total": "≈ {seconds}s · {cost} · parallel fan-out",
+    "total": "≈ {time} · {cost} · parallel fan-out",
     "partial": "partial",
     "loadError": "Could not load pull requests"
   },
   "history": {
     "title": "Recent runs",
     "prItem": "#{number} · {title}",
-    "agents": "{count} agents",
+    "agents": "{count, plural, one {# agent} other {# agents}}",
     "status": {
       "running": "Running",
       "done": "Done",

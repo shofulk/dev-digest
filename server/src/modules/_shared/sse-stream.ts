@@ -59,3 +59,54 @@ export async function* runEventStream(
     offDone();
   }
 }
+
+/**
+ * One SSE stream for several runs of a multi-run. Same semantics as
+ * `runEventStream` for every id at once (replay first, drain before honouring
+ * done, release every listener in `finally`). Events are framed with
+ * `id: "<runId>:<seq>"`; the stream ends once every id has completed.
+ */
+export async function* mergedRunEventStream(
+  bus: RunBus,
+  runIds: string[],
+): AsyncGenerator<{ id: string; event: string; data: string }> {
+  const ids = [...new Set(runIds)];
+  const queue: RunEvent[] = [];
+  let resolve: (() => void) | null = null;
+  let remaining = ids.length;
+
+  const releases: (() => void)[] = [];
+  for (const runId of ids) {
+    releases.push(
+      bus.subscribe(runId, (e) => {
+        queue.push(e);
+        resolve?.();
+      }),
+    );
+    releases.push(
+      bus.onDone(runId, () => {
+        remaining -= 1;
+        resolve?.();
+      }),
+    );
+  }
+
+  try {
+    while (true) {
+      if (queue.length === 0) {
+        if (remaining <= 0) break;
+        await new Promise<void>((r) => (resolve = r));
+        resolve = null;
+        continue;
+      }
+      const e = queue.shift()!;
+      yield {
+        id: `${e.runId}:${e.seq}`,
+        event: e.kind,
+        data: JSON.stringify(e),
+      };
+    }
+  } finally {
+    for (const release of releases) release();
+  }
+}

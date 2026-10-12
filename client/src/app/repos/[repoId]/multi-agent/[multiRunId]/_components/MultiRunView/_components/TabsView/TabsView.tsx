@@ -6,13 +6,13 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge, Button, CircularScore, Markdown } from "@devdigest/ui";
-import type { AgentColumn, FindingRecord } from "@devdigest/shared";
+import { Badge, Button, CircularScore, Markdown, Skeleton } from "@devdigest/ui";
+import type { AgentColumn, FindingRecord, RunEvent } from "@devdigest/shared";
 import { FindingCard } from "@/components/finding-card";
 import { useFindingCardActions } from "@/components/finding-card/useFindingCardActions";
 import { agentLook } from "@/lib/agent-look";
 import { formatCost } from "@/lib/format-cost";
-import { NO_DURATION, secondsOf } from "../../helpers";
+import { NO_DURATION, secondsOf, type FindingsLoad } from "../../helpers";
 import { RunningLog } from "../RunningLog";
 import { s } from "./styles";
 
@@ -27,7 +27,10 @@ export function TabsView({
   onViewTrace,
   onRetry,
   onCancel,
-  pendingAgentId,
+  pendingAgentIds,
+  liveEvents,
+  findingsState,
+  onRetryFindings,
 }: {
   columns: AgentColumn[];
   prId: string;
@@ -37,9 +40,15 @@ export function TabsView({
   onViewTrace: (column: AgentColumn) => void;
   onRetry: (column: AgentColumn) => void;
   onCancel: (column: AgentColumn) => void;
-  pendingAgentId: string | null;
+  pendingAgentIds: ReadonlySet<string>;
+  /** Live events by run id, from the page-level stream. */
+  liveEvents: ReadonlyMap<string, RunEvent[]>;
+  /** Load state of the PR's reviews, where the finding cards come from. */
+  findingsState: FindingsLoad;
+  onRetryFindings: () => void;
 }) {
   const t = useTranslations("multiAgentResults");
+  const tc = useTranslations("common");
   const { cardProps, evalModal } = useFindingCardActions(prId);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   // Derived, not an effect: a selection that vanished falls back to the first agent.
@@ -103,7 +112,7 @@ export function TabsView({
               {seconds == null ? NO_DURATION : t("column.time", { seconds })} · {formatCost(column.cost_usd)}
             </span>
             {status === "running" && (
-              <Button kind="danger" size="sm" loading={pendingAgentId === column.agent_id} onClick={() => onCancel(column)}>
+              <Button kind="danger" size="sm" loading={pendingAgentIds.has(column.agent_id)} onClick={() => onCancel(column)}>
                 {t("column.cancel")}
               </Button>
             )}
@@ -112,7 +121,7 @@ export function TabsView({
                 kind="secondary"
                 size="sm"
                 icon="RefreshCw"
-                loading={pendingAgentId === column.agent_id}
+                loading={pendingAgentIds.has(column.agent_id)}
                 onClick={() => onRetry(column)}
               >
                 {t("column.retry")}
@@ -121,11 +130,26 @@ export function TabsView({
           </div>
         </div>
 
-        {status === "running" && <RunningLog runId={column.run_id} />}
-        {findings.map((f) => (
-          <FindingCard key={f.id} f={f} repoFullName={repoFullName} headSha={headSha} {...cardProps(f)} />
-        ))}
-        {status !== "running" && findings.length === 0 && <div style={s.empty}>{t("tabs.noFindings")}</div>}
+        {status === "running" && <RunningLog events={liveEvents.get(column.run_id) ?? []} running />}
+        {column.findings.length > 0 && findingsState === "pending" && (
+          <div style={s.skeletons}>
+            <Skeleton height={64} />
+            <Skeleton height={64} />
+          </div>
+        )}
+        {column.findings.length > 0 && findingsState === "error" && (
+          <div role="alert" style={s.error}>
+            <div>{t("tabs.findingsError")}</div>
+            <Button kind="secondary" size="sm" icon="RefreshCw" onClick={onRetryFindings}>
+              {tc("actions.retry")}
+            </Button>
+          </div>
+        )}
+        {findingsState === "ready" &&
+          findings.map((f) => (
+            <FindingCard key={f.id} f={f} repoFullName={repoFullName} headSha={headSha} {...cardProps(f)} />
+          ))}
+        {status !== "running" && column.findings.length === 0 && <div style={s.empty}>{t("tabs.noFindings")}</div>}
       </div>
       {evalModal}
     </div>

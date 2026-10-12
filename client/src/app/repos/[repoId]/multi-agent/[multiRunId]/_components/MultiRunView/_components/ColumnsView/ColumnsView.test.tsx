@@ -34,6 +34,7 @@ vi.mock("@/lib/repo-context", () => ({
     reposLoaded: true,
   }),
   useRepoNotFound: () => false,
+  RepoProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -41,6 +42,7 @@ vi.mock("@/components/app-shell", () => ({
 }));
 
 import { MultiRunView } from "../../MultiRunView";
+import { ColumnsView } from "./ColumnsView";
 
 /* ---- harness ---- */
 
@@ -172,21 +174,33 @@ describe("Columns view finding titles", () => {
 });
 
 describe("Columns view running agent", () => {
-  it("AC-50: a running column shows its status and the live log lines streamed for that run", async () => {
-    serve([column({ agent_id: "a1" }), column({ agent_id: "a2", status: "running", score: null, duration_ms: null })]);
-    renderView();
+  it("C14 / AC-50: a running column shows its status and the live log lines it is fed, and opens no stream of its own", () => {
+    const live = new Map([["run-a1", [{ t: "00.10", kind: "info", msg: "step one" }]]]);
+    // `pendingAgentId` is the Base prop and `pendingAgentIds` the C16 one, so the view takes either
+    const props = {
+      columns: [
+        column({ agent_id: "a1", status: "running", score: null, duration_ms: null }),
+        column({ agent_id: "a2" }),
+      ],
+      liveEvents: live,
+      pendingAgentId: null,
+      pendingAgentIds: new Set<string>(),
+      onViewTrace: () => {},
+      onRetry: () => {},
+      onCancel: () => {},
+    };
+    render(
+      <ResultsTestProviders>
+        <ColumnsView {...(props as unknown as React.ComponentProps<typeof ColumnsView>)} />
+      </ResultsTestProviders>,
+    );
 
-    const running = within(await card("Agent a2"));
+    const running = within(screen.getByRole("region", { name: "Agent a1" }));
     // the status badge (the live log shows its own "Running" marker too)
     expect(running.getAllByText("Running").length).toBeGreaterThan(0);
-
-    await waitFor(() => expect(es.instances.map((i) => i.url)).toContain("http://localhost:3001/runs/run-a2/events"));
-    // only the running agent streams
-    expect(es.instances.map((i) => i.url)).not.toContain("http://localhost:3001/runs/run-a1/events");
-
-    const source = es.instances.find((i) => i.url.endsWith("/runs/run-a2/events"))!;
-    act(() => source.emit({ t: "00.40", kind: "info", msg: "Reading the diff of src/db.ts" }));
-    expect(await running.findByText("Reading the diff of src/db.ts")).toBeInTheDocument();
+    expect(running.getByText("step one")).toBeInTheDocument();
+    // the view is fed by the page's single stream: it constructs no EventSource itself
+    expect(es.instances).toHaveLength(0);
   });
 
   it("AC-51: when a refetch turns the running column done it re-renders in place, without a reload", async () => {

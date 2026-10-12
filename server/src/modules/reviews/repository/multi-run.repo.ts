@@ -54,6 +54,62 @@ export async function createMultiRunWithRuns(
   });
 }
 
+/** Outcome of {@link createRetryRun}: a new run, or why none was created. */
+export type RetryRunResult =
+  | { status: 'created'; runId: string }
+  | { status: 'running' }
+  | { status: 'no_run' };
+
+/**
+ * Atomic retry guard + insert. One transaction: the advisory lock on
+ * (multi-run, agent) is the first statement, so concurrent retries serialise;
+ * then the agent's newest run is read and a new `running` run is inserted only
+ * when that newest run is not `running`.
+ */
+export async function createRetryRun(
+  db: Db,
+  v: {
+    workspaceId: string;
+    multiRunId: string;
+    agentId: string;
+    prId: string;
+    provider: string | null;
+    model: string | null;
+  },
+): Promise<RetryRunResult> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('retry:' || ${v.multiRunId}::text || ':' || ${v.agentId}::text))`);
+    const [latest] = await tx
+      .select({ status: t.agentRuns.status })
+      .from(t.agentRuns)
+      .where(
+        and(
+          eq(t.agentRuns.workspaceId, v.workspaceId),
+          eq(t.agentRuns.multiAgentRunId, v.multiRunId),
+          eq(t.agentRuns.agentId, v.agentId),
+        ),
+      )
+      .orderBy(desc(t.agentRuns.ranAt), desc(t.agentRuns.id))
+      .limit(1);
+    if (!latest) return { status: 'no_run' } as const;
+    if (latest.status === 'running') return { status: 'running' } as const;
+    const [row] = await tx
+      .insert(t.agentRuns)
+      .values({
+        workspaceId: v.workspaceId,
+        agentId: v.agentId,
+        prId: v.prId,
+        provider: v.provider,
+        model: v.model,
+        status: 'running',
+        source: 'local',
+        multiAgentRunId: v.multiRunId,
+      })
+      .returning({ id: t.agentRuns.id });
+    return { status: 'created', runId: row!.id } as const;
+  });
+}
+
 /** A multi-run in this workspace, or undefined. */
 export async function getMultiRun(
   db: Db,

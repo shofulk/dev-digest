@@ -37,5 +37,6 @@ export const s = {
   summaryText: { fontSize: 13.5, color: "var(--text-secondary)" } satisfies CSSProperties,
   summaryAside: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6, fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
   error: { fontSize: 13, color: "var(--crit)", wordBreak: "break-word" } satisfies CSSProperties,
+  skeletons: { display: "flex", flexDirection: "column", gap: 10 } satisfies CSSProperties,
   empty: { fontSize: 13, color: "var(--text-muted)" } satisfies CSSProperties,
 } as const;

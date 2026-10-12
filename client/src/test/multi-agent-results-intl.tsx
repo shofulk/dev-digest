@@ -1,7 +1,6 @@
 import React from "react";
 import { vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
-import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AgentColumn,
   AgentColumnFinding,
@@ -10,41 +9,28 @@ import type {
   MultiAgentRun,
   ReviewRecord,
 } from "@devdigest/shared";
-import { configure } from "@testing-library/react";
 import common from "../../messages/en/common.json";
 import evalMessages from "../../messages/en/eval.json";
 import multiAgentResults from "../../messages/en/multiAgentResults.json";
 import prReview from "../../messages/en/prReview.json";
 import runs from "../../messages/en/runs.json";
-import { ToastProvider, notify } from "@/lib/toast";
-
-/* The results page is large: keep a failed query's message short instead of dumping the DOM. */
-configure({ getElementError: (message) => new Error((message ?? "element not found").slice(0, 400)) });
+import { Providers } from "@/lib/providers";
 
 /**
- * Wraps the multi-agent results page (or one of its views) in a fresh QueryClient that
- * toasts mutation errors the way the app's global MutationCache does, the toast host, and
- * the real `en` messages of every namespace the page, the finding card and the trace
- * drawer translate against.
+ * Wraps the multi-agent results page (or one of its views) in the app's real `Providers`
+ * (React Query with the global query/mutation toast, theme, toast host, repo context) and
+ * the real `en` messages of every namespace the page, the finding card and the trace drawer
+ * translate against. A test file that mocks `@/lib/repo-context` must also export a
+ * pass-through `RepoProvider` from that mock. A query error reaches `isError` through
+ * `retryRead` only under fake timers with `shouldAdvanceTime: true`.
  */
 export function ResultsTestProviders({ children }: { children: React.ReactNode }) {
-  const [qc] = React.useState(
-    () =>
-      new QueryClient({
-        defaultOptions: { queries: { retry: false } },
-        mutationCache: new MutationCache({
-          onError: (err) => notify.error(err instanceof Error ? err.message : "Something went wrong"),
-        }),
-      }),
-  );
   return (
-    <QueryClientProvider client={qc}>
-      <ToastProvider>
-        <NextIntlClientProvider locale="en" messages={{ common, eval: evalMessages, multiAgentResults, prReview, runs }}>
-          {children}
-        </NextIntlClientProvider>
-      </ToastProvider>
-    </QueryClientProvider>
+    <Providers>
+      <NextIntlClientProvider locale="en" messages={{ common, eval: evalMessages, multiAgentResults, prReview, runs }}>
+        {children}
+      </NextIntlClientProvider>
+    </Providers>
   );
 }
 
@@ -142,7 +128,7 @@ export function review(agentId: string, findings: FindingRecord[]): ReviewRecord
 export type Reply = { status: number; body: unknown };
 export type FetchCall = { method: string; path: string; body: unknown };
 /** A reply, or a function read at call time so a test can change what the server says next. */
-export type Route = Reply | (() => Reply);
+export type Route = Reply | (() => Reply | Promise<Reply>);
 
 /**
  * Stubs global `fetch`. `routes` is keyed `"<METHOD> <pathname>"` and read on every call, so
@@ -156,7 +142,7 @@ export function installFetch(routes: Record<string, Route>) {
     const route = routes[`${method} ${path}`];
     const r: Reply = route
       ? typeof route === "function"
-        ? route()
+        ? await route()
         : route
       : { status: 404, body: { error: { message: "not found" } } };
     return { ok: r.status < 400, status: r.status, statusText: "", json: async () => r.body } as Response;
@@ -186,8 +172,8 @@ export class FakeEventSource {
     this.closed = true;
   }
   /** Deliver one run event the way the SSE stream does. */
-  emit(event: { t: string; kind: "info" | "tool" | "result" | "error"; msg: string }) {
-    this.onmessage?.({ data: JSON.stringify(event) } as MessageEvent);
+  emit(event: { runId?: string; t?: string; kind: "info" | "tool" | "result" | "error"; msg: string }) {
+    this.onmessage?.({ data: JSON.stringify({ t: "00.00", ...event }) } as MessageEvent);
   }
 }
 

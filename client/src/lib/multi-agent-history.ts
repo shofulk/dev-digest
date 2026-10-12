@@ -1,5 +1,5 @@
 /* multi-agent-history.ts — pure helpers behind the Recent runs list and the PR-page
-   "Open multi-agent review" link. No React, no I/O (SPEC-04). */
+   "Open multi-agent review" link. No React, no I/O (SPEC-06). */
 import type { MultiAgentRunSummary } from "@devdigest/shared";
 import { estimateSeconds } from "./multi-agent-estimates";
 

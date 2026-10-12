@@ -46,8 +46,11 @@ export async function findLearnings(
   const wanted = new Set(contexts);
   const learned = new Set<string>();
   for (const row of rows) {
-    for (const src of (row.sources as { context?: string }[] | null) ?? []) {
-      if (src.context && wanted.has(src.context)) learned.add(src.context.slice('finding:'.length));
+    if (!Array.isArray(row.sources)) continue;
+    for (const src of row.sources) {
+      if (typeof src !== 'object' || src === null || !('context' in src)) continue;
+      const { context } = src;
+      if (typeof context === 'string' && wanted.has(context)) learned.add(context.slice('finding:'.length));
     }
   }
   return learned;
@@ -73,11 +76,13 @@ export async function insertLearning(db: Pick<Db, 'insert'>, v: NewLearning): Pr
 
 /**
  * Idempotent Learn: check for an existing row for the finding and insert when
- * absent, in one transaction. (No unique constraint: two concurrent first
- * clicks can still both insert.)
+ * absent, in one transaction. The `learn:<findingId>` advisory lock is taken
+ * first, so concurrent first clicks serialise and only one inserts (no unique
+ * constraint needed).
  */
 export async function learnOnce(db: Db, v: NewLearning): Promise<{ row: MemoryRow; created: boolean }> {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('learn:' || ${v.findingId}::text))`);
     const [existing] = await tx
       .select()
       .from(t.memory)

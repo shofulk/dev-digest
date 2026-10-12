@@ -1,11 +1,11 @@
 # Spec: Multi-Agent Run History
-Spec ID: SPEC-04-multi-agent-run-history
+Spec ID: SPEC-06-multi-agent-run-history
 Status: approved
 Supersedes: none
 
 ## Problem and user
 
-SPEC-03 (`specs/multi-agent-review.spec.md`) added multi-runs and their results page. Once the
+SPEC-05 (`specs/multi-agent-review.spec.md`) added multi-runs and their results page. Once the
 user leaves a results page, there is no way back to it. The sidebar entry "Multi-Agent Review"
 opens the Configure run screen. Nothing lists or links the multi-runs that already exist. The
 results page URL is the only way in.
@@ -14,7 +14,7 @@ The user is a developer who reviews PRs in DevDigest. They want to find a multi-
 started earlier and open its results again, from the Multi-Agent Review screen and from the PR
 page.
 
-This spec is additive. It does not change any behaviour of SPEC-03.
+This spec is additive. It does not change any behaviour of SPEC-05.
 
 ## Goals / Non-goals
 
@@ -30,7 +30,7 @@ Non-goals:
   number of rows (A-1).
 - Deleting or renaming a multi-run.
 - A stale mark ("PR changed since this run") in the list. The results page already shows it
-  (SPEC-03 AC-65).
+  (SPEC-05 AC-65).
 - A list of all multi-runs of a PR on the PR page. The PR page links only the newest one.
 - Live updates over SSE for the list. The list refreshes by reading the route again (AC-20).
 - Changes to the MCP server.
@@ -81,7 +81,7 @@ Non-goals:
   deleted), THEN the API shall return it with `agent_count` 0 and `status` `failed`.
   *Verify: unit*
 - **AC-7** [server] The API shall compute `total_duration_ms` and `total_cost_usd` of a list
-  item with the same rule as SPEC-03 AC-33 and AC-69: the longest duration and the sum of
+  item with the same rule as SPEC-05 AC-33 and AC-69: the longest duration and the sum of
   non-null costs of `done` agent runs, with a null cost when no `done` run has a cost.
   *Verify: unit*
 - **AC-8** [server] IF the repo has no multi-run, THEN the API shall answer 200 with an empty
@@ -230,7 +230,7 @@ table. A multi-run belongs to a repo through its PR (`multi_agent_runs.pr_id` â†
   for a running multi-run too. Risk if wrong: a layout change only.
 - **A-8** A refresh every few seconds while a row is running is cheap enough, because the route
   reads only the DB (NFR-1, NFR-2). Risk if wrong: extra DB load while long runs are open.
-- **A-9** The 200 ms p95 target follows SPEC-03 NFR-4 (300 ms for one full multi-run read); the
+- **A-9** The 200 ms p95 target follows SPEC-05 NFR-4 (300 ms for one full multi-run read); the
   list reads no findings, so it is lighter. Risk if wrong: the planner needs an index on
   `multi_agent_runs` for the repo order.
 - **A-10** The results page breadcrumb "Multi-Agent Review â€º #<PR number>" already exists; AC-26
@@ -238,7 +238,7 @@ table. A multi-run belongs to a repo through its PR (`multi_agent_runs.pr_id` â†
 
 ## Inputs and provenance
 
-- Request: the user, during manual acceptance of SPEC-03 on 2026-10-11: "once you leave a
+- Request: the user, during manual acceptance of SPEC-05 on 2026-10-11: "once you leave a
   multi-agent results page there is no way back to it". The sidebar opens Configure run, and
   nothing lists or links existing multi-runs.
 - User decision, made before this spec: both entry points. (1) A Recent runs list below the
@@ -250,7 +250,7 @@ table. A multi-run belongs to a repo through its PR (`multi_agent_runs.pr_id` â†
   blocking questions. â†’ A-1 to A-10.
 - Design: the breadcrumb "Multi-Agent Review â€º #482" for a results page (described in the
   request; no image read). â†’ AC-26.
-- Parent spec (read, not changed): `specs/multi-agent-review.spec.md` (SPEC-03), AC-33, AC-35,
+- Parent spec (read, not changed): `specs/multi-agent-review.spec.md` (SPEC-05), AC-33, AC-35,
   AC-47, AC-65, AC-69, NFR-4.
 - Code read: `server/src/modules/reviews/{routes,multi-run-service}.ts`,
   `server/src/modules/reviews/repository/multi-run.repo.ts`,
@@ -272,7 +272,7 @@ table. A multi-run belongs to a repo through its PR (`multi_agent_runs.pr_id` â†
 
 - PR title comes from GitHub. The client renders it as plain text, never as HTML (AC-15).
 - `repoId` and `multiRunId` come from the address bar. The API checks the repo against the
-  caller's workspace (AC-11, AC-12). An unknown multi-run shows SPEC-03's "Run not found".
+  caller's workspace (AC-11, AC-12). An unknown multi-run shows SPEC-05's "Run not found".
 - `pr_id` comes from the client. The API checks it against the repo and the workspace (AC-10,
   AC-12).
 - API responses are checked against the shared contracts before use.

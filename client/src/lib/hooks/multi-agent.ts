@@ -3,6 +3,7 @@
    No onError toasts here: the global MutationCache in providers.tsx toasts ApiError. */
 "use client";
 
+import React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   LearnFindingResult,
@@ -12,8 +13,10 @@ import type {
   MultiAgentRunStarted,
   MultiAgentRunSummary,
   RunEstimate,
+  RunEvent,
 } from "@devdigest/shared";
-import { api, ApiError } from "../api";
+import { api, ApiError, API_BASE } from "../api";
+import { notify } from "../toast";
 
 export function useRunEstimates() {
   return useQuery({
@@ -111,4 +114,52 @@ export function useLearnFinding() {
       qc.invalidateQueries({ queryKey: ["multi-agent-run"] });
     },
   });
+}
+
+const NO_EVENTS: ReadonlyMap<string, RunEvent[]> = new Map();
+
+/** One SSE stream for every running column of a multi-run (C14): the events of all `runIds`,
+    grouped by `runId`. Opens nothing without an id or with an empty list, and re-opens when the
+    sorted id list changes. On a dropped stream it closes and invalidates the run, so the 3 s
+    poll of `useMultiRun` takes over. */
+export function useMultiRunEvents(
+  multiRunId: string | null | undefined,
+  runIds: string[],
+): ReadonlyMap<string, RunEvent[]> {
+  const qc = useQueryClient();
+  const key = [...runIds].sort().join(",");
+  const [shown, setShown] = React.useState({ key, events: NO_EVENTS });
+  // Reset during render (not in the effect): the log of a previous id list is not this list's.
+  if (shown.key !== key) setShown({ key, events: NO_EVENTS });
+
+  React.useEffect(() => {
+    if (!multiRunId || key === "") return;
+    const es = new EventSource(`${API_BASE}/multi-agent-runs/${multiRunId}/events?run_ids=${key}`);
+    const onMsg = (ev: MessageEvent) => {
+      try {
+        const parsed = JSON.parse(ev.data) as RunEvent;
+        setShown((prev) => {
+          if (prev.key !== key) return prev;
+          const next = new Map(prev.events);
+          next.set(parsed.runId, [...(next.get(parsed.runId) ?? []), parsed]);
+          return { key, events: next };
+        });
+        // A runtime agent failure is a stream event, not a query error: notify here (as useRunEvents).
+        if (parsed.kind === "error" && parsed.msg) notify.error(parsed.msg);
+      } catch {
+        /* ignore non-JSON keepalive frames (and dataless native error events) */
+      }
+    };
+    es.onmessage = onMsg;
+    for (const kind of ["info", "tool", "result", "error"]) {
+      es.addEventListener(kind, onMsg as EventListener);
+    }
+    es.onerror = () => {
+      es.close();
+      void qc.invalidateQueries({ queryKey: ["multi-agent-run", multiRunId] });
+    };
+    return () => es.close();
+  }, [multiRunId, key, qc]);
+
+  return shown.key === key ? shown.events : NO_EVENTS;
 }

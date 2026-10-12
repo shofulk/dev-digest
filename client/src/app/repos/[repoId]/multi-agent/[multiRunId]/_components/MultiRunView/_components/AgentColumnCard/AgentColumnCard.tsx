@@ -5,7 +5,7 @@
 
 import { useTranslations } from "next-intl";
 import { Badge, Button, CircularScore, Icon, Markdown, SEV } from "@devdigest/ui";
-import type { AgentColumn } from "@devdigest/shared";
+import type { AgentColumn, RunEvent } from "@devdigest/shared";
 import { SeverityMark } from "@/components/finding-card";
 import { agentLook } from "@/lib/agent-look";
 import { formatCost } from "@/lib/format-cost";
@@ -17,6 +17,7 @@ const STATUS_COLOR = { running: "var(--warn)", failed: "var(--crit)", cancelled:
 
 export function AgentColumnCard({
   column,
+  events,
   onViewTrace,
   onRetry,
   onCancel,
@@ -24,6 +25,8 @@ export function AgentColumnCard({
   cancelPending,
 }: {
   column: AgentColumn;
+  /** Live events of this run, from the page-level stream. */
+  events: RunEvent[];
   onViewTrace: (column: AgentColumn) => void;
   onRetry: (column: AgentColumn) => void;
   onCancel: (column: AgentColumn) => void;
@@ -59,7 +62,7 @@ export function AgentColumnCard({
             </Badge>
           </div>
         )}
-        {status === "running" && <RunningLog runId={column.run_id} />}
+        {status === "running" && <RunningLog events={events} running />}
         {status === "failed" && column.error && <div style={s.error}>{column.error}</div>}
         {status !== "running" &&
           column.findings.map((f) => (

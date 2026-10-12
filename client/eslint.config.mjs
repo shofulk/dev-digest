@@ -17,7 +17,7 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['.next/**', 'next-env.d.ts', 'src/vendor/**', 'coverage/**'],
+    ignores: ['.next/**', '.next-e2e/**', 'next-env.d.ts', 'src/vendor/**', 'coverage/**'],
   },
   js.configs.recommended,
   tseslint.configs.recommended,

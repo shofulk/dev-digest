@@ -36,6 +36,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - the hermetic run no longer collides with a dev web, and provider keys must be set blank, not unset
+**Supersedes:** 2026-10-12 entry "`./scripts/e2e.sh` with a dev web from the same checkout running fails flows at 'land on the PR list'" - `scripts/e2e.sh` now builds and serves its web from `client/.next-e2e` (`DEVDIGEST_NEXT_DIST_DIR`), so a `pnpm --dir client dev` on `client/.next` can stay up. Separately, the API env must set provider and GitHub keys to an empty string: `unset` lets dotenv refill them from `server/.env`, and a real key leaks into a hermetic run (the container treats an empty key as absent).
+**Evidence:** scripts/e2e.sh:19,126,262
+
 ### 2026-10-12 — `./scripts/e2e.sh` with a dev web from the same checkout running fails flows at "land on the PR list"
 Both `next dev` instances share `client/.next`; measured 7/12 flows green with
 `pnpm --dir client dev` up, 12/12 with it stopped. Stop the dev web before a hermetic run.

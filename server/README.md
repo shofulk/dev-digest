@@ -69,7 +69,7 @@ flowchart TB
     polling["polling<br/>/repos/:id/poll"]
   end
   subgraph Review["Review & runs"]
-    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/multi-agent-run<br/>/repos/:id/multi-agent-runs<br/>/multi-agent-runs/:id<br/>/multi-agent-runs/:id/cancel<br/>/multi-agent-runs/:id/agents/:agentId/retry<br/>/run-estimates<br/>/findings/:id/learn"]
+    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/multi-agent-run<br/>/repos/:id/multi-agent-runs<br/>/multi-agent-runs/:id<br/>/multi-agent-runs/:id/cancel<br/>/multi-agent-runs/:id/events<br/>/multi-agent-runs/:id/agents/:agentId/retry<br/>/run-estimates<br/>/findings/:id/learn"]
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
     blast["blast<br/>/pulls/:id/blast"]
@@ -100,12 +100,19 @@ per agent, answers with their ids, and only then runs the agents in the backgrou
 `stale` flag (the PR head moved). Agent work goes through one concurrency cap,
 `REVIEW_AGENT_CONCURRENCY` (default 3), which also caps `POST /pulls/:id/review`; extra runs
 wait for a slot. `POST /multi-agent-runs/:id/cancel` cancels every `running` run (a run that
-finishes after it was cancelled stays `cancelled`); `POST /multi-agent-runs/:id/agents/:agentId/retry`
-re-runs one agent in the same multi-run (409 `agent_running` while it still runs).
+finishes after it was cancelled stays `cancelled`);
+`POST /multi-agent-runs/:id/agents/:agentId/retry` re-runs one agent in the same multi-run
+(409 `agent_running` while it still runs). Retry is rate-limited like start (10 per minute).
+Concurrent retries of one agent, and concurrent Learn clicks on one finding, are serialized by
+a Postgres advisory lock (one run, one memory row).
+`GET /multi-agent-runs/:id/events?run_ids=` streams the live events of several runs of one
+multi-run on one connection.
 `GET /run-estimates` gives per-agent median time and cost over the last 10 `done` runs, with no
 model call. `POST /findings/:id/learn` stores one `learning` row in `memory` (201 created, 200
 when the finding was already learned); the PR reviews and multi-run reads flag it as `learned`.
-`GET /repos/:id/multi-agent-runs` (optional `pr_id`) lists the newest 20 multi-runs of a repo or a PR with an aggregate status (`running`/`done`/`partial`/`failed`) and totals from each agent's newest run, read from the DB only.
+`GET /repos/:id/multi-agent-runs` (optional `pr_id`) lists the newest 20 multi-runs of a repo
+or a PR with an aggregate status (`running`/`done`/`partial`/`failed`) and totals from each
+agent's newest run, read from the DB only.
 
 `smart-diff` is a deterministic, DB-only route: it groups a PR's files by role
 (core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.

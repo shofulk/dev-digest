@@ -217,32 +217,36 @@ export class MultiRunService {
     if (!multi) throw new NotFoundError('Multi-agent run not found');
     const agent = await this.agents.getById(workspaceId, agentId);
     if (!agent) throw new NotFoundError('Agent not found');
-    const runs = await this.repo.runsForMultiRun(workspaceId, id);
-    const latest = runs.find((r) => r.run.agentId === agentId);
-    if (!latest) throw new NotFoundError('Agent has no run in this multi-agent run');
-    if (latest.run.status === 'running') {
-      throw new AppError('agent_running', 'This agent is still running', 409);
-    }
-
     const pull = await this.repo.getPull(workspaceId, multi.prId);
     if (!pull) throw new NotFoundError('Pull request not found');
     const repo = await this.repo.getRepo(pull.repoId);
     if (!repo) throw new NotFoundError('Repo not found');
 
-    const runId = await this.repo.createAgentRun({
+    const result = await this.repo.createRetryRun({
       workspaceId,
+      multiRunId: multi.id,
       agentId: agent.id,
       prId: pull.id,
       provider: agent.provider,
       model: agent.model,
-      multiAgentRunId: multi.id,
     });
+    if (result.status === 'no_run') throw new NotFoundError('Agent has no run in this multi-agent run');
+    if (result.status === 'running') throw new AppError('agent_running', 'This agent is still running', 409);
+    const runId = result.runId;
     void this.executor
       .executeRuns(workspaceId, pull, repo, [{ agent, runId }], logger, { multiRunId: multi.id })
       .catch(() => {
         logger?.error({ runId, agentId, multiRunId: multi.id }, 'multi-run: retry execution crashed');
       });
     return { run_id: runId };
+  }
+
+  /** 404 unless the multi-run is in the workspace and every id is one of its runs. */
+  async assertRunsInMultiRun(workspaceId: string, id: string, runIds: string[]): Promise<void> {
+    const multi = await this.repo.getMultiRun(workspaceId, id);
+    if (!multi) throw new NotFoundError('Multi-agent run not found');
+    const known = new Set((await this.repo.runsForMultiRun(workspaceId, id)).map((r) => r.run.id));
+    if (runIds.some((r) => !known.has(r))) throw new NotFoundError('Run not found');
   }
 
   /** The newest multi-runs of a repo (or of one PR), with status and totals. */

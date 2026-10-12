@@ -4,7 +4,7 @@
 
 import React from "react";
 import { useTranslations } from "next-intl";
-import { Badge } from "@devdigest/ui";
+import { Badge, Skeleton } from "@devdigest/ui";
 import type { FindingRecord } from "@devdigest/shared";
 import { s } from "../../styles";
 import { TraceSection } from "../TraceSection";
@@ -15,15 +15,29 @@ const SEV_COLOR: Record<string, string> = {
   SUGGESTION: "var(--accent)",
 };
 
-export function FindingsSection({ findings }: { findings: FindingRecord[] }) {
+export function FindingsSection({
+  findings,
+  state = "ready",
+}: {
+  findings: FindingRecord[];
+  state?: "pending" | "error" | "ready";
+}) {
   const t = useTranslations("runs");
+  const tc = useTranslations("common");
   return (
     <TraceSection
       icon="AlertOctagon"
       title={t("trace.findings")}
       right={<Badge color="var(--text-muted)">{findings.length}</Badge>}
     >
-      {findings.length === 0 ? (
+      {state === "pending" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <Skeleton height={56} />
+          <Skeleton height={56} />
+        </div>
+      ) : state === "error" ? (
+        <span style={s.noToolCalls}>{tc("states.error")}</span>
+      ) : findings.length === 0 ? (
         <span style={s.noToolCalls}>{t("trace.noFindings")}</span>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

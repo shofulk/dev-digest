@@ -16,7 +16,7 @@ if (!hasDocker) {
 }
 
 /**
- * Multi-agent run history (SPEC-04) — GET /repos/:id/multi-agent-runs.
+ * Multi-agent run history (SPEC-06) — GET /repos/:id/multi-agent-runs.
  *
  * Every app is built in `beforeAll`, BEFORE any `running` row is seeded: the
  * boot reaper (`buildApp`) flips every `running` agent run to `failed`.

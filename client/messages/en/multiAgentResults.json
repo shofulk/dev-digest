@@ -38,7 +38,8 @@
   },
   "tabs": {
     "label": "Agents",
-    "noFindings": "This agent has no findings to show."
+    "noFindings": "This agent has no findings to show.",
+    "findingsError": "Could not load the findings of this agent."
   },
   "disagree": {
     "title": "Where agents disagree",

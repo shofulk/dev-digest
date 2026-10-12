@@ -24,6 +24,7 @@ vi.mock("@/lib/repo-context", () => ({
     reposLoaded: true,
   }),
   useRepoNotFound: () => false,
+  RepoProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 /* The real AppShell is mocked; this one renders each crumb, a link when it has an href. */

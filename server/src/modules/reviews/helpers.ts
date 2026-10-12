@@ -6,6 +6,11 @@ import type { Finding, PrIntentRecord } from '@devdigest/shared';
 import type { ReviewIntent } from '@devdigest/reviewer-core';
 import type { FindingRow, PullRow, ReviewRow } from './repository.js';
 
+/** Message of a caught value: `Error.message`, else its string form. */
+export function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Persisted `PrIntentRecord` → the minimal shape `reviewPullRequest` needs
  *  (D2 §3 step 5) — server-only fields (`pr_id`, `sources`, `head_sha`, …)
  *  never cross into reviewer-core. */

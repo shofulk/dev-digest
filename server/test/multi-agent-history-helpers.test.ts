@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { columnStatus, computeTotals, newestPerAgent, summaryStatus } from '../src/modules/reviews/multi-run-helpers.js';
 
 /**
- * SPEC-04 (multi-agent run history) — the pure helpers behind
+ * SPEC-06 (multi-agent run history) — the pure helpers behind
  * GET /repos/:id/multi-agent-runs: `summaryStatus`, `columnStatus`,
  * `newestPerAgent`, plus a guard on the existing `computeTotals`.
  */

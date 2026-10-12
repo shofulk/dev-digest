@@ -33,6 +33,7 @@ vi.mock("@/lib/repo-context", () => ({
     reposLoaded: true,
   }),
   useRepoNotFound: () => false,
+  RepoProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -40,6 +41,7 @@ vi.mock("@/components/app-shell", () => ({
 }));
 
 import { MultiRunView } from "../../MultiRunView";
+import { TabsView } from "./TabsView";
 
 /* ---- harness ---- */
 
@@ -123,6 +125,43 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+});
+
+describe("Tabs view live log", () => {
+  it("C14 / AC-50: a running tab shows its status and the live log lines it is fed, and opens no stream of its own", () => {
+    const live = new Map([["run-a1", [{ t: "00.10", kind: "info", msg: "step one" }]]]);
+    // `pendingAgentId` is the Base prop and `pendingAgentIds` the C16 one; `findingsState` and
+    // `onRetryFindings` are the C15 ones, so the view takes either generation of props
+    const props = {
+      columns: [
+        column({ agent_id: "a1", agent_name: "Security", status: "running", score: null, duration_ms: null }),
+        column({ agent_id: "a2", agent_name: "Style" }),
+      ],
+      prId: "pr1",
+      findingsById: new Map(),
+      repoFullName: "acme/api",
+      headSha: "abc123",
+      liveEvents: live,
+      pendingAgentId: null,
+      pendingAgentIds: new Set<string>(),
+      findingsState: "ready",
+      onRetryFindings: () => {},
+      onViewTrace: () => {},
+      onRetry: () => {},
+      onCancel: () => {},
+    };
+    const es = installEventSource();
+    render(
+      <ResultsTestProviders>
+        <TabsView {...(props as unknown as React.ComponentProps<typeof TabsView>)} />
+      </ResultsTestProviders>,
+    );
+
+    const panel = within(screen.getByRole("tabpanel"));
+    expect(panel.getAllByText("Running").length).toBeGreaterThan(0);
+    expect(panel.getByText("step one")).toBeInTheDocument();
+    expect(es.instances).toHaveLength(0);
+  });
 });
 
 describe("Tabs view", () => {

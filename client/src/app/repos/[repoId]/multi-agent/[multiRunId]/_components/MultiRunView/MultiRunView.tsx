@@ -16,10 +16,10 @@ import { RepoNotFound } from "@/components/repo-not-found";
 import RunTraceDrawer from "@/components/run-trace-drawer";
 import { ApiError } from "@/lib/api";
 import { usePullDetail } from "@/lib/hooks";
-import { useCancelMultiRun, useMultiRun, useRetryAgent } from "@/lib/hooks/multi-agent";
+import { useCancelMultiRun, useMultiRun, useMultiRunEvents, useRetryAgent } from "@/lib/hooks/multi-agent";
 import { useCancelRun, usePrReviews } from "@/lib/hooks/reviews";
 import { useActiveRepo, useRepoNotFound } from "@/lib/repo-context";
-import { hasRunning, parseView, type MultiRunViewMode } from "./helpers";
+import { doneRunKey, findingsLoad, hasRunning, parseView, type MultiRunViewMode } from "./helpers";
 import { ResultsHeader } from "./_components/ResultsHeader";
 import { ColumnsView } from "./_components/ColumnsView";
 import { TabsView } from "./_components/TabsView";
@@ -40,12 +40,29 @@ export function MultiRunView() {
   const { data: run, isPending, isError, error, refetch } = useMultiRun(multiRunId);
   const prId = run?.pr_id ?? null;
   const { data: pr } = usePullDetail(prId);
-  const { data: reviews } = usePrReviews(prId);
+  const reviewsQuery = usePrReviews(prId);
+  const reviews = reviewsQuery.data;
+  const findingsState = findingsLoad(prId, reviewsQuery);
   const cancelAll = useCancelMultiRun(multiRunId);
   const cancelOne = useCancelRun();
   const retry = useRetryAgent(multiRunId);
   const [traceRunId, setTraceRunId] = React.useState<string | null>(null);
-  const [pendingAgentId, setPendingAgentId] = React.useState<string | null>(null);
+  const [pendingAgentIds, setPendingAgentIds] = React.useState<ReadonlySet<string>>(() => new Set());
+
+  // One shared stream for every running column (C14), keyed on their run ids.
+  const runningRunIds = (run?.columns ?? []).filter((c) => c.status === "running").map((c) => c.run_id);
+  const liveEvents = useMultiRunEvents(multiRunId, runningRunIds);
+
+  // A column that turns `done` has new persisted findings: refresh the PR's reviews (C15).
+  const doneKey = run ? doneRunKey(run.columns) : null;
+  const seenDoneKey = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (doneKey == null) return;
+    if (seenDoneKey.current != null && seenDoneKey.current !== doneKey) {
+      void qc.invalidateQueries({ queryKey: ["reviews", prId] });
+    }
+    seenDoneKey.current = doneKey;
+  }, [doneKey, prId, qc]);
 
   const findingsById = React.useMemo(() => {
     const map = new Map<string, FindingRecord>();
@@ -67,8 +84,14 @@ export function MultiRunView() {
   };
 
   const settle = <T,>(agentId: string, call: (done: () => void) => T) => {
-    setPendingAgentId(agentId);
-    return call(() => setPendingAgentId(null));
+    setPendingAgentIds((prev) => new Set(prev).add(agentId));
+    return call(() =>
+      setPendingAgentIds((prev) => {
+        const next = new Set(prev);
+        next.delete(agentId);
+        return next;
+      }),
+    );
   };
   const onRetry = (c: AgentColumn) =>
     settle(c.agent_id, (done) => retry.mutate({ agentId: c.agent_id }, { onSettled: done }));
@@ -116,7 +139,7 @@ export function MultiRunView() {
           <ErrorState
             fullScreen
             title={t("loadError.title")}
-            body={error instanceof ApiError ? error.message : t("loadError.body")}
+            body={t("loadError.body")}
             onRetry={() => refetch()}
           />
         )}
@@ -162,7 +185,10 @@ export function MultiRunView() {
             onViewTrace={(c) => setTraceRunId(c.run_id)}
             onRetry={onRetry}
             onCancel={onCancel}
-            pendingAgentId={pendingAgentId}
+            pendingAgentIds={pendingAgentIds}
+            liveEvents={liveEvents}
+            findingsState={findingsState}
+            onRetryFindings={() => void reviewsQuery.refetch()}
           />
         ) : (
           <ColumnsView
@@ -170,7 +196,8 @@ export function MultiRunView() {
             onViewTrace={(c) => setTraceRunId(c.run_id)}
             onRetry={onRetry}
             onCancel={onCancel}
-            pendingAgentId={pendingAgentId}
+            pendingAgentIds={pendingAgentIds}
+            liveEvents={liveEvents}
           />
         )}
 
@@ -186,6 +213,7 @@ export function MultiRunView() {
           findings={traceColumn.findings
             .map((f) => findingsById.get(f.id))
             .filter((f): f is FindingRecord => f != null)}
+          findingsState={findingsState}
           onClose={() => setTraceRunId(null)}
         />
       )}

@@ -9,7 +9,7 @@ import {
 } from '../src/modules/reviews/multi-run-helpers.js';
 
 /**
- * Multi-agent review (SPEC-03) — the pure grouping / totals / estimate helpers.
+ * Multi-agent review (SPEC-05) — the pure grouping / totals / estimate helpers.
  * Hermetic: no DB, no LLM, no I/O. Each `it` names the AC it proves.
  */
 

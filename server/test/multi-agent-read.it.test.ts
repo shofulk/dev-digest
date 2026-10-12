@@ -28,7 +28,7 @@ if (!hasDocker) {
 }
 
 /**
- * Multi-agent review (SPEC-03) — the read model: GET /multi-agent-runs/:id.
+ * Multi-agent review (SPEC-05) — the read model: GET /multi-agent-runs/:id.
  *
  * Most cases seed the multi-run straight into the DB (so they do not depend on
  * the start path); the AC-70 case drives a real run through the grounding gate.

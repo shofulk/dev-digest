@@ -13,7 +13,7 @@ import {
   RunRequest,
 } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
-import { runEventStream } from '../_shared/sse-stream.js';
+import { mergedRunEventStream, runEventStream } from '../_shared/sse-stream.js';
 import { IdParams } from '../_shared/schemas.js';
 import { AppError, NotFoundError } from '../../platform/errors.js';
 import { ReviewService } from './service.js';
@@ -30,13 +30,21 @@ import { learnFromFinding } from './learn.js';
  *   POST   /pulls/:id/multi-agent-run  {agent_ids}     → start one multi-run (rate-limited); answers before agents finish
  *   GET    /multi-agent-runs/:id                       → columns, totals, disagreement groups, stale flag
  *   POST   /multi-agent-runs/:id/cancel                → cancel every running agent run of the multi-run
- *   POST   /multi-agent-runs/:id/agents/:agentId/retry → re-run one agent in the same multi-run
+ *   POST   /multi-agent-runs/:id/agents/:agentId/retry → re-run one agent in the same multi-run (rate-limited)
+ *   GET    /multi-agent-runs/:id/events?run_ids=     → one SSE stream for several runs of a multi-run
  *   GET    /repos/:id/multi-agent-runs?pr_id=          → newest 20 multi-runs of a repo (or of one PR), with status and totals
  *   GET    /run-estimates                              → per-agent median time/cost estimates
  *   POST   /findings/:id/learn                         → store a `learning` memory row for a finding
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 const RetryParams = z.object({ id: z.string().uuid(), agentId: z.string().uuid() });
+/** Query of GET /multi-agent-runs/:id/events: comma-separated run ids (1..20). */
+const MultiRunEventsQuery = z.object({
+  run_ids: z
+    .string()
+    .transform((s) => s.split(','))
+    .pipe(z.array(z.string().uuid()).min(1).max(20)),
+});
 /** Query of GET /repos/:id/multi-agent-runs: optional PR filter. */
 const MultiRunListQuery = z.object({ pr_id: z.string().uuid().optional() });
 export default async function reviewsRoutes(appBase: FastifyInstance) {
@@ -193,10 +201,24 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
   // ---- Multi-agent run: retry one agent -----------------------------------
   app.post(
     '/multi-agent-runs/:id/agents/:agentId/retry',
-    { schema: { params: RetryParams, response: { 200: MultiAgentRetryResult } } },
+    {
+      schema: { params: RetryParams, response: { 200: MultiAgentRetryResult } },
+      config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+    },
     async (req) => {
       const { workspaceId } = await getContext(container, req);
       return multiRuns.retry(workspaceId, req.params.id, req.params.agentId, req.log);
+    },
+  );
+
+  // ---- Multi-agent run: one SSE stream for several runs --------------------
+  app.get(
+    '/multi-agent-runs/:id/events',
+    { schema: { params: IdParams, querystring: MultiRunEventsQuery }, config: { rateLimit: false } },
+    async (req, reply) => {
+      const { workspaceId } = await getContext(container, req);
+      await multiRuns.assertRunsInMultiRun(workspaceId, req.params.id, req.query.run_ids);
+      reply.sse(mergedRunEventStream(container.runBus, req.query.run_ids));
     },
   );
 

@@ -200,6 +200,10 @@ boots — load one route before calling client work done.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-12 - one `EventSource` per list item starves the browser's connection pool; multiplex one stream per page
+HTTP/1.1 allows about 6 connections per origin, and each open SSE stream holds one for good. A multi-run view that opened a stream per agent column used them up, so polls and POSTs (retry, cancel) queued behind the streams and looked hung. Open one merged stream for the whole page from a hook in `src/lib/hooks/multi-agent.ts` (server side: `mergedRunEventStream` in `modules/_shared/sse-stream.ts`, events already carry `runId`) and let leaf components such as `RunningLog` filter by run id.
+**Evidence:** client/src/lib/hooks/multi-agent.ts, server/src/modules/_shared/sse-stream.ts
 ### 2026-10-11 — a failed mutation toasts twice, and a one-line title in vendor `Markdown` is not a block problem
 Every mutation error already toasts `err.message` through the global `MutationCache` (`providers.tsx`), so an `onError` that toasts again (`useFindingCardActions` eval-case: translated `caseErrorKey`) gives two toasts; `FindingsPanel.test.tsx` pins the translated one, so changing it is a product decision, not a drive-by. Separately, vendor `Markdown` has no inline mode, but `.dd-md > :last-child { margin-bottom: 0 !important }` (globals.css) zeroes the lone `<p>`; render a title in a `<div>` (never a `<span>`, `div > p` is not phrasing content) and it lays out like text.
 **Evidence:** client/src/components/finding-card/useFindingCardActions.ts:34
@@ -325,6 +329,10 @@ behind it, and it would have to be faked server-side.
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-12 - results-page tests must wrap the real `Providers`, and a file that mocks `@/lib/repo-context` must export `RepoProvider` too
+A results-view test with a hand-rolled QueryClient wrapper hid the real provider stack (intl, query client, repo context), so hook and error-toast behaviour differed from production. Wrap the real `Providers`. Then, if the same file does `vi.mock("@/lib/repo-context", ...)`, the factory must also return `RepoProvider`, or vitest throws `No "RepoProvider" export is defined on the mock` when `Providers` renders.
+**Evidence:** client/src/test/multi-agent-results-intl.tsx, client/src/providers.tsx
 
 ### 2026-10-12 - jsdom has no `isContentEditable`, and a focus-trap test needs a focusable element outside the dialog
 jsdom leaves `HTMLElement.isContentEditable` undefined even with `contenteditable="true"`, so a keyboard-shortcut guard that skips editable targets cannot be exercised until the test sets it: `Object.defineProperty(el, "isContentEditable", { value: true })`. With no `@testing-library/user-event` in `client`, a Tab-trap test fires `fireEvent.keyDown(el, { key: "Tab" })` and asserts the return value (`false` = `preventDefault` called) plus `toHaveFocus` on the wrap target; it is only non-vacuous when a focusable element exists outside the dialog for native Tab to reach.

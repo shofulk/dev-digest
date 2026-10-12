@@ -8,7 +8,7 @@ import {
 import { loadConfig } from '../src/platform/config.js';
 
 /**
- * Multi-agent review (SPEC-03) — the concurrency cap and the scheduler.
+ * Multi-agent review (SPEC-05) — the concurrency cap and the scheduler.
  * Hermetic: gated promises stand in for model calls; nothing touches a DB.
  */
 
@@ -253,6 +253,59 @@ describe('scheduler logging (NFR-6, D13)', () => {
         }
       }
     }
+  });
+});
+
+describe('scheduler logging of rejected jobs (D18, NFR-6)', () => {
+  const D13_KEYS = new Set(['runId', 'agentId', 'prId', 'multiRunId', 'status', 'durationMs', 'findings', 'count']);
+
+  function capturing() {
+    const logs: { level: 'info' | 'warn' | 'error'; obj: Record<string, unknown>; msg?: string }[] = [];
+    const at =
+      (level: 'info' | 'warn' | 'error') =>
+      (obj: unknown, msg?: string): void => {
+        logs.push({ level, obj: obj as Record<string, unknown>, ...(msg !== undefined ? { msg } : {}) });
+      };
+    const logger: SchedulerLogger = { info: at('info'), warn: at('warn'), error: at('error') };
+    return { logs, logger };
+  }
+
+  it('D18: a job whose run rejects while it is cancelled logs info status cancelled once, and never error', async () => {
+    const { logs, logger } = capturing();
+    const h = harness(1, { logger });
+    const deps = {
+      ...h.deps,
+      run: async (j: Job) => {
+        h.ran.push(j.runId);
+        h.cancelled.add(j.runId); // cancelled mid-flight: the model call then rejects
+        throw new Error('aborted by cancel');
+      },
+    };
+    await scheduleAgentRuns([job(1)], deps);
+
+    expect(h.ran).toEqual(['run-1']);
+    expect(logs.filter((l) => l.level === 'error')).toEqual([]);
+    const cancelled = logs.filter((l) => l.level === 'info' && l.obj.status === 'cancelled' && l.obj.runId === 'run-1');
+    expect(cancelled).toHaveLength(1);
+    for (const l of logs) for (const key of Object.keys(l.obj)) expect(D13_KEYS.has(key), `unexpected log key "${key}"`).toBe(true);
+  });
+
+  it('D18 (guard): a rejecting job that is not cancelled still logs error with status failed', async () => {
+    const { logs, logger } = capturing();
+    const h = harness(1, { logger });
+    const deps = {
+      ...h.deps,
+      run: async (j: Job) => {
+        h.ran.push(j.runId);
+        throw new Error('provider exploded');
+      },
+    };
+    await scheduleAgentRuns([job(1)], deps);
+
+    const errors = logs.filter((l) => l.level === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.obj).toMatchObject({ status: 'failed', runId: 'run-1' });
+    for (const l of logs) for (const key of Object.keys(l.obj)) expect(D13_KEYS.has(key), `unexpected log key "${key}"`).toBe(true);
   });
 });
 

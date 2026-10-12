@@ -35,7 +35,7 @@ async function until(fn: () => boolean | Promise<boolean>, timeoutMs = 10_000): 
 }
 
 /**
- * Multi-agent review (SPEC-03) — cancelling a multi-run and retrying one agent:
+ * Multi-agent review (SPEC-05) — cancelling a multi-run and retrying one agent:
  * POST /multi-agent-runs/:id/cancel and /agents/:agentId/retry.
  *
  * Cancel/retry bookkeeping is seeded straight into the DB; the AC-43 case holds a

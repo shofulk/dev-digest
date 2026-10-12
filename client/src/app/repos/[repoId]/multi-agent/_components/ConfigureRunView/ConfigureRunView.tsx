@@ -11,7 +11,7 @@ import { RepoNotFound } from "@/components/repo-not-found";
 import { useAgents, usePulls, useRunEstimates, useStartMultiRun } from "@/lib/hooks";
 import { useRepoNotFound } from "@/lib/repo-context";
 import { estimateTotals } from "@/lib/multi-agent-estimates";
-import { formatCost } from "@/lib/format-cost";
+import { NO_COST, formatCost } from "@/lib/format-cost";
 import { pickablePulls, preselectedPrId } from "./helpers";
 import { AgentCard } from "./_components/AgentCard";
 import { RecentRuns } from "./_components/RecentRuns";
@@ -169,7 +169,10 @@ export function ConfigureRunView() {
           </Button>
           {count > 0 && (
             <span className="mono" style={s.total}>
-              {t("configure.total", { seconds: totals.seconds ?? "—", cost: formatCost(totals.costUsd) })}
+              {t("configure.total", {
+                time: totals.seconds == null ? NO_COST : t("configure.seconds", { seconds: totals.seconds }),
+                cost: formatCost(totals.costUsd),
+              })}
               {totals.partial && <span style={s.partial}>{t("configure.partial")}</span>}
             </span>
           )}

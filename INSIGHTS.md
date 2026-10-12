@@ -138,6 +138,10 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-12 - spec IDs and drizzle migration numbers are allocated from the local tree, so parallel worktrees collide
+This branch and `emdash/export-to-ci-bpl7a` both created SPEC-04 and migration 0018, and main's eval-case-editor took SPEC-03. Both counters read only the checked-out tree. Before approving a spec, check `origin/main` and the open branches for the next free ID; the second branch to merge regenerates its migration (`pnpm --dir server db:generate` after merging main) and renumbers its spec.
+**Evidence:** specs/README.md, server/src/db/migrations/meta/_journal.json
+
 ### 2026-10-11 — `memory` is fed to the review prompt as "trusted, curated", but Learn now writes LLM-steerable text into it
 
 `reviewer-core/src/prompt.ts` (`PromptParts.memory`, the `memoryBlock` join) puts memory items

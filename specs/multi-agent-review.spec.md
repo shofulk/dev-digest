@@ -1,5 +1,5 @@
 # Spec: Multi-Agent Review
-Spec ID: SPEC-03-multi-agent-review
+Spec ID: SPEC-05-multi-agent-review
 Status: approved
 Supersedes: none
 

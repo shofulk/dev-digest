@@ -3,7 +3,7 @@ import { RunBus } from '../src/platform/sse.js';
 import { NotFoundError } from '../src/platform/errors.js';
 
 /**
- * SPEC-04 — `MultiRunService.list`, hermetic: a fake repo stands in for
+ * SPEC-06 — `MultiRunService.list`, hermetic: a fake repo stands in for
  * Postgres (same pattern as multi-run-service.test.ts) and the executor is
  * stubbed. The container's `github` / `llm` are spies, so "makes no GitHub or
  * model call" (AC-88, H-NFR-2) is observable.

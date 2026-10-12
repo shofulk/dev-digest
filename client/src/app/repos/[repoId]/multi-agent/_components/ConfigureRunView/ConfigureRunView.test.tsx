@@ -9,6 +9,7 @@ import {
   type Reply,
 } from "@/test/multi-agent-intl";
 import { agentLook } from "@/lib/agent-look";
+import { formatCost } from "@/lib/format-cost";
 
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn(), query: "" }));
 vi.mock("next/navigation", () => ({
@@ -152,6 +153,39 @@ describe("ConfigureRunView", () => {
     expect(runButton()).toHaveTextContent("Run multi-agent review (0)");
     expect(runButton()).toBeDisabled();
     expect(screen.queryByText(/parallel fan-out/)).not.toBeInTheDocument();
+  });
+
+  it("C17 / AC-9: a card whose estimate has a cost but no median time reads '— · <cost>', never '—s'", async () => {
+    routes["GET /agents"] = { status: 200, body: [AGENTS[0]] };
+    routes["GET /run-estimates"] = { status: 200, body: [estimate("a1", null, 0.01, 2)] };
+    await renderView();
+    fireEvent.change(prSelect(), { target: { value: "pr7" } });
+
+    expect(within(cardOf("Security")).getByText(`— · ${formatCost(0.01)}`)).toBeInTheDocument();
+    expect(within(cardOf("Security")).queryByText(/—s/)).not.toBeInTheDocument();
+  });
+
+  it("C17 / AC-12: with only that agent checked the total reads '≈ — · <cost> · parallel fan-out', never '—s'", async () => {
+    routes["GET /agents"] = { status: 200, body: [AGENTS[0]] };
+    routes["GET /run-estimates"] = { status: 200, body: [estimate("a1", null, 0.01, 2)] };
+    await renderView();
+    fireEvent.change(prSelect(), { target: { value: "pr7" } });
+
+    expect(
+      screen.getByText((content) => content.includes(`≈ — · ${formatCost(0.01)} · parallel fan-out`)),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/≈ —s/)).not.toBeInTheDocument();
+  });
+
+  it("C17 / AC-9 / AC-12: guard, a priced 12 400 ms estimate still reads '12s · <cost>' on the card and in the total", async () => {
+    routes["GET /agents"] = { status: 200, body: [AGENTS[0]] };
+    routes["GET /run-estimates"] = { status: 200, body: [estimate("a1", 12_400, 0.05)] };
+    await renderView();
+    fireEvent.change(prSelect(), { target: { value: "pr7" } });
+
+    const cost = formatCost(0.05);
+    expect(within(cardOf("Security")).getByText(`12s · ${cost}`)).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes(`≈ 12s · ${cost} · parallel fan-out`))).toBeInTheDocument();
   });
 
   it("AC-14: with no enabled agent it shows the empty state and Go to Agents opens /agents", async () => {

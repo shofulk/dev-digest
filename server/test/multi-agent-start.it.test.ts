@@ -26,7 +26,7 @@ if (!hasDocker) {
 }
 
 /**
- * Multi-agent review (SPEC-03) — starting a multi-run: POST /pulls/:id/multi-agent-run.
+ * Multi-agent review (SPEC-05) — starting a multi-run: POST /pulls/:id/multi-agent-run.
  *
  * The model is a gated fixture (ScriptedLLM); what is under test is the request
  * contract, workspace scoping, what is created before the answer, and how the

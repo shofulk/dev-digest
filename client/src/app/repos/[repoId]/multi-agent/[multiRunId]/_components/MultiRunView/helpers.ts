@@ -57,6 +57,23 @@ export function secondsOf(ms: number | null | undefined): number | null {
 /** The "—" a missing duration shows (the same dash as a missing cost). */
 export const NO_DURATION = NO_COST;
 
+export type FindingsLoad = "pending" | "error" | "ready";
+
+/** Load state of the PR's reviews, where a tab's (and the drawer's) findings come from. */
+export function findingsLoad(prId: string | null, q: { isPending: boolean; isError: boolean }): FindingsLoad {
+  if (!prId || q.isPending) return "pending";
+  return q.isError ? "error" : "ready";
+}
+
+/** The sorted run ids of the `done` columns, joined; changes when a column turns `done`. */
+export function doneRunKey(columns: AgentColumn[]): string {
+  return columns
+    .filter((c) => c.status === "done")
+    .map((c) => c.run_id)
+    .sort()
+    .join(",");
+}
+
 /** "file:line" of a finding. */
 export function fileLine(file: string, line: number): string {
   return `${file}:${line}`;

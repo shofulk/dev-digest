@@ -8,7 +8,7 @@ import { MockEmbedder, MockGitClient, MockLLMProvider } from '../../src/adapters
 import type { PgFixture } from './pg.js';
 
 /**
- * Shared fixtures for the multi-agent review integration suites (SPEC-03).
+ * Shared fixtures for the multi-agent review integration suites (SPEC-05).
  *
  * - `ScriptedLLM`: a model whose Review answers, speed and failures the test
  *   controls (the `eval.it.test.ts` gate pattern). Only `schemaName === 'Review'`

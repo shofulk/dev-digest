@@ -64,6 +64,6 @@ export const multiAgentRuns = pgTable('multi_agent_runs', {
   /** PR head SHA when the multi-run started; compared to the current head to flag it stale. */
   headSha: text('head_sha'),
 }, (t) => ({
-  // The run list reads newest-first per PR (SPEC-04 Q-1).
+  // The run list reads newest-first per PR (SPEC-06 Q-1).
   prRanIdx: index('multi_agent_runs_pr_ran_idx').on(t.prId, t.ranAt),
 }));

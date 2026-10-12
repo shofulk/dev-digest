@@ -1,5 +1,5 @@
 /* query-errors.ts — which failed queries raise the global error toast. Plain module,
-   used by the QueryCache.onError in providers.tsx (SPEC-04). */
+   used by the QueryCache.onError in providers.tsx (SPEC-06). */
 
 import { ApiError } from "./api";
 

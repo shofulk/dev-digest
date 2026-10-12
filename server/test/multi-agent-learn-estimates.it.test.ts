@@ -22,7 +22,7 @@ if (!hasDocker) {
 }
 
 /**
- * Multi-agent review (SPEC-03) — run estimates (GET /run-estimates) and the Learn
+ * Multi-agent review (SPEC-05) — run estimates (GET /run-estimates) and the Learn
  * action (POST /findings/:id/learn), plus the `learned` flag on both reads.
  */
 d('multi-agent learn and estimates (Testcontainers pg)', () => {

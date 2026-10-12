@@ -144,7 +144,7 @@ export function buildEstimates(agentIds: string[], rows: EstimateRow[]): RunEsti
   });
 }
 
-// ---- run list (SPEC-04) ----------------------------------------------------
+// ---- run list (SPEC-06) ----------------------------------------------------
 
 /** The first row per non-null agent id wins (rows arrive newest first); null agent ids are skipped. */
 export function newestPerAgent<T>(rowsNewestFirst: T[], agentIdOf: (row: T) => string | null): T[] {
