@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { parseUnifiedDiff } from '../../adapters/git/diff-parser.js';
 import { MAX_FROZEN_DIFF_BYTES } from './constants.js';
+import type { EvalExpectation } from '@devdigest/shared';
 import {
   buildFrozenDiff,
   expectationTypeOf,
   freezeCase,
+  validateCaseFields,
   type FreezableFinding,
 } from './frozen-input.js';
 
@@ -67,6 +69,25 @@ describe('case name (AC33: the bare title slug, via freezeCase)', () => {
   });
 });
 
+describe('freezeCase caps', () => {
+  it('clips notes, title and body to the request caps, keeps exact-cap text and a null body', () => {
+    const clipped = freeze({
+      finding: { ...finding, rationale: 'r'.repeat(5000) },
+      pull: { number: 7, title: 't'.repeat(301), body: 'b'.repeat(65537) },
+    });
+    expect(clipped.ok).toBe(true);
+    if (!clipped.ok) return;
+    expect(clipped.value.notes).toHaveLength(4096);
+    expect(clipped.value.input_meta).toMatchObject({ pr_title: 't'.repeat(300), pr_body: 'b'.repeat(65536) });
+
+    const exact = freeze({ finding: { ...finding, rationale: 'r'.repeat(4096) }, pull: { number: 7, title: 'ok', body: null } });
+    expect(exact.ok).toBe(true);
+    if (!exact.ok) return;
+    expect(exact.value.notes).toBe('r'.repeat(4096));
+    expect(exact.value.input_meta).toMatchObject({ pr_title: 'ok', pr_body: null });
+  });
+});
+
 describe('freezeCase', () => {
   it('freezes a grounded expectation with every field', () => {
     const r = freeze();
@@ -125,5 +146,117 @@ describe('freezeCase', () => {
     const exact = MAX_FROZEN_DIFF_BYTES - header;
     expect(freeze({ patch: body(exact) }).ok).toBe(true);
     expect(freeze({ patch: body(exact + 1) })).toEqual({ ok: false, code: 'frozen_diff_too_large' });
+  });
+});
+
+describe('validateCaseFields (C11 g)', () => {
+  const FILE_A = buildFrozenDiff('src/a.ts', PATCH);
+  const FILE_B = buildFrozenDiff('src/b.ts', PATCH);
+  const expectation = (over: Partial<EvalExpectation> = {}): EvalExpectation => ({
+    type: 'must_find',
+    file: 'src/a.ts',
+    start_line: 2,
+    end_line: 2,
+    severity: 'WARNING',
+    category: 'bug',
+    title: 'ex',
+    ...over,
+  });
+  const validate = (
+    over: { name?: string; input_diff?: string; expectation?: EvalExpectation; checkName?: boolean } = {},
+  ) =>
+    validateCaseFields(
+      {
+        name: over.name ?? 'a-case',
+        input_diff: over.input_diff ?? FILE_A,
+        expectation: over.expectation ?? expectation(),
+      },
+      parseUnifiedDiff,
+      { checkName: over.checkName ?? true },
+    );
+  /** A valid, grounded one-file diff padded with an added line to exactly `bytes` (ASCII, so bytes = length). */
+  const padded = (bytes: number) => `${FILE_A}\n+${'x'.repeat(bytes - FILE_A.length - 2)}`;
+
+  describe('AC48: the name', () => {
+    it('AC48: trims the name it returns', () => {
+      expect(validate({ name: '  stripe-key-leak  ' })).toMatchObject({ ok: true, value: { name: 'stripe-key-leak' } });
+    });
+
+    it.each(['', '   '])('AC48: refuses the blank name %j with invalid_name', (name) => {
+      expect(validate({ name })).toEqual({ ok: false, code: 'invalid_name' });
+    });
+
+    it('AC48: refuses a 121-character name and accepts exactly 120', () => {
+      expect(validate({ name: 'n'.repeat(121) })).toEqual({ ok: false, code: 'invalid_name' });
+      expect(validate({ name: 'n'.repeat(120) })).toMatchObject({ ok: true, value: { name: 'n'.repeat(120) } });
+    });
+
+    it('AC48: ignores the name entirely when checkName is false (a dry run)', () => {
+      expect(validate({ name: '', checkName: false })).toMatchObject({ ok: true, value: { input_files: ['src/a.ts'] } });
+    });
+  });
+
+  describe('AC46: the size cap', () => {
+    it('AC46: accepts a valid grounded diff of exactly 204,800 bytes', () => {
+      expect(MAX_FROZEN_DIFF_BYTES).toBe(204_800);
+      const diff = padded(MAX_FROZEN_DIFF_BYTES);
+      expect(new TextEncoder().encode(diff).length).toBe(204_800);
+      expect(validate({ input_diff: diff })).toMatchObject({ ok: true, value: { input_files: ['src/a.ts'] } });
+    });
+
+    it('AC46: refuses 204,801 bytes of free text as too large, not as an invalid diff (size is checked before parsing)', () => {
+      expect(validate({ input_diff: 'x'.repeat(MAX_FROZEN_DIFF_BYTES + 1) })).toEqual({
+        ok: false,
+        code: 'frozen_diff_too_large',
+      });
+    });
+
+    it('AC46: counts UTF-8 bytes, not characters', () => {
+      // 102,401 two-byte characters = 204,802 bytes but only 102,401 characters.
+      expect(validate({ input_diff: 'é'.repeat(102_401) })).toEqual({ ok: false, code: 'frozen_diff_too_large' });
+    });
+  });
+
+  describe('AC45: the diff must parse', () => {
+    it('AC45: refuses a bare hunk with no file header', () => {
+      expect(validate({ input_diff: '@@ -1 +1 @@\n+x' })).toEqual({ ok: false, code: 'invalid_diff' });
+    });
+
+    it('AC45: refuses file headers with no hunk', () => {
+      const headersOnly = 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n';
+      expect(validate({ input_diff: headersOnly })).toEqual({ ok: false, code: 'invalid_diff' });
+    });
+
+    it('AC45: refuses free text', () => {
+      expect(validate({ input_diff: 'this is not a diff at all' })).toEqual({ ok: false, code: 'invalid_diff' });
+    });
+  });
+
+  describe('AC47: the expectation must be groundable in its own diff', () => {
+    it('AC47: refuses an expectation on a file that is not in the diff', () => {
+      expect(validate({ expectation: expectation({ file: 'src/zzz.ts' }) })).toEqual({
+        ok: false,
+        code: 'expectation_not_grounded',
+      });
+    });
+
+    it('AC47: refuses a range outside every hunk', () => {
+      expect(validate({ expectation: expectation({ start_line: 90, end_line: 91 }) })).toEqual({
+        ok: false,
+        code: 'expectation_not_grounded',
+      });
+    });
+  });
+
+  it('AC45: returns input_files = both paths of a two-file diff, in diff order', () => {
+    const r = validate({ input_diff: `${FILE_B}\n${FILE_A}`, expectation: expectation({ file: 'src/a.ts' }) });
+    expect(r).toMatchObject({ ok: true, value: { input_files: ['src/b.ts', 'src/a.ts'] } });
+  });
+
+  it('AC48: reports invalid_name before frozen_diff_too_large (precedence)', () => {
+    expect(validate({ name: '   ', input_diff: 'x'.repeat(MAX_FROZEN_DIFF_BYTES + 1) })).toEqual({
+      ok: false,
+      code: 'invalid_name',
+    });
   });
 });

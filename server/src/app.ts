@@ -2,6 +2,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import { createGroupedRateLimitStore } from './plugins/rate-limit-store.js';
 import { FastifySSEPlugin } from 'fastify-sse-v2';
 import {
   validatorCompiler,
@@ -93,7 +94,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   // Global rate limit. Disabled under test so integration suites can hammer
   // endpoints via inject(); per-route overrides live on the routes themselves.
   if (config.nodeEnv !== 'test') {
-    await app.register(rateLimit, { max: 120, timeWindow: '1 minute' });
+    await app.register(rateLimit, {
+      max: 120,
+      timeWindow: '1 minute',
+      // Routes sharing a `groupId` (the eval run starts) count against one budget.
+      store: createGroupedRateLimitStore(),
+    });
   }
 
   // Liveness check (no module, no DB, no rate limit).
