@@ -36,6 +36,15 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - the hermetic run no longer collides with a dev web, and provider keys must be set blank, not unset
+**Supersedes:** 2026-10-12 entry "`./scripts/e2e.sh` with a dev web from the same checkout running fails flows at 'land on the PR list'" - `scripts/e2e.sh` now builds and serves its web from `client/.next-e2e` (`DEVDIGEST_NEXT_DIST_DIR`), so a `pnpm --dir client dev` on `client/.next` can stay up. Separately, the API env must set provider and GitHub keys to an empty string: `unset` lets dotenv refill them from `server/.env`, and a real key leaks into a hermetic run (the container treats an empty key as absent).
+**Evidence:** scripts/e2e.sh:19,126,262
+
+### 2026-10-12 — `./scripts/e2e.sh` with a dev web from the same checkout running fails flows at "land on the PR list"
+Both `next dev` instances share `client/.next`; measured 7/12 flows green with
+`pnpm --dir client dev` up, 12/12 with it stopped. Stop the dev web before a hermetic run.
+**Evidence:** `scripts/e2e.sh`
+
 ### 2026-10-03 - the hermetic stack isolated only the DB and ports, not the seed's files on disk
 `db:seed` also writes the Project Context demo checkout into `DEVDIGEST_CLONE_DIR`, and only when
 that folder is absent. Without its own per-run value, a hermetic run wrote into the developer's
@@ -66,11 +75,42 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 — `find role link … --name` resolves no link at all; use `find text` for links
+Control: `find role link click --name "Eval Dashboard"` returns Element not found while the
+snapshot lists that link. This is the opposite of the 2026-10-11 popover entry (which says
+use `find role button` for buttons): for LINKS use `find text "<unique text>" click` and pick
+text that appears once on the page, or the misclick described there returns.
+**Evidence:** `e2e/specs/13-multi-agent-review.flow.json` (AC-100)
+
 ## Recurring Errors & Fixes
 
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-11 — a late flow fails alone in the full suite; its page shows "Rate limit exceeded, retry in N seconds"
+
+**Cause:** the API registers a global `@fastify/rate-limit` of 120 req/min per IP unless
+`NODE_ENV=test`. The whole suite drives one browser from one IP, and by flow 13 it had sent
+~124 requests in the trailing minute, so the results page's read got 429s; TanStack's quick
+retries all landed inside the window and the page settled on its error state. Run alone, the
+same flow passes.
+**Signal:** a `wait --text` times out only in a full run; the failure screenshot shows an
+error state with "Rate limit exceeded"; `grep '"statusCode": 429'` in the API log hits.
+**Fix:** the hermetic and CI API processes start with `NODE_ENV=test LOG_LEVEL=info` (rate
+limit off, request log kept). A dev stack you point `npm test` at is still throttled.
+**Evidence:** `server/src/app.ts:96`, `scripts/e2e.sh:155`, `.github/workflows/e2e-web.yml`
+
+### 2026-10-11 — `find text "<button label>" click` reports `✓ Done` but a popover closes and nothing fires
+
+**Cause:** the text locator resolved to some node other than the button (the label string
+also lives in the page, e.g. the next-intl messages inside the RSC payload). Its click landed
+outside the Run Review picker, whose outside-`mousedown` handler closed it; no POST was sent.
+**Signal:** the next `wait --url` times out and the API log has no request for the action.
+**Fix:** click buttons by role: `find role button click --name "<label>"` (substring match, so
+a trailing count like "(4)" is fine); add `--exact` when a longer name could also match
+(`Learn` vs `Learned`).
+**Evidence:** `e2e/specs/13-multi-agent-review.flow.json`
 
 ### 2026-10-04 — a `find … click` on a below-the-fold control reports `✓ Done` but nothing happens
 

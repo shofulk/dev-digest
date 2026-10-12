@@ -17,12 +17,33 @@ export async function getPull(
   return row;
 }
 
+/** True when the repo exists and belongs to the workspace. */
+export async function repoInWorkspace(db: Db, workspaceId: string, repoId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: t.repos.id })
+    .from(t.repos)
+    .where(and(eq(t.repos.workspaceId, workspaceId), eq(t.repos.id, repoId)));
+  return row !== undefined;
+}
+
 export async function getRepo(
   db: Db,
   repoId: string,
 ): Promise<typeof t.repos.$inferSelect | undefined> {
   const [row] = await db.select().from(t.repos).where(eq(t.repos.id, repoId));
   return row;
+}
+
+/** Replace a PR's imported files (the same rows GET /pulls/:id writes), in one transaction. */
+export async function replacePrFiles(
+  db: Db,
+  prId: string,
+  files: { path: string; additions: number; deletions: number; patch: string | null }[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(t.prFiles).where(eq(t.prFiles.prId, prId));
+    if (files.length > 0) await tx.insert(t.prFiles).values(files.map((f) => ({ prId, ...f })));
+  });
 }
 
 export async function getPrFiles(

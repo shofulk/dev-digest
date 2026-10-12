@@ -72,11 +72,14 @@ export class RunBus {
     return this.buffers.get(runId) ?? [];
   }
 
-  /** Signal completion and release buffers/emitters. */
+  /**
+   * Signal completion and release buffers/emitters. The cancel flag is kept on
+   * purpose: a run that finishes after being cancelled must still read as
+   * cancelled (AC-43).
+   */
   complete(runId: string): void {
     const e = this.emitters.get(runId);
     this.completed.add(runId);
-    this.cancelled.delete(runId);
     e?.emit('done');
     // Keep the buffer briefly available for late subscribers; clear emitter.
     this.emitters.delete(runId);

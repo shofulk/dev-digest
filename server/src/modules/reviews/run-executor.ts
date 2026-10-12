@@ -6,8 +6,9 @@ import * as schema from '../../db/schema.js';
 import type { AgentRow } from '../../db/rows.js';
 import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './repository.js';
 import { REVIEW_STRATEGY } from './constants.js';
-import { taskLine, toReviewIntent } from './helpers.js';
+import { errorText, taskLine, toReviewIntent } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
+import { scheduleAgentRuns, type SlotLimiter } from './scheduling.js';
 import { formatSkillBlock, skillsForPrompt, type AgentSkillSet } from '../_shared/agent-skills.js';
 import type { IntentDeriver } from '../_shared/intent/derive.js';
 import { resolveProjectContext } from '../_shared/project-context/resolve.js';
@@ -51,6 +52,8 @@ export class ReviewRunExecutor {
   private readonly tokenizer: Tokenizer;
   private readonly projectContextConfig: AppConfig['projectContext'];
   private readonly agentSkills: Container['agentSkills'];
+  private readonly limiter: SlotLimiter;
+  private readonly runBus: Container['runBus'];
 
   constructor(
     private container: Container,
@@ -66,12 +69,16 @@ export class ReviewRunExecutor {
     this.tokenizer = container.tokenizer;
     this.projectContextConfig = container.config.projectContext;
     this.agentSkills = container.agentSkills;
+    this.limiter = container.agentRunLimiter;
+    this.runBus = container.runBus;
   }
 
   /**
    * Background execution of the queued agent runs (NOT awaited by the route).
    * Loads the diff + intent once, then map-reduces each agent, streaming events
    * over the runBus and persisting each review. Per-agent failures are isolated.
+   * The agents run through the shared concurrency cap (`scheduleAgentRuns`);
+   * the diff + intent pre-work happens once, before any agent is scheduled.
    */
   async executeRuns(
     workspaceId: string,
@@ -79,6 +86,7 @@ export class ReviewRunExecutor {
     repo: typeof schema.repos.$inferSelect,
     jobs: { agent: AgentRow; runId: string }[],
     logger?: Logger,
+    ctx: { multiRunId?: string } = {},
   ): Promise<void> {
     // ONE logger fanned out over every queued run: shared pre-work (diff +
     // intent) is streamed into each target agent's Live Log and persisted into
@@ -120,8 +128,10 @@ export class ReviewRunExecutor {
         kind: 'tool',
       });
     } catch (err) {
-      runLog.error(`Failed to load PR diff: ${(err as Error).message}`);
-      await failAll(`Failed to load PR diff: ${(err as Error).message}`);
+      const message = errorText(err);
+      const reason = message.startsWith('PR diff unavailable') ? message : `Failed to load PR diff: ${message}`;
+      runLog.error(reason);
+      await failAll(reason);
       return;
     }
     runLog.info(`Diff ready — ${diff.files.length} changed file(s); starting ${jobs.length} agent run(s)`);
@@ -131,34 +141,32 @@ export class ReviewRunExecutor {
     // every agent reviews without an intent block (the stale one is NEVER used).
     const intent = await this.resolveIntent(workspaceId, pull, runLog);
 
-    for (const { agent, runId } of jobs) {
-      const agentStart = Date.now();
-      logger?.info(
-        { runId, agent: agent.name, provider: agent.provider, model: agent.model, prId: pull.id },
-        `review: agent "${agent.name}" started (${agent.provider}/${agent.model})`,
-      );
-      try {
-        const outcome = await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog, intent);
-        logger?.info(
-          {
-            runId,
-            agent: agent.name,
-            findings: outcome.findings.length,
-            grounding: outcome.grounding,
-            durationMs: Date.now() - agentStart,
-          },
-          `review: agent "${agent.name}" done — ${outcome.findings.length} finding(s)`,
-        );
-      } catch (err) {
-        // runOneAgent already persisted the failure/cancel (status + error +
-        // trace) and completed the bus; here we only log at the run level.
-        const cancelled = err instanceof RunCancelledError;
-        logger?.[cancelled ? 'info' : 'error'](
-          { runId, agent: agent.name, err: (err as Error).message, durationMs: Date.now() - agentStart },
-          `review: agent "${agent.name}" ${cancelled ? 'cancelled' : 'failed'}`,
-        );
-      }
-    }
+    await scheduleAgentRuns(
+      jobs.map((j) => ({ ...j, agentId: j.agent.id })),
+      {
+        limiter: this.limiter,
+        isCancelled: (runId) => this.runBus.isCancelled(runId),
+        run: async ({ agent, runId }) => {
+          // runOneAgent already persisted the failure/cancel (status + error +
+          // trace) and completed the bus; it rethrows and the scheduler logs it.
+          await this.runOneAgent(workspaceId, pull, repo, diff, agent, runId, runLog, intent);
+        },
+        onWaiting: ({ runId }) => {
+          runLog.forRun(runId).info('Waiting for a free agent slot');
+        },
+        // Cancelled before it got a slot: no model call, keep `cancelled`.
+        onSkipped: async ({ agent, runId }) => {
+          runLog.forRun(runId).info('Run cancelled before it started');
+          await this.repo.cancelRunIfRunning(runId).catch(() => undefined);
+          await this.repo
+            .saveRunTrace(runId, this.traceFromBuffer(runId, pull, agent, '0/0 passed'))
+            .catch(() => undefined);
+          this.runBus.complete(runId);
+        },
+        ...(logger ? { logger } : {}),
+        context: { prId: pull.id, ...(ctx.multiRunId ? { multiRunId: ctx.multiRunId } : {}) },
+      },
+    );
   }
 
   /**
@@ -185,7 +193,7 @@ export class ReviewRunExecutor {
         { kind: 'tool' },
       );
     } catch (err) {
-      runLog.info(`intent unavailable: ${(err as Error).message} — reviewing without intent`);
+      runLog.info(`intent unavailable: ${errorText(err)} — reviewing without intent`);
       return undefined;
     }
   }
@@ -300,6 +308,10 @@ export class ReviewRunExecutor {
       });
       const { tokensIn, tokensOut, costUsd, grounding } = outcome;
 
+      // A cancel that arrived while the model call was in flight must win: do not
+      // persist a review for a run the user cancelled (AC-43).
+      if (this.runBus.isCancelled(runId)) throw new RunCancelledError();
+
       const keptFindings = outcome.review.findings;
 
       // ---- Persist review + findings ----------------------------------------
@@ -387,7 +399,7 @@ export class ReviewRunExecutor {
       // run (and WHY it failed) is visible on the UI after a reload.
       const cancelled = err instanceof RunCancelledError;
       const status = cancelled ? 'cancelled' : 'failed';
-      const msg = cancelled ? 'Cancelled by user' : (err as Error).message;
+      const msg = cancelled ? 'Cancelled by user' : errorText(err);
       runLog.error(cancelled ? 'Run cancelled by user' : `Run failed: ${msg}`);
       await this.repo
         .completeAgentRun(runId, {
@@ -462,7 +474,7 @@ export class ReviewRunExecutor {
       rows = await this.container.repoIntel.getCallerSignatures(repoId, changedFiles, 10);
     } catch (err) {
       // Never let an enrichment break the run — surface only as a Live Log info.
-      runLog.info(`callers digest: repoIntel failed — ${(err as Error).message}`);
+      runLog.info(`callers digest: repoIntel failed — ${errorText(err)}`);
       return undefined;
     }
     if (rows.length === 0) return undefined;
@@ -497,7 +509,7 @@ export class ReviewRunExecutor {
       runLog.info(`repo map: ${map.tokens} token(s) attached (cached=${map.cached})`);
       return map.text;
     } catch (err) {
-      runLog.info(`repo map: repoIntel failed — ${(err as Error).message}`);
+      runLog.info(`repo map: repoIntel failed — ${errorText(err)}`);
       return undefined;
     }
   }

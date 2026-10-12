@@ -201,6 +201,13 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-12 - one `EventSource` per list item starves the browser's connection pool; multiplex one stream per page
+HTTP/1.1 allows about 6 connections per origin, and each open SSE stream holds one for good. A multi-run view that opened a stream per agent column used them up, so polls and POSTs (retry, cancel) queued behind the streams and looked hung. Open one merged stream for the whole page from a hook in `src/lib/hooks/multi-agent.ts` (server side: `mergedRunEventStream` in `modules/_shared/sse-stream.ts`, events already carry `runId`) and let leaf components such as `RunningLog` filter by run id.
+**Evidence:** client/src/lib/hooks/multi-agent.ts, server/src/modules/_shared/sse-stream.ts
+### 2026-10-11 — a failed mutation toasts twice, and a one-line title in vendor `Markdown` is not a block problem
+Every mutation error already toasts `err.message` through the global `MutationCache` (`providers.tsx`), so an `onError` that toasts again (`useFindingCardActions` eval-case: translated `caseErrorKey`) gives two toasts; `FindingsPanel.test.tsx` pins the translated one, so changing it is a product decision, not a drive-by. Separately, vendor `Markdown` has no inline mode, but `.dd-md > :last-child { margin-bottom: 0 !important }` (globals.css) zeroes the lone `<p>`; render a title in a `<div>` (never a `<span>`, `div > p` is not phrasing content) and it lays out like text.
+**Evidence:** client/src/components/finding-card/useFindingCardActions.ts:34
+
 ### 2026-10-04 — a data hook reports failure as a stable `code` only; the component maps code → `t()` key
 `client/AGENTS.md` says "no literal copy in components", which reads as if hooks were
 exempt — they are not: user-facing strings live in `messages/<locale>/*.json`. Hooks are
@@ -323,9 +330,34 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 — an SSE frame sent as `event: error` also fires `EventSource.onerror`
+The server frames every `RunEvent` with `event: <kind>`, and one kind is `error`. A browser
+dispatches that frame as an `error`-type event, so it reaches `es.onerror` as well as
+`addEventListener("error")`. An `onerror` that closes the source then kills the whole stream on
+the first agent error line. Tell them apart: a server frame is a `MessageEvent` with `data`; a
+transport failure has none. A test double must dispatch a named `error` frame to `onerror` too,
+or it cannot see this.
+**Evidence:** `client/src/lib/hooks/multi-agent.ts` (`useMultiRunEvents`), `client/src/lib/hooks/multi-agent-events.test.ts`
+
+### 2026-10-12 - results-page tests must wrap the real `Providers`, and a file that mocks `@/lib/repo-context` must export `RepoProvider` too
+A results-view test with a hand-rolled QueryClient wrapper hid the real provider stack (intl, query client, repo context), so hook and error-toast behaviour differed from production. Wrap the real `Providers`. Then, if the same file does `vi.mock("@/lib/repo-context", ...)`, the factory must also return `RepoProvider`, or vitest throws `No "RepoProvider" export is defined on the mock` when `Providers` renders.
+**Evidence:** client/src/test/multi-agent-results-intl.tsx, client/src/providers.tsx
+
 ### 2026-10-12 - jsdom has no `isContentEditable`, and a focus-trap test needs a focusable element outside the dialog
 jsdom leaves `HTMLElement.isContentEditable` undefined even with `contenteditable="true"`, so a keyboard-shortcut guard that skips editable targets cannot be exercised until the test sets it: `Object.defineProperty(el, "isContentEditable", { value: true })`. With no `@testing-library/user-event` in `client`, a Tab-trap test fires `fireEvent.keyDown(el, { key: "Tab" })` and asserts the return value (`false` = `preventDefault` called) plus `toHaveFocus` on the wrap target; it is only non-vacuous when a focusable element exists outside the dialog for native Tab to reach.
 **Evidence:** client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel/FindingsPanel.test.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.test.tsx
+
+### 2026-10-12 — a query hook with `retry: retryRead` never reaches its error state in a test; relative times drift
+Reaching `isError` through `retryRead` needs fake timers with `shouldAdvanceTime: true`
+(real waiting takes the whole backoff). For deterministic relative times ("3 minutes ago")
+pass `timeZone` and a fixed `now` to `NextIntlClientProvider`; the shared test wrapper does both.
+**Evidence:** `client/src/test/multi-agent-history-intl.tsx`, `client/src/lib/hooks/multi-agent-runs.test.ts`
+
+### 2026-10-12 — `@testing-library/user-event` IS installed
+**Supersedes:** 2026-10-04 entry "`@testing-library/user-event` is not installed" — it is a
+client devDependency now and `multi-agent-a11y.test.tsx` uses it; `userEvent` is available
+for new tests, and a reviewer asking for it over `fireEvent` is no longer a false positive.
+**Evidence:** `client/package.json:32`, `client/src/test/multi-agent-a11y.test.tsx`
 
 ### 2026-10-11 — vendor `Sparkline` renders `NaN` coordinates for a single data point
 
@@ -376,6 +408,16 @@ fallback to represent "no link".
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-12 — navigation after `await mutateAsync` stalls behind a slow list query
+**Cause:** a mutation `onSuccess` that RETURNS `qc.invalidateQueries(...)` (or is an arrow
+expression body) makes TanStack Query await it, so `mutateAsync` resolves only after every
+active matching query has refetched. A slow or hung list query (e.g. `["multi-agent-runs"]`
+on the same page) then blocks the `router.push` that follows the await.
+**Signal:** the button sits in its pending state with the POST already answered; `RecentRuns.test.tsx` AC-93 (list GET never resolves, navigation still expected) times out.
+**Fix:** fire-and-forget the invalidation: `void qc.invalidateQueries(...)` inside a block body
+that returns nothing, as `useStartMultiRun` does.
+**Evidence:** `client/src/lib/hooks/multi-agent.ts:33`
 
 ### 2026-10-04 - an absence assertion in `waitFor` passes trivially right after a raw `FakeEventSource.emit()`
 **Cause:** `waitFor` runs its callback once synchronously before polling. A test-double

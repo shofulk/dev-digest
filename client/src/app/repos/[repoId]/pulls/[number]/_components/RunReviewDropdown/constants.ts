@@ -1,4 +1,4 @@
 /** Constants for RunReviewDropdown. */
 
-/** Dropdown menu width (px). */
-export const DROPDOWN_WIDTH = 250;
+/** Picker panel width (px). */
+export const PICKER_WIDTH = 320;

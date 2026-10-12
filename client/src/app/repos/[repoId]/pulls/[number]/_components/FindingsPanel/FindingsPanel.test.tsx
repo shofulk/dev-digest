@@ -31,6 +31,10 @@ vi.mock("../../../../../../../components/eval-ui/EvalCaseModal", () => ({
   ),
 }));
 
+vi.mock("../../../../../../../lib/hooks/multi-agent", () => ({
+  useLearnFinding: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 const notifySuccess = vi.fn();
 const notifyError = vi.fn();
 vi.mock("../../../../../../../lib/toast", () => ({

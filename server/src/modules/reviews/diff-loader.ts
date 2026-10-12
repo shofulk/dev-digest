@@ -8,6 +8,11 @@ import type { ReviewRepository, PullRow } from './repository.js';
  * Load the unified diff for a PR. Prefers a real `git diff base...head`; falls
  * back to assembling a synthetic unified diff from the persisted pr_files
  * patches (so the reviewer works even before a clone completes / in tests).
+ * The PR's files are imported only when its page is opened (GET /pulls/:id), and a
+ * multi-run can start from Configure run on a PR nobody opened: when git fails and
+ * nothing was imported, import the files from GitHub first. When that fails too,
+ * the diff is genuinely unavailable: throw `PR diff unavailable: <git error>` so
+ * every queued run fails with that one reason, instead of reviewing an empty diff.
  */
 export async function loadDiff(
   container: Container,
@@ -16,6 +21,7 @@ export async function loadDiff(
   pull: PullRow,
   repoRow: typeof schema.repos.$inferSelect,
 ): Promise<UnifiedDiff> {
+  let gitError: Error | undefined;
   try {
     const diff = await container.git.diff(
       { owner: repoRow.owner, name: repoRow.name },
@@ -23,10 +29,28 @@ export async function loadDiff(
       pull.headSha,
     );
     if (diff.files.length > 0) return diff;
-  } catch {
+  } catch (err) {
+    gitError = err instanceof Error ? err : new Error(String(err));
     /* fall through to pr_files reconstruction */
   }
-  return diffFromPrFiles(repo, pull.id);
+  let fallback = await diffFromPrFiles(repo, pull.id);
+  if (gitError && fallback.files.length === 0) {
+    try {
+      const gh = await container.github();
+      const detail = await gh.getPullRequest({ owner: repoRow.owner, name: repoRow.name }, pull.number);
+      await repo.replacePrFiles(
+        pull.id,
+        detail.files.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions, patch: f.patch ?? null })),
+      );
+      fallback = await diffFromPrFiles(repo, pull.id);
+    } catch {
+      /* no token / offline: keep the git error as the reason */
+    }
+  }
+  if (gitError && fallback.files.length === 0) {
+    throw new Error(`PR diff unavailable: ${gitError.message}`);
+  }
+  return fallback;
 }
 
 /** Reconstruct a UnifiedDiff from persisted pr_files patches. */

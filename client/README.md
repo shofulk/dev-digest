@@ -27,6 +27,8 @@ flowchart TD
   ONB["/onboarding<br/>add repo"] -->|"POST /repos"| API[("Fastify API")]
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
   ROOT --> CONTEXT["/repos/:repoId/context<br/>Project Context: grouped list + preview"]
+  PULLS --> MULTI["/repos/:repoId/multi-agent<br/>Configure run: pick a PR and agents, then Recent runs list<br/>?pr=prId"]
+  MULTI --> RESULTS["/repos/:repoId/multi-agent/:multiRunId<br/>results: Columns or Tabs + Where agents disagree<br/>?view=columns|tabs"]
 
   AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context · evals)"]
   EVAL["/eval<br/>Eval Dashboard"] --> EVALAGENT["/eval/agents/:agentId<br/>agent eval page"]
@@ -34,7 +36,9 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss) · /findings/:id/eval-case · /findings/:id/eval-case-draft<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
+  PR -->|"GET /pulls/:id · /repos/:id/multi-agent-runs?pr_id= · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss) · /findings/:id/eval-case · /findings/:id/eval-case-draft<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
+  MULTI -->|"GET /run-estimates · /repos/:id/pulls · /agents · /repos/:id/multi-agent-runs<br/>POST /pulls/:id/multi-agent-run"| API
+  RESULTS -->|"GET /multi-agent-runs/:id · /multi-agent-runs/:id/events?run_ids= · /pulls/:id · /pulls/:id/reviews · /findings/:id/eval-case-draft<br/>POST /multi-agent-runs/:id/cancel · /multi-agent-runs/:id/agents/:agentId/retry · /runs/:id/cancel · /findings/:id/(accept|dismiss|learn|eval-case)<br/>SSE /runs/:id/events"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/file<br/>POST /repos/:id/context/reindex"| API
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs · /agents/:id/versions/:v/restore"| API
   EVAL -->|"/eval/dashboard · POST /eval/runs/all · /agents/:id/eval-(cases|runs) · /eval-cases/:id[/runs] · /agents/:id/eval-cases/dry-run · /eval-runs/:runId · /eval-runs/compare"| API
@@ -46,7 +50,10 @@ Cross-cutting chrome lives in `src/components/app-shell` (nav, breadcrumbs,
 `g`-then-key shortcuts). Pages are thin; feature logic sits in colocated
 `_components/<Name>/` folders, each with its own `*.test.tsx`. Eval pieces used by
 more than one route (`CompareModal`, `MetricTile`, `MetricBar`) live in
-`src/components/eval-ui/`.
+`src/components/eval-ui/`. `FindingCard` (with `useFindingCardActions`) and
+`RunTraceDrawer` are shared by the PR detail route and the multi-agent results
+page, so they live in `src/components/finding-card/` and
+`src/components/run-trace-drawer/`, not under a route.
 
 `EvalCaseModal` (same folder) checks an eval case before it is saved: name, frozen input,
 expectation, notes, and a dry run that stores nothing. "Turn into eval case" on a `FindingCard`

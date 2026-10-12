@@ -1,0 +1,50 @@
+{
+  "picker": {
+    "title": "Pick agents to run",
+    "clear": "Clear",
+    "run": "Run multi-agent review ({count})",
+    "configureAgents": "Configure agents…",
+    "noEstimate": "—",
+    "estimateSeconds": "~{seconds}s"
+  },
+  "configure": {
+    "breadcrumb": "Multi-Agent Review",
+    "pageTitle": "Run a Multi-Agent Review",
+    "subtitle": "Pick a pull request and choose which agents to fan out — they run in parallel and you compare their findings side by side.",
+    "title": "Configure run",
+    "stepPr": "Pull request",
+    "stepAgents": "Agents to run",
+    "selectPr": "Select a pull request",
+    "prItem": "#{number} · {title}",
+    "pickPrFirst": "Pick a pull request first",
+    "pickPrFirstBody": "Choose a pull request above to see the agents you can run on it.",
+    "selectAll": "Select all",
+    "run": "Run multi-agent review ({count})",
+    "estimate": "{time} · {cost}",
+    "seconds": "{seconds}s",
+    "noEstimate": "— · —",
+    "total": "≈ {time} · {cost} · parallel fan-out",
+    "partial": "partial",
+    "loadError": "Could not load pull requests"
+  },
+  "history": {
+    "title": "Recent runs",
+    "prItem": "#{number} · {title}",
+    "agents": "{count, plural, one {# agent} other {# agents}}",
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "partial": "Partial",
+      "failed": "Failed"
+    },
+    "seconds": "{seconds}s",
+    "none": "—",
+    "emptyTitle": "No multi-agent runs yet",
+    "emptyBody": "Runs you start here appear in this list.",
+    "error": "Could not load recent runs",
+    "retry": "Retry"
+  },
+  "prLink": {
+    "open": "Open multi-agent review"
+  }
+}

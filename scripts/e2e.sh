@@ -6,6 +6,7 @@
 #
 #   ./scripts/e2e.sh
 #   E2E_PG_PORT=5440 E2E_API_PORT=3201 E2E_WEB_PORT=3200 ./scripts/e2e.sh
+#   ./scripts/e2e.sh --probe-isolation   # prove a planted key stays invisible, no flows
 #
 # Mirrors what .github/workflows/e2e-web.yml does, but with an ephemeral
 # Postgres (no persistent volume → empty every run, so the seeded demo repo
@@ -13,6 +14,12 @@
 #
 # Exits with the e2e run's status. On success, failure, or Ctrl-C it tears down
 # the API/web child processes AND removes the isolated Postgres container.
+#
+# Isolation: the API runs with an empty per-run HOME and blank provider/GitHub
+# keys, and the web builds into client/.next-e2e. Before any flow, the script
+# checks GET /settings/secrets-status is all false. --probe-isolation plants a
+# key in a fake developer HOME and env, proves a control API sees it, then
+# proves the isolated API does not. It starts neither the web nor the flows.
 #
 # NOTE: this is a LOCAL convenience. CI brings up its own stack and calls the
 # pure runner (`cd e2e && npm test`) directly — this script is not used in CI.
@@ -42,6 +49,13 @@ export API_PORT WEB_PORT
 export NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}"
 export E2E_BASE_URL="http://localhost:${WEB_PORT}"
 
+PROBE_ISOLATION=0
+case "${1:-}" in
+  "") : ;;
+  --probe-isolation) PROBE_ISOLATION=1 ;;
+  *) echo "unknown argument: $1 (usage: ./scripts/e2e.sh [--probe-isolation])"; exit 2 ;;
+esac
+
 log()  { printf '\033[1;36m▸ %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
@@ -57,6 +71,13 @@ WEB_PID=""
 # Initialised empty so `cleanup`'s `rm -rf "$CLONE_DIR"` is a safe no-op (under
 # `set -u`) if a prerequisite check above exits before CLONE_DIR is assigned.
 CLONE_DIR=""
+# Same idea for the per-run HOME of the API and the --probe-isolation fake home.
+E2E_HOME=""
+PROBE_HOME=""
+# `next dev` rewrites the tracked client/next-env.d.ts to point at its distDir
+# (.next-e2e). Its original bytes are saved before the web starts and put back
+# here, so a run never leaves a diff in the checkout.
+NEXT_ENV_SAVED=""
 # Recursively kill a process and all its descendants. `pnpm exec tsx` / `next dev`
 # spawn the real listener as a GRANDCHILD, so a plain `kill $PID` + `pkill -P`
 # leaves it orphaned (port stays bound). Walk the tree leaves-first instead.
@@ -72,6 +93,7 @@ cleanup() {
   log "tearing down hermetic e2e stack"
   kill_tree "$WEB_PID"
   kill_tree "$SERVER_PID"
+  [ -s "$NEXT_ENV_SAVED" ] && cp "$NEXT_ENV_SAVED" client/next-env.d.ts 2>/dev/null || true
   # Backstop: reap whatever still holds the ISOLATED ports (never the dev stack's
   # 3000/3001 — only the alt ports this script started).
   for port in "$WEB_PORT" "$API_PORT"; do
@@ -80,7 +102,7 @@ cleanup() {
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
-  rm -rf "$CLONE_DIR" 2>/dev/null || true
+  rm -rf "$CLONE_DIR" "$E2E_HOME" "$PROBE_HOME" "$NEXT_ENV_SAVED" 2>/dev/null || true
   exit "$code"
 }
 trap cleanup EXIT INT TERM
@@ -96,6 +118,52 @@ trap cleanup EXIT INT TERM
 # which is the point: every hermetic run gets its own fixtures.
 CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devdigest-e2e-clone.XXXXXX")"
 export DEVDIGEST_CLONE_DIR="$CLONE_DIR"
+
+# Per-run empty HOME for the API process ONLY, so os.homedir() and with it
+# config.secretsPath (~/.devdigest/secrets.json) point at an empty dir and the
+# developer's saved keys are never read. pnpm, docker and agent-browser keep the
+# real HOME (the API launches through ./node_modules/.bin/tsx, not pnpm, for the
+# same reason). Created after the trap, removed in cleanup.
+E2E_HOME="$(mktemp -d "${TMPDIR:-/tmp}/devdigest-e2e-home.XXXXXX")"
+mkdir -p "$E2E_HOME/.devdigest"
+
+# Every API launch uses this array. The provider and GitHub keys are set EMPTY,
+# not unset: dotenv never overrides a variable that is already set, so an empty
+# value stops server/.env from filling it, and the container treats an empty key
+# as absent. NODE_ENV=test switches off ONLY the global 120 req/min per-IP rate
+# limit (server/src/app.ts): the whole suite drives one browser from one IP and
+# crosses that budget within a minute (flow 13's results page rendered "Couldn't
+# load this run"). LOG_LEVEL=info keeps the request log test mode would silence.
+API_ENV=(
+  "HOME=$E2E_HOME"
+  "OPENAI_API_KEY="
+  "ANTHROPIC_API_KEY="
+  "OPENROUTER_API_KEY="
+  "GITHUB_TOKEN="
+  "GITHUB_PAT="
+  "NODE_ENV=test"
+  "LOG_LEVEL=info"
+)
+
+# wait_api_healthy: block until /health answers, or fail if the API process died.
+wait_api_healthy() {
+  local up=0
+  for _ in $(seq 1 60); do
+    curl -fsS "http://localhost:${API_PORT}/health" >/dev/null 2>&1 && { up=1; break; }
+    kill -0 "$SERVER_PID" 2>/dev/null || { echo "API process exited before becoming healthy"; exit 1; }
+    sleep 1
+  done
+  [ "$up" -eq 1 ] || { echo "API never became healthy on :$API_PORT"; exit 1; }
+}
+
+# stop_api: stop the API we started and wait until it is gone (frees the port).
+stop_api() {
+  kill_tree "$SERVER_PID"
+  wait "$SERVER_PID" 2>/dev/null || true
+  SERVER_PID=""
+}
+
+secrets_status() { curl -fsS "http://localhost:${API_PORT}/settings/secrets-status"; }
 
 # --- fresh isolated Postgres (ephemeral: --rm, no named volume) --------------
 log "starting isolated Postgres '$PG_CONTAINER' on :$PG_PORT (ephemeral)"
@@ -143,25 +211,68 @@ log "applying migrations (isolated db)"
 log "seeding demo data (isolated db)"
 (cd server && pnpm db:seed)
 
+# --- --probe-isolation: prove the isolation holds against a planted key -----
+if [ "$PROBE_ISOLATION" -eq 1 ]; then
+  PROBE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/devdigest-e2e-probe.XXXXXX")"
+  mkdir -p "$PROBE_HOME/.devdigest"
+  ( umask 077; printf '{"OPENAI_API_KEY":"sk-e2e-probe"}\n' > "$PROBE_HOME/.devdigest/secrets.json" )
+  chmod 600 "$PROBE_HOME/.devdigest/secrets.json"
+
+  log "probe 1/2: control API with the planted key must SEE it"
+  (cd server && exec env "HOME=$PROBE_HOME" "OPENAI_API_KEY=sk-e2e-probe" \
+    NODE_ENV=test LOG_LEVEL=info ./node_modules/.bin/tsx src/server.ts) &
+  SERVER_PID=$!
+  wait_api_healthy
+  control="$(secrets_status)"
+  stop_api
+  case "$control" in
+    *'"openai":true'*) : ;;
+    *) echo "probe broken: the control API did not see the planted key ($control)"; exit 1 ;;
+  esac
+
+  log "probe 2/2: isolated API, same parent environment, must see NO key"
+  (cd server && HOME="$PROBE_HOME" OPENAI_API_KEY=sk-e2e-probe \
+    exec env "${API_ENV[@]}" ./node_modules/.bin/tsx src/server.ts) &
+  SERVER_PID=$!
+  wait_api_healthy
+  isolated="$(secrets_status)"
+  stop_api
+  case "$isolated" in
+    *true*) echo "e2e isolation broken: the API sees a configured key ($isolated)"; exit 1 ;;
+  esac
+  log "isolation probe passed: the planted key stays invisible"
+  exit 0
+fi
+
 # --- API on :$API_PORT -------------------------------------------------------
 # tsx directly (not `pnpm start`, which needs a build; not `tsx watch`, to avoid
-# a mid-suite watcher restart).
+# a mid-suite watcher restart), through env "${API_ENV[@]}" (see above).
 log "starting API on :$API_PORT"
-(cd server && pnpm exec tsx src/server.ts) &
+(cd server && exec env "${API_ENV[@]}" ./node_modules/.bin/tsx src/server.ts) &
 SERVER_PID=$!
 log "waiting for API /health"
-api_up=0
-for _ in $(seq 1 60); do
-  curl -fsS "http://localhost:${API_PORT}/health" >/dev/null 2>&1 && { api_up=1; break; }
-  kill -0 "$SERVER_PID" 2>/dev/null || { echo "API process exited before becoming healthy"; exit 1; }
-  sleep 1
-done
-[ "$api_up" -eq 1 ] || { echo "API never became healthy on :$API_PORT"; exit 1; }
+wait_api_healthy
 log "API healthy"
 
+# Hard check before any flow: the API must see no configured key (flow 13 starts
+# real runs and is only model-free on a keyless API).
+log "checking the API sees no configured key"
+status_body="$(secrets_status)"
+case "$status_body" in
+  *true*) echo "e2e isolation broken: the API sees a configured key ($status_body)"; exit 1 ;;
+esac
+
 # --- web on :$WEB_PORT (next dev → reads NEXT_PUBLIC_API_BASE from env) -------
+# DEVDIGEST_NEXT_DIST_DIR (read by client/next.config.mjs) gives this web its own
+# client/.next-e2e, so a `pnpm --dir client dev` running from the same checkout
+# keeps client/.next and the two never clobber each other.
 log "starting web on :$WEB_PORT"
-(cd client && pnpm exec next dev -p "$WEB_PORT") &
+# Publish the path only once the copy is complete: an exit in between must not make
+# cleanup restore an empty file over the tracked one.
+next_env_tmp="$(mktemp -t devdigest-e2e-next-env.XXXXXX)"
+cp client/next-env.d.ts "$next_env_tmp"
+NEXT_ENV_SAVED="$next_env_tmp"
+(cd client && DEVDIGEST_NEXT_DIST_DIR=.next-e2e pnpm exec next dev -p "$WEB_PORT") &
 WEB_PID=$!
 log "waiting for web :$WEB_PORT"
 web_up=0

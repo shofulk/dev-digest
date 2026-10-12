@@ -32,8 +32,10 @@ A spec lives in `specs/NN-name.flow.json`:
 - Locators are deterministic only (`--url`, `--text`, `find role|text|label`).
   We never use the AI `chat` command, so runs are stable and key-free.
 
-Flows target **read-only seeded data** (the demo repo `acme/payments-api`, PR
-#482, the seeded agents), so nothing triggers a model call.
+Flows 01-12 target **read-only seeded data** (the demo repo `acme/payments-api`,
+PR #482, the seeded agents).
+Flow 13 is the one flow that writes data (multi-runs, agent runs, a `learning` memory row) and starts real runs.
+It stays model-free because `./scripts/e2e.sh` runs the API keyless.
 
 > **Precondition: a freshly-seeded DB.** Flow `02` follows the home redirect to
 > the *first* repo, so it assumes the seeded demo repo is the only one. CI
@@ -74,10 +76,22 @@ exactly what flows 02/04/05 need. `scripts/e2e.sh` also exports
 (`server/src/db/seed-project-context.ts`)
 writes into an isolated tree instead of your real clone dir.
 
+The script isolates the API from your machine as one invariant:
+
+- The API gets a per-run empty `HOME`, so `~/.devdigest/secrets.json` is never read.
+  Only the API gets it; pnpm, docker and agent-browser keep your real `HOME`.
+- Provider and GitHub keys are set blank, so `server/.env` cannot fill them.
+- `GET /settings/secrets-status` must be all false before any flow runs, else the script exits 1.
+- The web builds into `client/.next-e2e`, so a running `pnpm --dir client dev` no longer collides.
+- `./scripts/e2e.sh --probe-isolation` plants a key in a fake home and proves it stays invisible
+  to the isolated API (no web, no flows).
+
 ### Against your own running stack
 
 Only safe if your dev DB contains *only* the seeded repo (see precondition
 above). Otherwise prefer the hermetic runner.
+Apply every migration first with `pnpm --dir server db:migrate` (flow 13 needs the multi-agent columns and the run-list index).
+Run flow 13 only on a stack with no provider key, because this path is not isolated.
 
 ```sh
 ./scripts/dev.sh          # Postgres + API :3001 + web :3000 (seeded)
@@ -106,3 +120,4 @@ a CI artifact by `.github/workflows/e2e-web.yml`).
 | `05-pr-diff` | PR #482 → Files changed tab → seeded file renders in the diff viewer |
 | `06-onboarding` | `/onboarding` → add-repository form renders (no submit) |
 | `07-settings` | `/settings/api-keys` + `/settings/models` → section titles render |
+| `13-multi-agent-review` | PR #482 → Run Review picker → multi-agent run → results page, failed columns show Retry → Configure run (`?pr=`) → second run → Configure run shows it under Recent runs → open the first row → PR #482 → Agent runs tab → Learn → Learned → "Open multi-agent review" in the PR header opens the newest run. Starts **real** runs: deterministic under CI and `./scripts/e2e.sh`, which runs the API keyless (no provider key), where every run fails at provider resolution; on a keyed stack the runs make paid model calls and the Retry step times out |

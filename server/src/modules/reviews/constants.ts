@@ -10,3 +10,6 @@
  * model's context.
  */
 export const REVIEW_STRATEGY = 'single-pass' as const;
+
+/** Most multi-runs `GET /repos/:id/multi-agent-runs` returns (newest first). */
+export const MULTI_RUN_LIST_LIMIT = 20;

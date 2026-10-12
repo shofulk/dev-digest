@@ -23,6 +23,9 @@ export type ReviewRow = typeof t.reviews.$inferSelect;
 import * as reviewRepo from './repository/review.repo.js';
 import * as runRepo from './repository/run.repo.js';
 import * as pullRepo from './repository/pull.repo.js';
+import * as multiRunRepo from './repository/multi-run.repo.js';
+import * as memoryRepo from './repository/memory.repo.js';
+import type { MemoryRow } from '../../db/rows.js';
 
 export class ReviewRepository {
   constructor(private db: Db) {}
@@ -39,6 +42,14 @@ export class ReviewRepository {
 
   getPrFiles(prId: string): Promise<(typeof t.prFiles.$inferSelect)[]> {
     return pullRepo.getPrFiles(this.db, prId);
+  }
+
+  /** Replace a PR's imported files (used when a run targets a PR whose page was never opened). */
+  replacePrFiles(
+    prId: string,
+    files: { path: string; additions: number; deletions: number; patch: string | null }[],
+  ): Promise<void> {
+    return pullRepo.replacePrFiles(this.db, prId, files);
   }
 
   // ---- reviews + findings -------------------------------------------------
@@ -136,10 +147,13 @@ export class ReviewRepository {
     prId: string;
     provider: string | null;
     model: string | null;
+    /** Links the run to a multi-agent run; omit for a single run. */
+    multiAgentRunId?: string | null;
   }): Promise<string> {
     return runRepo.createAgentRun(this.db, values);
   }
 
+  /** Finalise a run. Resolves false (writes nothing) when it was no longer `running`, e.g. cancelled. */
   completeAgentRun(
     runId: string,
     values: {
@@ -160,7 +174,7 @@ export class ReviewRepository {
       /** Ordered ids of the skills the prompt included. Omit on failed/cancelled runs (stays NULL). */
       skillsUsed?: string[];
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     return runRepo.completeAgentRun(this.db, runId, values);
   }
 
@@ -181,5 +195,67 @@ export class ReviewRepository {
 
   getRunTrace(runId: string): Promise<RunTrace | undefined> {
     return runRepo.getRunTrace(this.db, runId);
+  }
+
+  // ---- multi-agent runs ----------------------------------------------------
+
+  /** One transaction: the multi-run (with the PR head SHA) plus one linked `running` run per agent. */
+  createMultiRunWithRuns(values: {
+    workspaceId: string;
+    prId: string;
+    headSha: string | null;
+    runs: { agentId: string; provider: string | null; model: string | null }[];
+  }): Promise<{ multiRunId: string; runs: { runId: string; agentId: string }[] }> {
+    return multiRunRepo.createMultiRunWithRuns(this.db, values);
+  }
+
+  getMultiRun(workspaceId: string, multiRunId: string) {
+    return multiRunRepo.getMultiRun(this.db, workspaceId, multiRunId);
+  }
+
+  /** Every run of a multi-run (newest first) with its agent name. */
+  runsForMultiRun(workspaceId: string, multiRunId: string): Promise<multiRunRepo.MultiRunAgentRun[]> {
+    return multiRunRepo.runsForMultiRun(this.db, workspaceId, multiRunId);
+  }
+
+  /** Atomic retry guard + insert of a new run for one agent of a multi-run. */
+  createRetryRun(v: Parameters<typeof multiRunRepo.createRetryRun>[1]): Promise<multiRunRepo.RetryRunResult> {
+    return multiRunRepo.createRetryRun(this.db, v);
+  }
+
+  /** Reviews + findings for the given run ids (workspace-scoped through `reviews`). */
+  reviewsWithFindingsForRuns(workspaceId: string, runIds: string[]) {
+    return multiRunRepo.reviewsWithFindingsForRuns(this.db, workspaceId, runIds);
+  }
+
+  /** Last 10 `done` runs per agent in the workspace, for run estimates. */
+  estimateRunRows(workspaceId: string) {
+    return multiRunRepo.estimateRunRows(this.db, workspaceId);
+  }
+
+  /** True when the repo exists and belongs to the workspace. */
+  repoInWorkspace(workspaceId: string, repoId: string): Promise<boolean> {
+    return pullRepo.repoInWorkspace(this.db, workspaceId, repoId);
+  }
+
+  /** Newest `limit` multi-runs of a repo (or one PR) with their agent runs, for the run list. */
+  listMultiRunSummaryRows(workspaceId: string, repoId: string, prId: string | undefined, limit: number) {
+    return multiRunRepo.listMultiRunSummaryRows(this.db, workspaceId, repoId, prId, limit);
+  }
+
+  // ---- Learn (memory) -----------------------------------------------------
+
+  /** Which of `findingIds` already have a Learn memory row. */
+  findLearnings(workspaceId: string, findingIds: string[]): Promise<Set<string>> {
+    return memoryRepo.findLearnings(this.db, workspaceId, findingIds);
+  }
+
+  insertLearning(values: memoryRepo.NewLearning): Promise<MemoryRow> {
+    return memoryRepo.insertLearning(this.db, values);
+  }
+
+  /** Check-then-insert the finding's `learning` row in one transaction. */
+  learnOnce(values: memoryRepo.NewLearning): Promise<{ row: MemoryRow; created: boolean }> {
+    return memoryRepo.learnOnce(this.db, values);
   }
 }

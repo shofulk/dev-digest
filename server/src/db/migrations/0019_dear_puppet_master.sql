@@ -1,0 +1,1 @@
+CREATE INDEX "multi_agent_runs_pr_ran_idx" ON "multi_agent_runs" USING btree ("pr_id","ran_at");

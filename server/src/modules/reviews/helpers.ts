@@ -6,6 +6,11 @@ import type { Finding, PrIntentRecord } from '@devdigest/shared';
 import type { ReviewIntent } from '@devdigest/reviewer-core';
 import type { FindingRow, PullRow, ReviewRow } from './repository.js';
 
+/** Message of a caught value: `Error.message`, else its string form. */
+export function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Persisted `PrIntentRecord` → the minimal shape `reviewPullRequest` needs
  *  (D2 §3 step 5) — server-only fields (`pr_id`, `sources`, `head_sha`, …)
  *  never cross into reviewer-core. */
@@ -26,6 +31,8 @@ export interface ReviewDtoFinding extends Finding {
   review_id: string;
   accepted_at: string | null;
   dismissed_at: string | null;
+  /** True when a Learn memory row exists for this finding; set by the reads, omitted by actions. */
+  learned?: boolean | null;
 }
 
 export interface ReviewDto {
@@ -44,7 +51,7 @@ export interface ReviewDto {
   findings: ReviewDtoFinding[];
 }
 
-export function findingRowToDto(row: FindingRow): ReviewDtoFinding {
+export function findingRowToDto(row: FindingRow, learned?: boolean): ReviewDtoFinding {
   return {
     id: row.id,
     severity: row.severity as Finding['severity'],
@@ -63,6 +70,7 @@ export function findingRowToDto(row: FindingRow): ReviewDtoFinding {
     review_id: row.reviewId,
     accepted_at: row.acceptedAt?.toISOString() ?? null,
     dismissed_at: row.dismissedAt?.toISOString() ?? null,
+    ...(learned === undefined ? {} : { learned }),
   };
 }
 
@@ -70,6 +78,8 @@ export function reviewToDto(
   review: ReviewRow,
   findings: FindingRow[],
   agentName?: string | null,
+  /** Finding ids that have a Learn memory row; when given, every finding gets a boolean `learned`. */
+  learnedIds?: ReadonlySet<string>,
 ): ReviewDto {
   return {
     id: review.id,
@@ -83,7 +93,7 @@ export function reviewToDto(
     score: review.score,
     model: review.model,
     created_at: review.createdAt.toISOString(),
-    findings: findings.map(findingRowToDto),
+    findings: findings.map((f) => findingRowToDto(f, learnedIds ? learnedIds.has(f.id) : undefined)),
   };
 }
 

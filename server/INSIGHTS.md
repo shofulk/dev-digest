@@ -52,6 +52,10 @@ The `groupId` only suffixes the rate-limit key. Each route with its own `config.
 Fastify hands the validator `null` for a missing body, which `.optional()` rejects; use `.nullish()` and pass `req.body ?? undefined` to the service.
 **Evidence:** server/src/modules/eval/routes.ts (`POST /findings/:id/eval-case`)
 
+### 2026-10-11 - a run cancelled while queued or mid-flight was un-cancelled by `RunBus.complete()`, and a second `buildApp` flips gated runs to `failed`
+`RunBus.complete()` used to delete the cancel flag, so a slot granted after cancel-then-complete saw `isCancelled() === false` and started the model; the flag now outlives `complete()` (tiny Set growth per process). `completeAgentRun` is status-guarded (`where status = 'running'`) so a late finish cannot overwrite `cancelled`. In tests, never call `buildApp` a second time while runs are held on a `ScriptedLLM.gate`: the boot reaper marks every `running` row `failed`.
+**Evidence:** server/src/platform/sse.ts:79
+
 ### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
 `brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
 finding title/file, file headers) and never counted the system prompt, the injection guard, the
@@ -249,6 +253,10 @@ does, treat a conventions scan of a monorepo as source-only.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-12 - a check-then-insert at READ COMMITTED needs `pg_advisory_xact_lock`, not a schema change
+Two concurrent retries of the same multi-run agent both read "no active run", then both inserted, because READ COMMITTED does not stop the second reader seeing the same empty set. When the invariant has no unique index to lean on (and adding one is a migration), take `pg_advisory_xact_lock(hashtext(<key>))` as the first statement of the ring-2 repository transaction, then check and insert inside it. The lock releases on commit, needs no schema change, and keeps the transaction out of ring 1 (the service gets a plain result and maps it to `AppError`s).
+**Evidence:** server/src/modules/reviews/repository/multi-run.repo.ts, server/src/modules/reviews/multi-run-service.ts
 
 ### 2026-10-11 — an eval "suite run" has no table: rows are grouped by `actual_output->>'run_id'`, and every late write is guarded on `status = 'pending'`
 
@@ -528,6 +536,21 @@ rather than parses, so only `test/contracts.test.ts` and future validation actua
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-12 - correction: the `pg_sleep` race-trigger entry cites the wrong file and sleep
+**Supersedes:** the 2026-10-12 entry "a plain `Promise.all` of 5 injects does not reproduce a
+check-then-insert race" in its Evidence and duration only — the technique stands. The tests are
+in `server/test/multi-agent-concurrency.it.test.ts` (D15 on `agent_runs`, D16 on `memory`), and
+they sleep 0.3 s. Both were shown red with their advisory lock removed.
+**Evidence:** `server/test/multi-agent-concurrency.it.test.ts` (D15, D16)
+
+### 2026-10-12 - a plain `Promise.all` of 5 injects does not reproduce a check-then-insert race; a temporary `pg_sleep` trigger does
+Five concurrent `app.inject` retries each finished their check and insert in a few ms on a local Postgres, so the unlocked code passed the race test. To make the window deterministic, create a `BEFORE INSERT ON agent_runs` trigger that calls `pg_sleep(0.2)` inside the test, fire the concurrent injects, and drop the trigger in `finally` (a leaked trigger slows every later `*.it.test.ts` in the same container). Prove the test is not vacuous by running it once against the unlocked code: it must fail.
+**Evidence:** server/test/multi-agent.it.test.ts
+
+### 2026-10-11 - `p-queue` `pending`/`size` lag behind a burst of `add()` calls, so "is a slot free?" needs its own counter
+`AgentRunLimiter.hasFreeSlot()` counts tasks submitted and not yet settled itself (incremented synchronously in `run`), because the queue only starts a task a tick later: a scheduler asking `hasFreeSlot()` per job in one loop would otherwise see "free" for jobs 3..N (the "waiting for a slot" line would never fire).
+**Evidence:** server/src/platform/run-limiter.ts:14
 
 ### 2026-10-04 — `MockLLMProvider.completeStructured` hardcodes `attempts: 1` and never throws — a test asserting retries or a model failure needs its own fake provider
 

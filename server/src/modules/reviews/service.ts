@@ -162,6 +162,11 @@ export class ReviewService {
     const pull = await this.repo.getPull(workspaceId, prId);
     if (!pull) throw new NotFoundError('Pull request not found');
     const rows = await this.repo.reviewsForPull(prId);
+    // One memory query for every finding of the PR (AC-75).
+    const learned = await this.repo.findLearnings(
+      workspaceId,
+      rows.flatMap(({ findings }) => findings.map((f) => f.id)),
+    );
     const names = new Map<string, string>();
     for (const { review } of rows) {
       if (review.agentId && !names.has(review.agentId)) {
@@ -170,7 +175,7 @@ export class ReviewService {
       }
     }
     return rows.map(({ review, findings }) =>
-      reviewToDto(review, findings, review.agentId ? names.get(review.agentId) : null),
+      reviewToDto(review, findings, review.agentId ? names.get(review.agentId) : null, learned),
     );
   }
 

@@ -127,6 +127,20 @@
       "when": 1791114729111,
       "tag": "0017_useful_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791746199099,
+      "tag": "0018_useful_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791751944974,
+      "tag": "0019_dear_puppet_master",
+      "breakpoints": true
     }
   ]
 }

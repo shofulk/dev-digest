@@ -3,6 +3,7 @@
 import React, { useCallback } from "react";
 import { Icon, Avatar, Badge, Button, Tabs } from "@devdigest/ui";
 import { RunReviewDropdown } from "../RunReviewDropdown";
+import { OpenMultiRunLink } from "./_components/OpenMultiRunLink";
 import { SeverityCounters, type SeverityCounts } from "@/components/severity-counters";
 import { s } from "./styles";
 import type { Severity } from "@devdigest/shared";
@@ -11,6 +12,7 @@ import type { PrDetail } from "@/lib/types";
 interface PrDetailHeaderProps {
   pr: PrDetail;
   prId: string | null;
+  repoId?: string;
   tab: string;
   findingsCount: number;
   /** Findings per severity across every run of this PR — the counter row's numbers. */
@@ -28,6 +30,7 @@ interface PrDetailHeaderProps {
 export function PrDetailHeader({
   pr,
   prId,
+  repoId,
   tab,
   findingsCount,
   severityCounts,
@@ -99,9 +102,11 @@ export function PrDetailHeader({
           >
             View on GitHub
           </Button>
+          <OpenMultiRunLink repoId={repoId} prId={prId} />
           {prId && (
             <RunReviewDropdown
               prId={prId}
+              repoId={repoId}
               warnMerged={pr.status === "merged" || pr.status === "closed"}
               onRunStart={handleRunStart}
               onRunsStarted={handleRunsStarted}

@@ -11,7 +11,7 @@ import {
 import { ThemeProvider } from "./theme";
 import { RepoProvider } from "./repo-context";
 import { ToastProvider, notify } from "./toast";
-import { ApiError } from "./api";
+import { shouldToastQueryError } from "./query-errors";
 
 function errorMessage(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -33,9 +33,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
         // toast (they are user actions). Queries only toast on network/5xx —
         // expected 4xx like a 404 "no tour yet" stay silent for inline empty states.
         queryCache: new QueryCache({
-          onError: (err) => {
-            const status = err instanceof ApiError ? err.status : 500;
-            if (status === 0 || status >= 500) notify.error(errorMessage(err));
+          onError: (err, query) => {
+            if (shouldToastQueryError(err, query.meta)) notify.error(errorMessage(err));
           },
         }),
         mutationCache: new MutationCache({

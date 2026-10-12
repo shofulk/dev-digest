@@ -1,0 +1,51 @@
+{
+  "header": {
+    "title": "Multi-Agent Review",
+    "prNumber": "#{number}",
+    "meta": "{count} agents · parallel · {seconds}s total · {cost}"
+  },
+  "view": {
+    "label": "View mode",
+    "columns": "Columns",
+    "tabs": "Tabs"
+  },
+  "configureRun": "Configure run",
+  "stale": {
+    "banner": "PR changed since this run"
+  },
+  "notFound": {
+    "title": "Run not found",
+    "body": "This multi-agent run does not exist or is no longer available."
+  },
+  "loadError": {
+    "title": "Couldn't load this run",
+    "body": "The multi-agent run could not be loaded."
+  },
+  "status": {
+    "running": "Running",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "column": {
+    "viewTrace": "View trace",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "cancelAll": "Cancel all",
+    "time": "{seconds}s",
+    "findingsCount": "{count, plural, one {# finding} other {# findings}}",
+    "noFindings": "No findings",
+    "score": "Score {score}"
+  },
+  "tabs": {
+    "label": "Agents",
+    "noFindings": "This agent has no findings to show.",
+    "findingsError": "Could not load the findings of this agent."
+  },
+  "disagree": {
+    "title": "Where agents disagree",
+    "onlyConflicts": "Show only conflicts",
+    "didNotFlag": "did not flag",
+    "notEnough": "Not enough finished agents to compare",
+    "empty": "No overlapping findings to compare"
+  }
+}

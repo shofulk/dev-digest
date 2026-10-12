@@ -122,6 +122,8 @@ export async function createAgentRun(
     prId: string;
     provider: string | null;
     model: string | null;
+    /** Links the run to a multi-agent run; omit for a single run. */
+    multiAgentRunId?: string | null;
   },
 ): Promise<string> {
   const [row] = await db
@@ -134,11 +136,13 @@ export async function createAgentRun(
       model: values.model,
       status: 'running',
       source: 'local',
+      multiAgentRunId: values.multiAgentRunId ?? null,
     })
     .returning({ id: t.agentRuns.id });
   return row!.id;
 }
 
+/** Finalise a run; returns false (and writes nothing) when it was no longer `running`. */
 export async function completeAgentRun(
   db: Db,
   runId: string,
@@ -160,8 +164,9 @@ export async function completeAgentRun(
     /** Ordered ids of the skills the prompt included. Omit on failed/cancelled runs (stays NULL). */
     skillsUsed?: string[];
   },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  // Only a still-`running` row is finalised: a run cancelled meanwhile keeps `cancelled` (AC-43).
+  const rows = await db
     .update(t.agentRuns)
     .set({
       status: values.status,
@@ -176,7 +181,9 @@ export async function completeAgentRun(
       error: values.error ?? null,
       ...(values.skillsUsed !== undefined ? { skillsUsed: values.skillsUsed } : {}),
     })
-    .where(eq(t.agentRuns.id, runId));
+    .where(and(eq(t.agentRuns.id, runId), eq(t.agentRuns.status, 'running')))
+    .returning({ id: t.agentRuns.id });
+  return rows.length > 0;
 }
 
 /** Persist the WHOLE run log as ONE document. PK = runId → agent_runs. */
