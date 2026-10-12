@@ -43,8 +43,18 @@ export function emptyForm(): CaseForm {
 }
 
 export const EXPECTATION_TYPES: readonly EvalExpectation["type"][] = ["must_find", "must_not_flag"];
-export const SEVERITIES: readonly EvalExpectation["severity"][] = ["CRITICAL", "WARNING", "SUGGESTION"];
-export const CATEGORIES: readonly EvalExpectation["category"][] = ["bug", "security", "perf", "style", "test"];
+
+// A Record keyed by the contract's union fails to compile when a value is added or removed there.
+const SEVERITY_MAP = { CRITICAL: true, WARNING: true, SUGGESTION: true } satisfies Record<
+  EvalExpectation["severity"],
+  true
+>;
+const CATEGORY_MAP = { bug: true, security: true, perf: true, style: true, test: true } satisfies Record<
+  EvalExpectation["category"],
+  true
+>;
+export const SEVERITIES = Object.keys(SEVERITY_MAP) as EvalExpectation["severity"][];
+export const CATEGORIES = Object.keys(CATEGORY_MAP) as EvalExpectation["category"][];
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
@@ -131,6 +141,14 @@ export function isFromFinding(c: EvalCase): boolean {
   return typeof asRecord(c.input_meta)?.source_finding_id === "string";
 }
 
+/** Start and end must be whole numbers >= 1 with end not before start; anything else is not sent. */
+export function linesValid(f: Pick<CaseForm, "start_line" | "end_line">): boolean {
+  const whole = /^[1-9]\d*$/;
+  const start = f.start_line.trim();
+  const end = f.end_line.trim();
+  return whole.test(start) && whole.test(end) && Number(end) >= Number(start);
+}
+
 const orNull = (v: string): string | null => (v === "" ? null : v);
 
 export function toCaseFields(f: CaseForm): EvalCaseFields {
@@ -143,8 +161,8 @@ export function toCaseFields(f: CaseForm): EvalCaseFields {
     expectation: {
       type: f.type,
       file: f.file,
-      start_line: Number(f.start_line),
-      end_line: Number(f.end_line),
+      start_line: Number(f.start_line.trim()),
+      end_line: Number(f.end_line.trim()),
       severity: f.severity,
       category: f.category,
       title: f.title,

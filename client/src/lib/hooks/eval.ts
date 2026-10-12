@@ -177,11 +177,15 @@ export function useCreateEvalCaseByHand(agentId: string) {
 }
 
 /** PUT /eval-cases/:id — edit a case; past results keep the expectation they ran with. */
-export function useUpdateEvalCase(_agentId: string) {
+export function useUpdateEvalCase(agentId: string) {
   const qc = useQueryClient();
   return useMutation<EvalCase, Error, { caseId: string; fields: EvalCaseFields }>({
     mutationFn: ({ caseId, fields }) => api.put<EvalCase>(`/eval-cases/${caseId}`, fields),
-    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: evalKeys.cases(agentId) });
+      void qc.invalidateQueries({ queryKey: evalKeys.runs(agentId) });
+      void qc.invalidateQueries({ queryKey: evalKeys.dashboard });
+    },
   });
 }
 

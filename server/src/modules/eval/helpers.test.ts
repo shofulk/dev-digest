@@ -7,6 +7,7 @@ import {
   EVAL_TASK_LINE,
   evalPrDescription,
   isOneCaseSuite,
+  parseRow,
   sanitizeErrorReason,
   groupSuites,
   latestCompletedResult,
@@ -463,5 +464,36 @@ describe('AC58: caseIsRunning', () => {
       runRow({ caseId: '1', runId: 'b', at: '2026-10-02T10:00:00Z', status: 'errored' }),
     ];
     expect(caseIsRunning('1', rows)).toBe(false);
+  });
+});
+
+describe('lenient read-back: an unparseable stored expectation degrades, it does not drop the row', () => {
+  // Stored (1-5) and current (40-45) disagree, so which one scored the finding at line 3 is observable.
+  const rowWith = (stored: unknown, caseExpected: unknown = expectationAt(1, 5)) =>
+    runRow({ caseId: '1', runId: 'r', at: '2026-10-01T10:00:00Z', findings: FINDING_AT_3, stored, caseExpected });
+  const { file: _file, ...noFile } = expectationAt(40, 45);
+
+  it('keeps a row whose stored expectation is invalid and scores it against the case’s current one; a valid stored one still wins', () => {
+    // Invalid category and a missing file: both used to drop the row from every suite.
+    for (const bad of [{ ...expectationAt(40, 45), category: 'docs' }, noFile, 'garbage', null]) {
+      const parsed = parseRow(rowWith(bad));
+      expect(parsed).not.toBeNull();
+      expect(parsed!.expectation).toMatchObject({ start_line: 1, end_line: 5 });
+      const suites = groupSuites([rowWith(bad)]);
+      expect(suites).toHaveLength(1);
+      expect(toCaseOutcome(suites[0]!.rows[0]!).findings.map((f) => f.matched)).toEqual([true]);
+      expect(scoreRun(suites[0]!.rows.map(toScoredCase))).toMatchObject({ recall: 1, precision: 1 });
+    }
+
+    // A valid stored expectation wins over the current one: line 3 is outside 40-45.
+    const stored = parseRow(rowWith(expectationAt(1, 5), expectationAt(40, 45)));
+    expect(stored!.expectation).toMatchObject({ start_line: 1, end_line: 5 });
+    const [suite] = groupSuites([rowWith(expectationAt(40, 45), expectationAt(1, 5))]);
+    expect(toCaseOutcome(suite!.rows[0]!).findings.map((f) => f.matched)).toEqual([false]);
+
+    // Rejected input: when neither side parses the row is kept with no expectation, not crashed on.
+    const neither = parseRow(rowWith({ ...expectationAt(1, 5), category: 'docs' }, { type: 'bogus' }));
+    expect(neither).not.toBeNull();
+    expect(neither!.expectation).toBeNull();
   });
 });

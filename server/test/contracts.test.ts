@@ -456,6 +456,31 @@ describe('eval pipeline contracts', () => {
     expect(EvalDryRunResult.safeParse({ ...dry, findings: [finding] }).success).toBe(false);
   });
 
+  it.each([
+    ['notes', 4096],
+    ['pr_title', 300],
+    ['pr_body', 65536],
+  ] as const)('EvalCaseFields and EvalCaseFromFindingInput cap %s at %i characters', (field, max) => {
+    const { type: _t, ...noType } = expectation;
+    const fields = (value: unknown) => ({ name: 'n', input_diff: 'd', expectation, [field]: value });
+    const fromFinding = (value: unknown) => ({ name: 'n', expectation: noType, [field]: value });
+
+    // At the cap, and a null/absent value, are accepted.
+    expect(EvalCaseFields.safeParse(fields('x'.repeat(max))).success).toBe(true);
+    expect(EvalCaseFromFindingInput.safeParse(fromFinding('x'.repeat(max))).success).toBe(true);
+    expect(EvalCaseFields.safeParse(fields(null)).success).toBe(true);
+    expect(EvalCaseFromFindingInput.safeParse(fromFinding(null)).success).toBe(true);
+
+    // One character over is rejected, naming the field.
+    for (const res of [
+      EvalCaseFields.safeParse(fields('x'.repeat(max + 1))),
+      EvalCaseFromFindingInput.safeParse(fromFinding('x'.repeat(max + 1))),
+    ]) {
+      expect(res.success).toBe(false);
+      if (!res.success) expect(res.error.issues.map((i) => i.path[0])).toEqual([field]);
+    }
+  });
+
   it('EvalExpectation rejects an unknown type; EvalCaseCreated requires created', () => {
     expect(EvalExpectation.safeParse({ ...expectation, type: 'bogus' }).success).toBe(false);
     expect(EvalExpectation.safeParse(expectation).success).toBe(true);

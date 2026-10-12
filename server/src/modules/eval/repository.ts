@@ -109,18 +109,19 @@ export class EvalRepository {
         eq(t.evalCases.id, id),
         eq(t.evalCases.ownerKind, 'agent'),
       );
+      // Lock the case first (DELETE takes the case row, then cascades to its runs).
+      const [current] = await tx
+        .select({ expectedOutput: t.evalCases.expectedOutput })
+        .from(t.evalCases)
+        .where(inCase)
+        .for('update');
+      if (!current) return undefined;
       await tx
         .update(t.evalRuns)
         .set({
-          actualOutput: sql`${t.evalRuns.actualOutput} || jsonb_build_object('expectation', (select ${t.evalCases.expectedOutput} from ${t.evalCases} where ${inCase}))`,
+          actualOutput: sql`${t.evalRuns.actualOutput} || jsonb_build_object('expectation', ${JSON.stringify(current.expectedOutput ?? null)}::jsonb)`,
         })
-        .where(
-          and(
-            eq(t.evalRuns.caseId, id),
-            sql`${t.evalRuns.actualOutput}->'expectation' IS NULL`,
-            sql`exists (select 1 from ${t.evalCases} where ${inCase})`,
-          ),
-        );
+        .where(and(eq(t.evalRuns.caseId, id), sql`${t.evalRuns.actualOutput}->'expectation' IS NULL`));
       const [row] = await tx
         .update(t.evalCases)
         .set({

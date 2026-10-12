@@ -1658,4 +1658,202 @@ d('eval module (Testcontainers pg)', () => {
       expect((await dryStart()).statusCode).toBe(429);
     });
   });
+
+  // -------------------------------------------------------------- fix round 2
+
+  describe('case editor: fix round 2 (lenient read-back, field caps, lock order, locked_field)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const INVALID_EXPECTATION = expectationAt(3, { category: 'docs' });
+
+    /** A case inserted with an arbitrary (possibly unparseable) `expected_output`. */
+    async function insertCaseWith(agentId: string, expectedOutput: unknown, inputMeta: Record<string, unknown> = {}) {
+      seq += 1;
+      const [row] = await pg.handle.db
+        .insert(t.evalCases)
+        .values({
+          workspaceId: workspaceA,
+          ownerKind: 'agent',
+          ownerId: agentId,
+          name: `fix2-case-${seq}`,
+          inputDiff: A_DIFF,
+          inputFiles: ['src/a.ts'],
+          inputMeta: { pr_title: 'Hand PR', pr_body: 'Hand body', ...inputMeta },
+          expectedOutput,
+          notes: null,
+        })
+        .returning();
+      return row!.id;
+    }
+
+    /** A completed legacy row (no stored expectation) with one finding at line 3. */
+    async function insertLegacyRow(agentId: string, caseId: string, runId: string, pass: boolean, ageMs: number) {
+      const at = new Date(Date.now() - ageMs);
+      const [row] = await pg.handle.db
+        .insert(t.evalRuns)
+        .values({
+          caseId,
+          ranAt: at,
+          actualOutput: {
+            run_id: runId,
+            agent_id: agentId,
+            agent_version: 1,
+            status: 'completed',
+            findings: pass
+              ? [{ file: 'src/a.ts', start_line: 3, end_line: 3, severity: 'WARNING', category: 'test', title: 'f' }]
+              : [],
+            grounding_kept: pass ? 1 : 0,
+            grounding_dropped: 0,
+            finished_at: at.toISOString(),
+          },
+          pass,
+          recall: pass ? 1 : 0,
+          precision: pass ? 1 : null,
+          citationAccuracy: 1,
+          durationMs: 10,
+          costUsd: 0.001,
+        })
+        .returning();
+      return row!.id;
+    }
+
+    const putCase = (app: FastifyInstance, caseId: string, payload: unknown) =>
+      app.inject({ method: 'PUT', url: `/eval-cases/${caseId}`, payload: payload as object });
+
+    it('a case whose expected_output is invalid can be edited; its past rows stay in the run detail and Compare with their stored metrics, while a parseable case still pins its old expectation', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const badCase = await insertCaseWith(agentId, INVALID_EXPECTATION);
+      const goodCase = await insertCaseWith(agentId, expectationAt(3));
+      const runOld = crypto.randomUUID();
+      const runNew = crypto.randomUUID();
+      const badRow = await insertLegacyRow(agentId, badCase, runOld, true, 2 * DAY);
+      const goodRow = await insertLegacyRow(agentId, goodCase, runOld, true, 2 * DAY);
+      await insertLegacyRow(agentId, badCase, runNew, false, DAY);
+      await insertLegacyRow(agentId, goodCase, runNew, false, DAY);
+
+      const storedBefore = await pg.handle.db.select().from(t.evalRuns).where(inArray(t.evalRuns.caseId, [badCase, goodCase]));
+
+      // Both are moved to line 9, so a row that fell back to the current expectation would no longer match line 3.
+      expect((await putCase(app, badCase, aFields(9, { name: 'bad-moved' }))).statusCode).toBe(200);
+      expect((await putCase(app, goodCase, aFields(9, { name: 'good-moved' }))).statusCode).toBe(200);
+
+      const detail = await getRun(app, runOld);
+      expect(detail.per_case.map((c) => c.case_id).sort()).toEqual([badCase, goodCase].sort());
+      const outcome = (id: string) =>
+        detail.per_case.find((c) => c.case_id === id) as unknown as { pass: boolean; findings: { matched: boolean }[] };
+      // Valid case: the expectation pinned by the edit still scores the old finding. Invalid case: the row is
+      // kept, scored against what the case expects now (line 9), so the finding at line 3 no longer matches.
+      expect(outcome(goodCase)).toMatchObject({ pass: true, findings: [{ matched: true }] });
+      expect(outcome(badCase)).toMatchObject({ pass: true, findings: [{ matched: false }] });
+
+      const cmp = await app.inject({ url: `/eval-runs/compare?a=${runOld}&b=${runNew}` });
+      expect(cmp.statusCode).toBe(200);
+      const flips = cmp.json().flips as { case_id: string; a_pass: boolean; b_pass: boolean; direction: string }[];
+      expect(flips.map((f) => f.case_id).sort()).toEqual([badCase, goodCase].sort());
+      for (const f of flips) expect(f).toMatchObject({ a_pass: true, b_pass: false, direction: 'pass_to_fail' });
+      expect(cmp.json().only_in_a).toEqual([]);
+      expect(cmp.json().only_in_b).toEqual([]);
+
+      // The stored per-row verdicts are untouched by the edit.
+      const storedAfter = await pg.handle.db.select().from(t.evalRuns).where(inArray(t.evalRuns.caseId, [badCase, goodCase]));
+      const verdict = (rows: typeof storedAfter, id: string) =>
+        rows.find((r) => r.id === id) && (({ pass, recall, precision, citationAccuracy }) => ({ pass, recall, precision, citationAccuracy }))(rows.find((r) => r.id === id)!);
+      for (const id of [badRow, goodRow]) {
+        expect(verdict(storedAfter, id)).toEqual(verdict(storedBefore, id));
+        expect(verdict(storedAfter, id)).toMatchObject({ pass: true, recall: 1, precision: 1 });
+      }
+      // The good case's row now carries the pinned expectation; the bad one carries what was stored (unparseable).
+      const pinned = (id: string) => (storedAfter.find((r) => r.id === id)!.actualOutput as { expectation?: unknown }).expectation;
+      expect(pinned(goodRow)).toMatchObject({ start_line: 3, category: 'test' });
+      expect(pinned(badRow)).toMatchObject({ category: 'docs' });
+    });
+
+    it('over-length fields are refused with no row stored, while a pr_body exactly at the cap is stored', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const post = (over: Record<string, unknown>) =>
+        app.inject({ method: 'POST', url: `/agents/${agentId}/eval-cases`, payload: handFields(over) });
+
+      const before = await countOf(t.evalCases);
+      const atCap = await post({ pr_body: 'b'.repeat(65536) });
+      expect(atCap.statusCode).toBe(201);
+      expect(await countOf(t.evalCases)).toBe(before + 1);
+
+      for (const over of [{ pr_body: 'b'.repeat(65537) }, { pr_title: 't'.repeat(301) }, { notes: 'n'.repeat(4097) }]) {
+        const res = await post(over);
+        // The app maps every request-validation failure to one status (app.ts error handler).
+        expect(res.statusCode).toBe(422);
+        expect(errorCode(res)).toBe('validation_error');
+      }
+      expect(await countOf(t.evalCases)).toBe(before + 1);
+    });
+
+    it('a PUT and a DELETE fired together on one case both settle without a 500 or a deadlock, and the case ends up gone; concurrent PUTs both land', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+
+      for (let i = 0; i < 6; i++) {
+        const caseId = await insertHandCase(agentId, 3);
+        await insertLegacyRow(agentId, caseId, crypto.randomUUID(), true, DAY); // gives the pin something to update
+        const [put, del] = await Promise.all([
+          putCase(app, caseId, aFields(9, { name: `raced-${i}` })),
+          app.inject({ method: 'DELETE', url: `/eval-cases/${caseId}` }),
+        ]);
+        expect([200, 404]).toContain(put.statusCode);
+        expect(del.statusCode).toBe(204);
+        const rest = await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, caseId));
+        expect(rest).toHaveLength(0);
+        const rows = await pg.handle.db.select().from(t.evalRuns).where(eq(t.evalRuns.caseId, caseId));
+        expect(rows).toHaveLength(0);
+      }
+
+      // The other end state: two edits of the same case serialize, both succeed, one wins.
+      const caseId = await insertHandCase(agentId, 3);
+      await insertLegacyRow(agentId, caseId, crypto.randomUUID(), true, DAY);
+      const both = await Promise.all([
+        putCase(app, caseId, aFields(4, { name: 'edit-one' })),
+        putCase(app, caseId, aFields(5, { name: 'edit-two' })),
+      ]);
+      expect(both.map((r) => r.statusCode)).toEqual([200, 200]);
+      expect(['edit-one', 'edit-two']).toContain((await caseRow(caseId)).name);
+    });
+
+    it('a PUT on a case that no longer exists is a 404, a PUT on a live one is a 200', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const caseId = await insertHandCase(agentId, 3);
+      expect((await putCase(app, caseId, aFields(4, { name: 'still-here' }))).statusCode).toBe(200);
+
+      expect((await app.inject({ method: 'DELETE', url: `/eval-cases/${caseId}` })).statusCode).toBe(204);
+      const gone = await putCase(app, caseId, aFields(4, { name: 'too-late' }));
+      expect(gone.statusCode).toBe(404);
+      expect(await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, caseId))).toHaveLength(0);
+    });
+
+    it('locked_field: a from-finding case whose expectation does not parse can change type, but not its diff; a parseable one still cannot change type', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const sourceId = crypto.randomUUID();
+      const unparseable = await insertCaseWith(agentId, INVALID_EXPECTATION, { source_finding_id: sourceId });
+      const body = (over: Record<string, unknown>) => aFields(3, { name: 'kept-name', ...over });
+
+      // Same diff, any type: no longer refused.
+      const flipped = await putCase(app, unparseable, body({ expectation: expectationAt(3, { type: 'must_not_flag' }) }));
+      expect(flipped.statusCode).toBe(200);
+      expect(await caseRow(unparseable)).toMatchObject({ expectedOutput: { type: 'must_not_flag', category: 'test' } });
+      expect((await caseRow(unparseable)).inputMeta).toMatchObject({ source_finding_id: sourceId });
+
+      // The diff is still frozen for such a case.
+      const rediffed = await putCase(app, unparseable, body({ input_diff: `${A_DIFF}\n+extra` }));
+      expect(rediffed.statusCode).toBe(422);
+      expect(errorCode(rediffed)).toBe('locked_field');
+
+      // A parseable from-finding case keeps its type lock.
+      const parseable = await insertCaseWith(agentId, expectationAt(3), { source_finding_id: crypto.randomUUID() });
+      const refused = await putCase(app, parseable, body({ expectation: expectationAt(3, { type: 'must_not_flag' }) }));
+      expect(refused.statusCode).toBe(422);
+      expect(errorCode(refused)).toBe('locked_field');
+      expect((await caseRow(parseable)).expectedOutput).toMatchObject({ type: 'must_find' });
+    });
+  });
 });

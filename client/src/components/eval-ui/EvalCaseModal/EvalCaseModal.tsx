@@ -30,6 +30,7 @@ import {
   formFromDraft,
   isDirty,
   isFromFinding,
+  linesValid,
   toCaseFields,
   toFromFindingInput,
   type CaseForm,
@@ -43,7 +44,8 @@ export type EvalCaseModalSource =
   | { kind: "edit"; evalCase: EvalCase; alreadyInSet?: boolean };
 
 type InputTab = "diff" | "prMeta";
-const ERROR_CODES: readonly string[] = [
+// Extend this list when the API adds a code (e.g. the pr_title / pr_body / notes caps).
+const ERROR_CODES = [
   "invalid_name",
   "invalid_diff",
   "frozen_diff_too_large",
@@ -53,7 +55,10 @@ const ERROR_CODES: readonly string[] = [
   "provider_not_configured",
   "dry_run_timeout",
   "dry_run_failed",
-];
+] as const;
+type CaseEditorErrorCode = (typeof ERROR_CODES)[number];
+const isKnownCode = (code: string | undefined): code is CaseEditorErrorCode =>
+  code !== undefined && (ERROR_CODES as readonly string[]).includes(code);
 
 type FormError = { slot: ErrorSlot; message: string };
 
@@ -111,7 +116,11 @@ export function EvalCaseModal({
   const files = diffFilePaths(form.input_diff);
   const fileOptions = form.file && !files.includes(form.file) ? [form.file, ...files] : files;
 
-  const set = <K extends keyof CaseForm>(key: K, value: CaseForm[K]) => setForm((f) => ({ ...f, [key]: value }));
+  // Any edit makes a shown dry-run result stale, so it goes away with the change.
+  const set = <K extends keyof CaseForm>(key: K, value: CaseForm[K]) => {
+    setResult(null);
+    setForm((f) => ({ ...f, [key]: value }));
+  };
 
   // One close request for Cancel, the X, the backdrop and Escape: a dirty form asks first.
   const requestClose = () => (dirty ? setConfirmDiscard(true) : onClose());
@@ -127,6 +136,50 @@ export function EvalCaseModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [confirmDiscard, dirty, onClose]);
 
+  // Focus moves into the dialog on open (the name input is always there), Tab stays inside the
+  // topmost dialog, and closing the discard confirm hands focus back to the name input.
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const focusName = () => rootRef.current?.querySelector<HTMLElement>("#eval-case-name")?.focus();
+  React.useEffect(() => {
+    focusName();
+  }, []);
+  const confirmedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (confirmDiscard) confirmedRef.current = true;
+    else if (confirmedRef.current) {
+      confirmedRef.current = false;
+      focusName();
+    }
+  }, [confirmDiscard]);
+  const keepEditingRef = React.useCallback((el: HTMLSpanElement | null) => {
+    el?.querySelector("button")?.focus();
+  }, []);
+  const trapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const dialogs = rootRef.current?.querySelectorAll<HTMLElement>("[role=dialog]");
+    const dialog = dialogs?.[dialogs.length - 1];
+    if (!dialog) return;
+    const items = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      ),
+    ).filter((el) => !(el as HTMLButtonElement).disabled);
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (!first || !last) return;
+    const active = document.activeElement;
+    if (!dialog.contains(active)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  };
+
   // Focus goes back to the button that opened the modal once it unmounts.
   const openerRef = React.useRef(returnFocusTo);
   React.useEffect(() => {
@@ -136,12 +189,19 @@ export function EvalCaseModal({
 
   const fail = (err: Error) => {
     const code = err instanceof ApiError ? err.code : undefined;
-    const known = code !== undefined && ERROR_CODES.includes(code);
-    setError({ slot: errorSlot(code), message: t(`caseEditor.errors.${known ? code : "generic"}`) });
+    setError({ slot: errorSlot(code), message: t(`caseEditor.errors.${isKnownCode(code) ? code : "generic"}`) });
+  };
+
+  // Lines are checked here so a bad value never reaches the API; the message sits in the expectation slot.
+  const linesOk = () => {
+    if (linesValid(form)) return true;
+    setError({ slot: "expectation", message: t("caseEditor.errors.invalid_lines") });
+    return false;
   };
 
   const onSave = () => {
     setError(null);
+    if (!linesOk()) return;
     const done = (message: string) => {
       notify.success(message);
       onClose();
@@ -164,6 +224,7 @@ export function EvalCaseModal({
   const onRun = () => {
     setError(null);
     setResult(null);
+    if (!linesOk()) return;
     dryRun.mutate(toCaseFields(form), { onSuccess: setResult, onError: fail });
   };
 
@@ -172,7 +233,7 @@ export function EvalCaseModal({
     source.kind === "edit" ? t("caseEditor.caseTitle", { name: source.evalCase.name }) : t("caseEditor.newCase");
 
   return (
-    <>
+    <div ref={rootRef} onKeyDown={trapTab} style={{ display: "contents" }}>
       <Modal
         width={760}
         title={title}
@@ -187,7 +248,7 @@ export function EvalCaseModal({
             )}
             <div style={s.footer}>
               <Button kind="secondary" icon="Play" onClick={onRun} disabled={running || saving}>
-                {running ? t("caseEditor.running") : t("caseEditor.runCase")}
+                {dryRun.isPending ? t("caseEditor.running") : t("caseEditor.runCase")}
               </Button>
               <div style={s.footerSpacer}>
                 <Button kind="ghost" onClick={requestClose}>
@@ -396,9 +457,11 @@ export function EvalCaseModal({
           onClose={() => setConfirmDiscard(false)}
           footer={
             <div style={s.confirmFooter}>
-              <Button kind="ghost" onClick={() => setConfirmDiscard(false)}>
-                {t("caseEditor.discard.keep")}
-              </Button>
+              <span ref={keepEditingRef} style={{ display: "contents" }}>
+                <Button kind="ghost" onClick={() => setConfirmDiscard(false)}>
+                  {t("caseEditor.discard.keep")}
+                </Button>
+              </span>
               <Button kind="danger" onClick={onClose}>
                 {t("caseEditor.discard.confirm")}
               </Button>
@@ -408,6 +471,6 @@ export function EvalCaseModal({
           <div style={s.confirmBody}>{t("caseEditor.discard.body")}</div>
         </Modal>
       )}
-    </>
+    </div>
   );
 }

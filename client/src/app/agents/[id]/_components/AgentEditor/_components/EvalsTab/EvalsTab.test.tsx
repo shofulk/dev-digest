@@ -269,13 +269,35 @@ describe("EvalsTab case actions", () => {
   });
 
   it("shows the refreshed pass status and match count once a case run settles", () => {
-    cases = [caseView("1", { last_result: "pass", last_matched: 1, running: false })];
+    // Running: the previous (never-run) status is on screen, the run is in flight.
+    cases = [caseView("1", { last_result: "never_run", last_run_id: null, last_matched: null, running: true })];
     runs = [];
-    renderTab();
+    const view = renderTab();
+    expect(within(cardOf("1")).getByText("Running…")).toBeInTheDocument();
+    expect(within(cardOf("1")).getByRole("img", { name: "never run" })).toBeInTheDocument();
+    expect(within(cardOf("1")).queryByText(/got/)).toBeNull();
+    expect(runBtn("1")).toBeDisabled();
+
+    // Settled: the same case, refetched, now carries the result and the match count.
+    cases = [caseView("1", { last_result: "pass", last_matched: 1, running: false })];
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={{ eval: messages }}>
+        <EvalsTab agentId="ag1" />
+      </NextIntlClientProvider>,
+    );
     const card = cardOf("1");
     expect(within(card).getByRole("img", { name: "pass" })).toBeInTheDocument();
+    expect(within(card).queryByRole("img", { name: "never run" })).toBeNull();
     expect(within(card).getByText("expected ≥1 finding, got 1")).toBeInTheDocument();
     expect(within(card).queryByText("Running…")).toBeNull();
+    expect(runBtn("1")).toBeEnabled();
+  });
+
+  it("counts a settled pass with no stored match count as got 0 (null boundary)", () => {
+    cases = [caseView("1", { last_result: "pass", last_matched: null })];
+    runs = [];
+    renderTab();
+    expect(within(cardOf("1")).getByText("expected ≥1 finding, got 0")).toBeInTheDocument();
   });
 
   it("disables Run all evals and every card's Run while a suite runs", () => {

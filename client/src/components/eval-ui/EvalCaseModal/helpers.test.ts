@@ -9,6 +9,7 @@ import {
   formFromDraft,
   isDirty,
   isFromFinding,
+  linesValid,
   toCaseFields,
   toFromFindingInput,
   type CaseForm,
@@ -106,6 +107,29 @@ describe("isFromFinding", () => {
     ["a non-object meta", "junk"],
   ])("AC76: is false for %s", (_what, input_meta) => {
     expect(isFromFinding(evalCase({ input_meta }))).toBe(false);
+  });
+});
+
+describe("linesValid", () => {
+  const lines = (start_line: string, end_line: string) => linesValid({ start_line, end_line });
+
+  it("accepts whole numbers of 1 or more with the end at or after the start, and rejects every other input", () => {
+    // Accepted: a single line, a range, surrounding spaces (trimmed).
+    expect(lines("1", "1")).toBe(true);
+    expect(lines("3", "7")).toBe(true);
+    expect(lines(" 4 ", "4")).toBe(true);
+
+    // Rejected: fractional, empty (either side), zero, negative, exponent, end before start.
+    expect(lines("12.5", "20")).toBe(false);
+    expect(lines("3", "7.5")).toBe(false);
+    expect(lines("", "5")).toBe(false);
+    expect(lines("5", "")).toBe(false);
+    expect(lines("", "")).toBe(false);
+    expect(lines("0", "3")).toBe(false);
+    expect(lines("1", "0")).toBe(false);
+    expect(lines("-2", "4")).toBe(false);
+    expect(lines("1e2", "200")).toBe(false);
+    expect(lines("5", "4")).toBe(false);
   });
 });
 

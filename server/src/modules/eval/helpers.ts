@@ -166,7 +166,7 @@ export function parseRow(joined: EvalRunJoinedRow): ParsedRow | null {
     output: output.data,
     // The expectation stored at run start wins; only rows written before it was
     // stored fall back to the case's current one.
-    expectation: output.data.expectation ?? parseExpectation(joined.evalCase.expectedOutput),
+    expectation: parseExpectation(output.data.expectation) ?? parseExpectation(joined.evalCase.expectedOutput),
   };
 }
 

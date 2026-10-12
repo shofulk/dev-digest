@@ -36,6 +36,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - a strict Zod field inside a jsonb read-back envelope drops the whole row when one pinned value is invalid
+`EvalRunActualOutput.expectation` was `EvalExpectation.nullish()`, while `EvalRepository.updateCase` pins the case's raw pre-edit `expected_output` into older `eval_runs` rows. One legacy expectation that no longer matched the schema made `EvalRunActualOutput.safeParse` fail, `parseRow` returned null, and those past runs silently vanished from history, metrics and Compare - the opposite of "an edit never changes past results". Read nested jsonb leniently (`z.unknown().nullish()`) and parse the field on its own with a fallback, or pin only an already-parsed value. Same edit: lock the parent row first (`select … for update`) before touching child rows, or it inverts the lock order of a cascading DELETE.
+**Evidence:** server/src/vendor/shared/contracts/eval-ci.ts, server/src/modules/eval/helpers.ts, server/src/modules/eval/repository.ts
+
 ### 2026-10-12 - an eval IT test cannot count LLM calls through `MockLLMProvider.calls`
 `ScriptedLLM` wraps a fresh `MockLLMProvider` per call, so the instance the test holds never records anything and `llm.calls` stays empty; a "the LLM was not called" assertion on it passes vacuously. Count through the wrapper's own `callCount`.
 **Evidence:** server/test/eval.it.test.ts:58-70

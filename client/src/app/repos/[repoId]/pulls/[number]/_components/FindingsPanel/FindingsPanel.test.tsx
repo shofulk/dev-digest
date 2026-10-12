@@ -1,11 +1,12 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
 import messages from "../../../../../../../../messages/en/prReview.json";
 
+const actionMutate = vi.fn();
 vi.mock("../../../../../../../lib/hooks/reviews", () => ({
-  useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
+  useFindingAction: () => ({ mutate: actionMutate, isPending: false }),
 }));
 
 const draftMutate = vi.fn();
@@ -169,6 +170,74 @@ describe("FindingsPanel eval-case action", () => {
     draftPending = true;
     renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
     expect(screen.getByRole("button", { name: /Turn into eval case/ })).toBeDisabled();
+  });
+});
+
+describe("FindingsPanel keyboard shortcuts", () => {
+  const DISMISS = { findingId: "f1", action: "dismiss", prId: "pr1" };
+  const press = (target: Element, key = "d") => fireEvent.keyDown(target, { key });
+
+  beforeEach(() => {
+    actionMutate.mockReset();
+    draftMutate.mockReset();
+    draftPending = false;
+  });
+
+  it("dismisses the focused finding on d, but not while the eval modal is open", () => {
+    // Opening the (mocked) modal is what sets the panel's evalModal state.
+    draftMutate.mockImplementationOnce((_id: string, opts: { onSuccess: (r: unknown) => void }) =>
+      opts.onSuccess({ agent_id: "ag1", existing_case: null, draft: { name: "draft" } }),
+    );
+    renderWithIntl(<FindingsPanel findings={[{ ...FINDINGS[0]!, accepted_at: "2026-10-01T00:00:00Z" }]} prId="pr1" />);
+
+    // Positive control: modal closed, the key reaches the action.
+    expect(screen.queryByTestId("case-modal")).not.toBeInTheDocument();
+    press(document.body);
+    expect(actionMutate).toHaveBeenCalledTimes(1);
+    expect(actionMutate).toHaveBeenLastCalledWith(DISMISS);
+
+    // Same key with the modal open: nothing more is dispatched.
+    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
+    expect(screen.getByTestId("case-modal")).toBeInTheDocument();
+    press(document.body);
+    expect(actionMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores d when focus is on a SELECT, inside a [role=dialog], or on a contentEditable element", () => {
+    renderWithIntl(
+      <div>
+        <FindingsPanel findings={FINDINGS} prId="pr1" />
+        <select aria-label="picker">
+          <option value="x">x</option>
+        </select>
+        <div role="dialog">
+          <button type="button">inside dialog</button>
+        </div>
+        <div aria-label="editor" />
+      </div>,
+    );
+    // jsdom does not implement isContentEditable, so the editor flags itself the way a browser does.
+    const editor = screen.getByLabelText("editor");
+    Object.defineProperty(editor, "isContentEditable", { value: true });
+
+    // Positive control first, so the ignores below cannot be a dead handler.
+    press(document.body);
+    expect(actionMutate).toHaveBeenCalledTimes(1);
+
+    press(screen.getByRole("combobox", { name: "picker" }));
+    press(within(screen.getByRole("dialog")).getByRole("button", { name: "inside dialog" }));
+    press(editor);
+    expect(actionMutate).toHaveBeenCalledTimes(1);
+
+    // Rejected key: an unmapped or upper-case key never dispatches, even from the body.
+    press(document.body, "D");
+    press(document.body, "x");
+    expect(actionMutate).toHaveBeenCalledTimes(1);
+
+    // And the plain target still works after all of that.
+    press(document.body);
+    expect(actionMutate).toHaveBeenCalledTimes(2);
+    expect(actionMutate).toHaveBeenLastCalledWith(DISMISS);
   });
 });
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   EvalCaseMeta,
   EvalExpectation,
+  type EvalRunActualOutput,
   type EvalCase,
   type EvalCaseCreated,
   type EvalCaseDraftResponse,
@@ -108,6 +109,11 @@ const CASE_FIELD_MESSAGES: Record<CaseFieldFailure, string> = {
   expectation_not_grounded: 'The expectation does not point at a line of the diff.',
 };
 
+/** The fields every state of a row's `actual_output` carries (see `rowBase`). */
+type EvalRowBase = Pick<EvalRunActualOutput, 'run_id' | 'agent_id' | 'agent_version' | 'expectation'> & {
+  one_case?: boolean;
+};
+
 const unprocessable = (code: string, message: string) => new AppError(code, message, 422);
 
 /**
@@ -195,10 +201,11 @@ export class EvalService {
     // A case frozen from a finding keeps the diff and the verdict it was frozen with.
     const meta = EvalCaseMeta.safeParse(row.inputMeta);
     const fromFinding = meta.success && typeof meta.data.source_finding_id === 'string';
+    const storedType = parseExpectation(row.expectedOutput)?.type;
     if (
       fromFinding &&
       (fields.input_diff !== row.inputDiff ||
-        fields.expectation.type !== parseExpectation(row.expectedOutput)?.type)
+        (storedType !== undefined && fields.expectation.type !== storedType))
     ) {
       throw unprocessable(
         'locked_field',
@@ -209,8 +216,7 @@ export class EvalService {
     const checked = validateCaseFields(fields, this.parseDiff, { checkName: true });
     if (!checked.ok) throw unprocessable(checked.code, CASE_FIELD_MESSAGES[checked.code]);
 
-    const previousMeta =
-      typeof row.inputMeta === 'object' && row.inputMeta !== null ? (row.inputMeta as Record<string, unknown>) : {};
+    const previousMeta: EvalCaseMeta = meta.success ? meta.data : {};
     const updated = await this.store.updateCase(workspaceId, caseId, {
       name: checked.value.name,
       notes: fields.notes ?? null,
@@ -583,7 +589,7 @@ export class EvalService {
 
   private async failRow(
     rowId: string,
-    base: object,
+    base: EvalRowBase,
     err: unknown,
     durationMs: number | null,
   ): Promise<void> {

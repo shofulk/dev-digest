@@ -47,8 +47,8 @@ class Counter implements FastifyRateLimitStore {
     callback(null, { current: hit.current, ttl: hit.ttl });
   }
 
-  child(routeOptions: { groupId?: string } & object): FastifyRateLimitStore {
-    const { groupId } = routeOptions as { groupId?: string };
+  child(routeOptions: Parameters<FastifyRateLimitStore['child']>[0] & { groupId?: string }): FastifyRateLimitStore {
+    const { groupId } = routeOptions;
     if (!groupId) return new Counter(this.groups);
     let shared = this.groups.get(groupId);
     if (!shared) {

@@ -108,7 +108,7 @@ export const EvalExpectation = z.object({
 });
 export type EvalExpectation = z.infer<typeof EvalExpectation>;
 
-/** `eval_cases.input_meta` (jsonb, read back): only the source finding is guaranteed. */
+/** `eval_cases.input_meta` (jsonb, read back): every field is optional; `source_finding_id` is present only for cases frozen from a finding. */
 export const EvalCaseMeta = z.object({
   source_finding_id: z.string().nullish(),
   source_review_id: z.string().nullish(),
@@ -168,7 +168,8 @@ export const EvalRunActualOutput = z.object({
   reason: z.string().nullish(),
   finished_at: z.string().nullish(),
   one_case: z.boolean().nullish(),
-  expectation: EvalExpectation.nullish(),
+  /** Read leniently (`unknown`): a legacy value pinned by `updateCase` may not parse as an `EvalExpectation`; the reader degrades it instead of dropping the row. */
+  expectation: z.unknown().nullish(),
 });
 export type EvalRunActualOutput = z.infer<typeof EvalRunActualOutput>;
 
@@ -329,9 +330,9 @@ export type EvalRunAllResult = z.infer<typeof EvalRunAllResult>;
 /** Editable fields of an eval case (hand-written, edited, or from a finding). */
 export const EvalCaseFields = z.object({
   name: z.string(),
-  notes: z.string().nullish(),
-  pr_title: z.string().nullish(),
-  pr_body: z.string().nullish(),
+  notes: z.string().max(4096).nullish(),
+  pr_title: z.string().max(300).nullish(),
+  pr_body: z.string().max(65536).nullish(),
   input_diff: z.string(),
   expectation: EvalExpectation,
 });

@@ -306,15 +306,24 @@ describe("case editor hooks", () => {
     expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.all });
   });
 
-  it("AC74: useUpdateEvalCase PUTs the fields to the case and invalidates the eval root", async () => {
+  it("AC74: useUpdateEvalCase PUTs the fields to the case and invalidates only that agent's cases, runs and the dashboard", async () => {
     installFetch({ id: "c1" });
     const qc = client();
     const spy = vi.spyOn(qc, "invalidateQueries");
     const { result } = renderHook(() => useUpdateEvalCase("a1"), { wrapper: makeWrapper(qc) });
 
+    // Before the mutation settles nothing is invalidated.
+    expect(spy).not.toHaveBeenCalled();
     await expect(result.current.mutateAsync({ caseId: "c1", fields })).resolves.toEqual({ id: "c1" });
     expect(calls).toContainEqual({ method: "PUT", path: "/eval-cases/c1", body: fields });
-    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.all });
+
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.cases("a1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.runs("a1") });
+    expect(spy).toHaveBeenCalledWith({ queryKey: evalKeys.dashboard });
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: evalKeys.all });
+    // Another agent's cases are not in the invalidated set (scoped key).
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: evalKeys.cases("a2") });
   });
 
   it("AC80: useStartCaseRun POSTs to the case's runs and invalidates only that agent's cases", async () => {

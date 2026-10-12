@@ -107,6 +107,7 @@
       "invalid_diff": "Not a unified diff with file headers and a hunk",
       "frozen_diff_too_large": "The diff is larger than 200 KB",
       "expectation_not_grounded": "The expectation must point at a line of the diff",
+      "invalid_lines": "Start and end lines must be whole numbers of 1 or more, with the end not before the start",
       "locked_field": "Type and diff of a case from a finding cannot change",
       "run_in_flight": "A run is already in flight for this agent",
       "provider_not_configured": "The agent's provider is not configured",
@@ -114,7 +115,6 @@
       "dry_run_failed": "The model call failed",
       "generic": "Something went wrong"
     },
-    "loadingDraft": "Loading the finding…",
     "result": {
       "heading": "Dry run result",
       "pass": "Pass",

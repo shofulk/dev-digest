@@ -97,13 +97,22 @@ afterEach(() => {
 
 function renderModal(source: EvalCaseModalSource = { kind: "new" }, extra: { returnFocusTo?: HTMLElement } = {}) {
   const onClose = vi.fn();
-  const view = render(
+  const tree = () => (
     <NextIntlClientProvider locale="en" messages={{ eval: messages }}>
       <EvalCaseModal agentId="ag1" source={source} onClose={onClose} {...extra} />
-    </NextIntlClientProvider>,
+    </NextIntlClientProvider>
   );
-  return { onClose, ...view };
+  const view = render(tree());
+  /** Re-render the same modal after a mocked hook value changed (state is kept). */
+  const refresh = () => view.rerender(tree());
+  return { onClose, refresh, ...view };
 }
+
+/** Valid line numbers; the client blocks Save and Run case without them. */
+const fillLines = (start = "1", end = "2") => {
+  change("Start line", start);
+  change("End line", end);
+};
 
 const change = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const click = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
@@ -199,14 +208,21 @@ describe("EvalCaseModal Run case", () => {
       expectation: { type: "must_find", start_line: 1, end_line: 2 },
     });
 
+    // Before the run settles there is no result box.
+    expect(screen.queryByTestId("dry-run-result")).toBeNull();
     succeed(dryRunMutate, dryResult);
     const box = screen.getByTestId("dry-run-result");
     expect(within(box).getByText("Pass")).toBeInTheDocument();
-    expect(within(box).getByText("matched")).toBeInTheDocument();
-    expect(within(box).getByText("no match")).toBeInTheDocument();
-    expect(within(box).getByText("Hit one")).toBeInTheDocument();
+    // Each finding row carries its own marker.
+    const hit = within(box).getByText("Hit one").parentElement!;
+    expect(within(hit).getByText("matched")).toBeInTheDocument();
+    expect(within(hit).queryByText("no match")).toBeNull();
+    const stray = within(box).getByText("Stray one").parentElement!;
+    expect(within(stray).getByText("no match")).toBeInTheDocument();
+    expect(within(stray).queryByText("matched")).toBeNull();
     expect(within(box).getByText("2 kept · 1 dropped")).toBeInTheDocument();
-    expect(within(box).getByText(/^Cost /)).toBeInTheDocument();
+    expect(within(box).getByText("Cost $0.012")).toBeInTheDocument();
+    expect(within(box).getByText("2.5s")).toBeInTheDocument();
     expect(within(box).getByText("Agent v7")).toBeInTheDocument();
   });
 
@@ -218,11 +234,100 @@ describe("EvalCaseModal Run case", () => {
     expect(screen.queryByRole("button", { name: "Run case" })).toBeNull();
   });
 
-  it("disables Run case while another run is in progress for the agent", () => {
+  it("disables Run case while another run is in progress, and reads Running… only while its own dry run is pending", () => {
+    const busyHint = "A run is already in progress for this agent.";
+
+    // The agent is merely busy: the button keeps its label, is disabled, the hint explains why.
     agentBusy = true;
-    renderModal();
+    const { refresh } = renderModal();
+    expect(screen.getByRole("button", { name: "Run case" })).toBeDisabled();
+    expect(screen.getByText(busyHint)).toBeInTheDocument();
+    expect(screen.queryByText("Running…")).toBeNull();
+
+    // This modal's own dry run is pending: only now does the label change.
+    agentBusy = false;
+    dryRunPending = true;
+    refresh();
     expect(screen.getByRole("button", { name: "Running…" })).toBeDisabled();
-    expect(screen.getByText("A run is already in progress for this agent.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run case" })).toBeNull();
+    expect(screen.queryByText(busyHint)).toBeNull();
+
+    // Neither: the button is back and enabled.
+    dryRunPending = false;
+    refresh();
+    expect(screen.getByRole("button", { name: "Run case" })).toBeEnabled();
+    expect(screen.queryByText("Running…")).toBeNull();
+    expect(screen.queryByText(busyHint)).toBeNull();
+  });
+
+  it("drops a shown dry-run result as soon as any field is edited", () => {
+    renderModal();
+    change("Name", "n");
+    change("Diff", DIFF);
+    fillLines("1", "2");
+
+    const edits: [string, () => void][] = [
+      ["name", () => change("Name", "n2")],
+      ["diff", () => change("Diff", `${DIFF}+z\n`)],
+      ["start line", () => change("Start line", "2")],
+      ["end line", () => change("End line", "3")],
+      ["severity", () => change("Severity", "CRITICAL")],
+      ["notes", () => change("Notes", "why")],
+      [
+        "PR title",
+        () => {
+          click("PR meta");
+          change("Title", "T");
+        },
+      ],
+    ];
+    for (const [, edit] of edits) {
+      click("Run case");
+      succeed(dryRunMutate, dryResult);
+      expect(screen.getByTestId("dry-run-result")).toBeInTheDocument();
+      edit();
+      expect(screen.queryByTestId("dry-run-result")).toBeNull();
+    }
+    expect(dryRunMutate).toHaveBeenCalledTimes(edits.length);
+  });
+
+  it("sends nothing and shows the lines error in the expectation slot for bad line values, and sends once they are valid", () => {
+    renderModal();
+    change("Name", "n");
+    change("Diff", DIFF);
+    const message = "Start and end lines must be whole numbers of 1 or more, with the end not before the start";
+
+    const bad: [string, string, string][] = [
+      ["fractional start", "12.5", "20"],
+      ["empty start", "", "5"],
+      ["zero start", "0", "3"],
+      ["end before start", "5", "4"],
+    ];
+    for (const [, start, end] of bad) {
+      fillLines(start, end);
+      click("Save");
+      let alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(message);
+      expect(fieldOf("File")).toContainElement(alert);
+      click("Run case");
+      alert = screen.getByRole("alert");
+      expect(alert).toHaveTextContent(message);
+      expect(fieldOf("File")).toContainElement(alert);
+    }
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(updateMutate).not.toHaveBeenCalled();
+    expect(fromFindingMutate).not.toHaveBeenCalled();
+    expect(dryRunMutate).not.toHaveBeenCalled();
+
+    // Valid whole numbers are sent, and the error is gone.
+    fillLines("3", "4");
+    click("Save");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({ expectation: { start_line: 3, end_line: 4 } });
+    click("Run case");
+    expect(dryRunMutate).toHaveBeenCalledTimes(1);
+    expect(dryRunMutate.mock.calls[0]![0]).toMatchObject({ expectation: { start_line: 3, end_line: 4 } });
   });
 });
 
@@ -230,9 +335,14 @@ describe("EvalCaseModal Save", () => {
   it("toasts 'Eval case created' and closes after a new case is saved", () => {
     const { onClose } = renderModal();
     change("Name", "n");
+    fillLines();
+    expect(createMutate).not.toHaveBeenCalled();
     click("Save");
     expect(createMutate).toHaveBeenCalledTimes(1);
-    expect(createMutate.mock.calls[0]![0]).toMatchObject({ name: "n" });
+    expect(createMutate.mock.calls[0]![0]).toMatchObject({ name: "n", expectation: { start_line: 1, end_line: 2 } });
+    // Sent, but not yet answered: no toast, still open.
+    expect(notifySuccess).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
     lastOpts(createMutate).onSuccess!({});
     expect(notifySuccess).toHaveBeenCalledWith("Eval case created");
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -268,8 +378,11 @@ describe("EvalCaseModal errors", () => {
     const { onClose } = renderModal();
     change("Name", "kept-name");
     change("Diff", DIFF);
+    fillLines();
 
+    // Before any API answer there is no error anywhere.
     click("Save");
+    expect(screen.queryByRole("alert")).toBeNull();
     fail(createMutate, new ApiError("Name is invalid", 400, "invalid_name"));
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent("Name must be 1–120 characters");
@@ -306,15 +419,25 @@ describe("EvalCaseModal error copy", () => {
   it("renders the generic text for an unknown error code, not the server message", () => {
     renderModal();
     change("Name", "n");
+    fillLines();
     click("Save");
+    expect(screen.queryByText("Something went wrong")).toBeNull();
     fail(createMutate, new ApiError("kaboom from server", 500, "some_future_code"));
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
     expect(screen.queryByText("kaboom from server")).toBeNull();
+    // A plain Error carries no code at all and falls back the same way.
+    click("Save");
+    expect(screen.queryByText("Something went wrong")).toBeNull();
+    fail(createMutate, new Error("boom"));
+    expect(screen.getByText("Something went wrong")).toBeInTheDocument();
+    expect(screen.queryByText("boom")).toBeNull();
   });
 
   it("renders the translated label for dry_run_failed, not the server reason", () => {
     renderModal();
+    fillLines();
     click("Run case");
+    expect(screen.queryByText("The model call failed")).toBeNull();
     fail(dryRunMutate, new ApiError("upstream 502: boom", 502, "dry_run_failed"));
     expect(screen.getByText("The model call failed")).toBeInTheDocument();
     expect(screen.queryByText("upstream 502: boom")).toBeNull();
@@ -356,6 +479,101 @@ describe("EvalCaseModal discard guard", () => {
     expect(screen.getByText("Discard changes?")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EvalCaseModal focus", () => {
+  const opener = () => {
+    const el = document.createElement("button");
+    document.body.appendChild(el);
+    return el;
+  };
+  const tab = (from: HTMLElement, shiftKey = false) => fireEvent.keyDown(from, { key: "Tab", shiftKey });
+
+  it("moves focus to the name input on open", () => {
+    const before = opener();
+    before.focus();
+    expect(before).toHaveFocus();
+
+    renderModal({ kind: "new" }, { returnFocusTo: before });
+    expect(screen.getByLabelText("Name")).toHaveFocus();
+    expect(before).not.toHaveFocus();
+    before.remove();
+  });
+
+  it("wraps Tab from the last control to the first and Shift+Tab from the first to the last, and lets every other Tab through", () => {
+    const outside = opener();
+    renderModal();
+    const first = screen.getByRole("button", { name: "Close" });
+    const last = screen.getByRole("button", { name: "Save" });
+    const middle = screen.getByLabelText("Notes");
+
+    // Forward: last -> first, and the browser's own move is cancelled.
+    last.focus();
+    expect(tab(last)).toBe(false);
+    expect(first).toHaveFocus();
+    expect(last).not.toHaveFocus();
+
+    // Backward: first -> last.
+    expect(tab(first, true)).toBe(false);
+    expect(last).toHaveFocus();
+    expect(first).not.toHaveFocus();
+
+    // Rejected positions: a middle control, the first going forward and the last going backward are untouched.
+    middle.focus();
+    expect(tab(middle)).toBe(true);
+    expect(middle).toHaveFocus();
+    first.focus();
+    expect(tab(first)).toBe(true);
+    expect(first).toHaveFocus();
+    last.focus();
+    expect(tab(last, true)).toBe(true);
+    expect(last).toHaveFocus();
+    // Any other key at the edge is not a Tab and does nothing.
+    expect(fireEvent.keyDown(last, { key: "Enter" })).toBe(true);
+    expect(last).toHaveFocus();
+
+    // Focus that already escaped the dialog is pulled back to its first control.
+    outside.focus();
+    expect(outside).toHaveFocus();
+    tab(screen.getByRole("dialog"));
+    expect(first).toHaveFocus();
+    expect(outside).not.toHaveFocus();
+    outside.remove();
+  });
+
+  it("focuses Keep editing when 'Discard changes?' opens, and the name input when it closes, by button or Escape", () => {
+    renderModal();
+    change("Name", "typed");
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    cancel.focus();
+    expect(cancel).toHaveFocus();
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+
+    fireEvent.click(cancel);
+    expect(screen.getByText("Discard changes?")).toBeInTheDocument();
+    const keep = screen.getByRole("button", { name: "Keep editing" });
+    expect(keep).toHaveFocus();
+    expect(cancel).not.toHaveFocus();
+
+    // Tab stays in the topmost dialog: from its last button to its own first, not the form behind.
+    const discard = screen.getByRole("button", { name: "Discard" });
+    const confirmClose = screen.getAllByRole("button", { name: "Close" })[1]!;
+    discard.focus();
+    expect(tab(discard)).toBe(false);
+    expect(confirmClose).toHaveFocus();
+
+    fireEvent.click(keep);
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+    expect(screen.getByLabelText("Name")).toHaveFocus();
+
+    // Second round, closed with Escape instead of the button.
+    screen.getByLabelText("Notes").focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("button", { name: "Keep editing" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("Discard changes?")).toBeNull();
+    expect(screen.getByLabelText("Name")).toHaveFocus();
   });
 });
 
