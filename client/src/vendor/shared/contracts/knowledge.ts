@@ -131,6 +131,8 @@ export const Skill = z.object({
   created_at: z.string(),
   /** Exact token count of the saved body; null when the tokenizer is unavailable. */
   tokens: z.number().int().nullish(),
+  /** Repository-relative paths of attached Project Context documents, in order. */
+  context_docs: z.array(z.string()).nullish(),
 });
 export type Skill = z.infer<typeof Skill>;
 
@@ -308,6 +310,8 @@ export const Agent = z.object({
   // Inject repo-intel context (repo skeleton + callers + rank note) into this
   // agent's review prompt. Default on; gated again by the global flag.
   repo_intel: z.boolean().default(true),
+  /** Repository-relative paths of attached Project Context documents, in order. */
+  context_docs: z.array(z.string()).nullish(),
 });
 export type Agent = z.infer<typeof Agent>;
 

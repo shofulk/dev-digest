@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
-import { AgentLinkedSkill, CiFailOn, Provider, ReviewStrategy } from '@devdigest/shared';
+import { Agent, AgentLinkedSkill, CiFailOn, Provider, ReviewStrategy } from '@devdigest/shared';
 import { getContext } from '../_shared/context.js';
 import { IdParams } from '../_shared/schemas.js';
 import { NotFoundError } from '../../platform/errors.js';
@@ -24,6 +24,7 @@ const VersionParams = z.object({
  *   PUT    /agents/:id              → update / toggle enabled (versions config)
  *   GET    /agents/:id/versions     → config history (newest first)
  *   GET    /agents/:id/versions/:version → one config snapshot
+ *   POST   /agents/:id/versions/:version/restore → restore that config as a new version
  *   GET    /agents/:id/skills       → linked skills (ordered)
  *   POST   /agents/:id/skills       → set/reorder linked skills OR link one
  *   PUT    /agents/:id/skills/:skillId → patch one link ({ enabled?, order? })
@@ -155,6 +156,17 @@ export default async function agentsRoutes(appBase: FastifyInstance) {
       const version = await service.getVersion(workspaceId, req.params.id, req.params.version);
       if (!version) throw new NotFoundError('Agent version not found');
       return version;
+    },
+  );
+
+  app.post(
+    '/agents/:id/versions/:version/restore',
+    { schema: { params: VersionParams, response: { 200: Agent } } },
+    async (req) => {
+      const { workspaceId } = await getContext(app.container, req);
+      const agent = await service.restore(workspaceId, req.params.id, req.params.version);
+      if (!agent) throw new NotFoundError('Agent version not found');
+      return agent;
     },
   );
 

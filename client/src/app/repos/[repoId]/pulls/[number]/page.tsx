@@ -164,7 +164,15 @@ export default function PRDetailPage() {
 
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
         {tab === "overview" && (
-          <OverviewTab prId={prId} prBody={pr.body} repoFullName={repoFullName} headSha={pr.head_sha} />
+          <OverviewTab
+            prId={prId}
+            prBody={pr.body}
+            repoFullName={repoFullName}
+            headSha={pr.head_sha}
+            onOpenFile={(path, line) =>
+              setParams({ tab: "diff", file: path, line: line == null ? null : String(line) })
+            }
+          />
         )}
 
         {tab === "findings" && (
@@ -205,6 +213,8 @@ export default function PRDetailPage() {
             repoFullName={repoFullName}
             headSha={pr.head_sha}
             canComment={pr.status === "open"}
+            focusFile={search.get("file")}
+            focusLine={search.get("line")}
           />
         )}
       </div>

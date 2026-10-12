@@ -1,0 +1,53 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for the shared ContextDocPicker. */
+export const s = {
+  wrap: { display: "flex", flexDirection: "column", gap: 10 } satisfies CSSProperties,
+  header: { display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" } satisfies CSSProperties,
+  h2: { fontSize: 15, fontWeight: 700 } satisfies CSSProperties,
+  count: { fontSize: 13, color: "var(--text-secondary)" } satisfies CSSProperties,
+  tokensNote: { fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  untrustedNote: { fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 } satisfies CSSProperties,
+  filterWrap: { position: "relative" } satisfies CSSProperties,
+  filterIcon: {
+    position: "absolute",
+    left: 10,
+    top: "50%",
+    transform: "translateY(-50%)",
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
+  filterInput: {
+    width: "100%",
+    padding: "8px 12px 8px 30px",
+    fontSize: 13,
+    borderRadius: 7,
+    border: "1px solid var(--border-strong)",
+    background: "var(--bg-elevated)",
+    color: "var(--text-primary)",
+  } satisfies CSSProperties,
+  list: { display: "flex", flexDirection: "column", gap: 6 } satisfies CSSProperties,
+  skeletons: { display: "flex", flexDirection: "column", gap: 8 } satisfies CSSProperties,
+  row: (state: { dragging: boolean; over: boolean; muted: boolean }): CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "9px 12px",
+    borderRadius: 8,
+    border: "1px solid " + (state.over ? "var(--accent)" : "var(--border)"),
+    background: "var(--bg-surface)",
+    opacity: state.dragging ? 0.4 : 1,
+  }),
+  handle: (enabled: boolean): CSSProperties => ({
+    cursor: enabled ? "grab" : "default",
+    color: enabled ? "var(--text-muted)" : "var(--border-strong)",
+    userSelect: "none",
+    fontSize: 14,
+    lineHeight: 1,
+    letterSpacing: -2,
+  }),
+  main: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10 } satisfies CSSProperties,
+  name: { fontSize: 13, color: "var(--text-primary)" } satisfies CSSProperties,
+  folder: { fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  moveBtns: { display: "flex", gap: 2 } satisfies CSSProperties,
+  missingBadge: { fontSize: 12, color: "var(--warn)" } satisfies CSSProperties,
+} as const;

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scope-guard.sh — shared PreToolUse hook, parametrized by profile, wired from the
-# `hooks:` block of six subagent files: test-writer.md, architecture-reviewer.md,
-# plan-verifier.md, doc-writer.md, retro-writer.md, harness-analyst.md
+# `hooks:` block of seven subagent files: test-writer.md, architecture-reviewer.md,
+# plan-verifier.md, doc-writer.md, retro-writer.md, harness-analyst.md, spec-creator.md
 # (.claude/agents/*.md), per docs/plans/review-agents.plan.md,
 # docs/plans/retro-agent.plan.md and docs/plans/harness-retros.plan.md.
 #
@@ -10,8 +10,11 @@
 #   scope-guard.sh write docs     — PreToolUse(Write|Edit|NotebookEdit) for doc-writer
 #   scope-guard.sh write retro    — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
 #   scope-guard.sh write analysis — PreToolUse(Write|Edit|NotebookEdit) for harness-analyst
+#   scope-guard.sh write spec     — PreToolUse(Write|Edit|NotebookEdit) for spec-creator
 #   scope-guard.sh bash readonly  — PreToolUse(Bash) for doc-writer, retro-writer,
 #                                    harness-analyst, security-reviewer
+#                                    (+ the READONLY_EXACT report scripts, exact string
+#                                    only: `node .claude/scripts/harness-usage.mjs`)
 #   scope-guard.sh bash checks    — PreToolUse(Bash) for test-writer, architecture-reviewer,
 #                                    plan-verifier
 #   scope-guard.sh self-test      — path matrix + command matrix, exit 0 iff every case is right
@@ -37,6 +40,16 @@
 # starts with `.harness/`), so the four write profiles never claim the same path. The file
 # name must not start with a dot (no empty or hidden name) — same shared predicate as
 # retro, above.
+#
+# SPEC (write spec): scope is exactly <pkg>/.spec/<feature>.spec.md for the five packages
+# and specs/<feature>.spec.md (cross-module specs), one level, no nesting. Named denies for
+# the .spec/ and specs/ README.md files (the main session owns the format), docs/plans/**,
+# .claude/**, AGENTS.md, CLAUDE.md and INSIGHTS.md. Draft-only, not append-only: `Write`
+# only when the target does not exist yet AND its content carries a `Status: draft` line
+# (a spec is born a draft); `Edit` only when the file on disk still carries a
+# `Status: draft` line. The Edit that flips it to `approved` is the last one allowed — an
+# approved or implemented spec is frozen and changes only through a new spec with
+# `Supersedes:`. No other write profile allows a .spec/ or specs/ path.
 #
 # write modes resolve tool_input.file_path (or .notebook_path) against $CLAUDE_PROJECT_DIR
 # (fallback: the hook JSON's own `cwd`, then `pwd`), collapse `..`, resolve symlinks on the
@@ -905,6 +918,15 @@ bash_eval() {
       ".claude/hooks/implementer-guard.sh self-test",
     ]);
 
+    // Exact read-only report scripts, every bash profile (checks inherits readonly). Same
+    // shape as CHECKS_EXACT: the literal string only, no arguments, run from the repo
+    // root, and the script path must resolve to exactly rootReal/<path>. The script itself
+    // must only read: it is the reason harness-analyst can count transcript tokens
+    // without a general node head on the allow-list.
+    const READONLY_EXACT = new Set([
+      "node .claude/scripts/harness-usage.mjs",
+    ]);
+
     // P4 lexer floor (rev 4/S13): checked before ANY other rule, CHECKS_EXACT included, at
     // every recursion depth (bash -c, eval). A word the tokenizer does not model at all
     // -- an escape, an expansion, an unquoted glob character at any position -- is a lexer
@@ -966,6 +988,17 @@ bash_eval() {
           if (!resolvesToExact(rootReal, hookTok)) {
             return "`" + hookTok + "` does not resolve to the real hook file (symlink?)";
           }
+        }
+        return null;
+      }
+      if (READONLY_EXACT.has(canonical)) {
+        if (!(cwdInfo && cwdInfo.ok && cwdInfo.matches)) {
+          return "run from the repo root (cwd: " + (cwdInfo ? cwdInfo.value : "unknown") + ")";
+        }
+        let rootReal;
+        try { rootReal = fs.realpathSync(root); } catch { rootReal = null; }
+        if (!resolvesToExact(rootReal, strippedVals[1])) {
+          return "`" + strippedVals[1] + "` does not resolve to the real script file (symlink?)";
         }
         return null;
       }
@@ -1173,7 +1206,7 @@ write_eval() {
       // Explicit table (S1/C7): an unknown PROFILE throws, which the outer try/catch turns
       // into a POLICY-DENY (S12) — never a silent fall-through into another profile
       // policy, which a two-way ternary would do for any third value, and never fail-open.
-      const POLICIES = { tests: testsPolicy, docs: docsPolicy, retro: retroPolicy, analysis: analysisPolicy };
+      const POLICIES = { tests: testsPolicy, docs: docsPolicy, retro: retroPolicy, analysis: analysisPolicy, spec: specPolicy };
       const policy = POLICIES[PROFILE];
       if (!policy) throw new Error("unknown write profile `" + PROFILE + "`");
       const ctx = {
@@ -1182,6 +1215,8 @@ write_eval() {
         newString: j?.tool_input?.new_string,
         replaceAll: j?.tool_input?.replace_all,
         exists: fs.existsSync(logical),
+        content: j?.tool_input?.content,
+        absPath: logical,
       };
       const verdict = policy(rel, ctx) || (relReal !== null ? policy(relReal, ctx) : null);
       if (verdict) { process.stdout.write(verdict); process.exit(0); }
@@ -1285,7 +1320,7 @@ write_eval() {
         return "`" + rel + "` — retro files moved to .harness/retros/";
       }
       if (matchAny(rel, ["docs/plans/*.plan.md"])) {
-        return "`" + rel + "` — plans are written by the main session from the planner output";
+        return "`" + rel + "` — plans are written by the main session from the implementation-planner output";
       }
       if (matchAny(rel, ["**/INSIGHTS.md"])) {
         return "`" + rel + "` — graduate via engineering-insights in the main session";
@@ -1376,6 +1411,57 @@ write_eval() {
     function analysisPolicy(rel, ctx) {
       return analysisPathPolicy(rel) || visibleNamePolicy(rel) || analysisWriteOncePolicy(ctx);
     }
+
+    // SPEC (spec-creator): one allow list plus a default deny. The README.md of every spec
+    // folder and the harness/instruction files get named messages so a block explains
+    // itself.
+    const SPEC_ALLOW = [
+      "{server,client,reviewer-core,e2e,mcp-server}/.spec/*.spec.md",
+      "specs/*.spec.md",
+    ];
+    function specPathPolicy(rel) {
+      if (matchAny(rel, ["**/.spec/README.md", "specs/README.md"])) {
+        return "`" + rel + "` — the spec folder README (format of record) is changed by the main session";
+      }
+      if (matchAny(rel, ["docs/plans/**"])) {
+        return "`" + rel + "` — plans are written by the main session from the implementation-planner output";
+      }
+      if (matchAny(rel, [".claude/**", "**/AGENTS.md", "**/CLAUDE.md", "**/INSIGHTS.md"])) {
+        return "`" + rel + "` — harness and instruction files are changed by the main session";
+      }
+      if (matchAny(rel, SPEC_ALLOW)) return null;
+      return "`" + rel + "` is outside the spec-creator scope (<pkg>/.spec/<feature>.spec.md or specs/<feature>.spec.md only)";
+    }
+
+    // Draft-only: a spec is created once as a draft and edited only while the file on disk
+    // still says `Status: draft`. Reuses ctx.exists/ctx.toolName; ctx.content is the Write
+    // payload, ctx.absPath the file to read the current status from.
+    const SPEC_DRAFT_LINE = /^Status:[ \t]*draft[ \t]*$/m;
+    function specDraftOnlyPolicy(ctx) {
+      const toolName = ctx.toolName;
+      if (toolName === "Write") {
+        if (ctx.exists) return "`Write` is blocked — the spec already exists; use `Edit` while it is a draft, or write a new spec with `Supersedes:`";
+        if (typeof ctx.content !== "string" || !SPEC_DRAFT_LINE.test(ctx.content)) {
+          return "`Write` is blocked — a new spec must carry a `Status: draft` line";
+        }
+        return null;
+      }
+      if (toolName === "Edit") {
+        if (!ctx.exists) return "`Edit` is blocked — the spec does not exist; create it with `Write`";
+        let current;
+        try { current = fs.readFileSync(ctx.absPath, "utf8"); }
+        catch { return "`Edit` is blocked — the current spec could not be read"; }
+        if (!SPEC_DRAFT_LINE.test(current)) {
+          return "`Edit` is blocked — the spec is no longer a draft (approved/implemented specs are frozen; write a new spec with `Supersedes:`)";
+        }
+        return null;
+      }
+      return "`" + (toolName || "(missing tool_name)") + "` is not allowed on a spec — only `Write` (create a draft) and `Edit` (while draft) are";
+    }
+
+    function specPolicy(rel, ctx) {
+      return specPathPolicy(rel) || visibleNamePolicy(rel) || specDraftOnlyPolicy(ctx);
+    }
   ' "$1"
 }
 
@@ -1401,7 +1487,7 @@ self_test() {
   fi
   trap 'rm -rf "$BASE_FIXTURE"' RETURN
   mkdir -p "$BASE_FIXTURE/server/clones/x" "$BASE_FIXTURE/client" "$BASE_FIXTURE/reviewer-core" \
-    "$BASE_FIXTURE/e2e" "$BASE_FIXTURE/.claude/hooks" "$BASE_FIXTURE/docs/plans" \
+    "$BASE_FIXTURE/e2e" "$BASE_FIXTURE/.claude/hooks" "$BASE_FIXTURE/.claude/scripts" "$BASE_FIXTURE/docs/plans" \
     "$BASE_FIXTURE/.harness/retros" "$BASE_FIXTURE/.harness/analysis"
   FIXTURE_ROOT="$BASE_FIXTURE"
 
@@ -1531,6 +1617,7 @@ self_test() {
       const ti = { file_path: filePath };
       if (oldString !== "none") ti.old_string = oldString;
       if (newString !== "none") ti.new_string = newString;
+      if (toolName === "Write" && newString !== "none") ti.content = newString;
       if (replaceAll === "true") ti.replace_all = true;
       else if (replaceAll === "false") ti.replace_all = false;
       const obj = { tool_input: ti };
@@ -1558,6 +1645,7 @@ self_test() {
       const ti = { file_path: filePath };
       if (oldString !== "none") ti.old_string = oldString;
       if (newString !== "none") ti.new_string = newString;
+      if (toolName === "Write" && newString !== "none") ti.content = newString;
       if (replaceAll === "true") ti.replace_all = true;
       else if (replaceAll === "false") ti.replace_all = false;
       const obj = { tool_input: ti };
@@ -1629,6 +1717,21 @@ self_test() {
   runb "T5 pnpm test"          readonly "pnpm test"                       0
   runb "T5 xargs rm"           readonly "xargs rm"                        0
   runb "T5 git diff output"    readonly "git diff --output=f"             0
+
+  # -- U1: READONLY_EXACT report script (harness-analyst), exact string only --
+  runb "U1 usage script"            readonly "node .claude/scripts/harness-usage.mjs"                 1
+  runb "U1 usage script 2>&1 pipe"  readonly "node .claude/scripts/harness-usage.mjs 2>&1 | head"     1
+  runb "U1 usage script checks"     checks   "node .claude/scripts/harness-usage.mjs"                 1
+  runb "U1 usage script arg"        readonly "node .claude/scripts/harness-usage.mjs --all"           0
+  runb "U1 usage script redirect"   readonly "node .claude/scripts/harness-usage.mjs > out"           0
+  runb "U1 usage script then rm"    readonly "node .claude/scripts/harness-usage.mjs; rm f"           0
+  runb "U1 usage dot-slash"         readonly "node ./.claude/scripts/harness-usage.mjs"               0
+  runb "U1 usage node flag"         readonly "node --require x .claude/scripts/harness-usage.mjs"     0
+  runb "U1 usage NODE_OPTIONS"      readonly "NODE_OPTIONS=x node .claude/scripts/harness-usage.mjs"  0
+  runb "U1 other script"            readonly "node .claude/scripts/lane-brief.mjs p L1"               0
+  runb "U1 node -e"                 readonly "node -e x"                                              0
+  runb "U1 bare node"               readonly "node"                                                   0
+  runb "U1 usage wrong cwd"         readonly "node .claude/scripts/harness-usage.mjs"                 0 "$FIXTURE_ROOT/server"
 
   # -- T6: bash checks, allowed --
   runb "T6 pnpm arch"          checks "pnpm --dir server arch"                                              1
@@ -2203,6 +2306,23 @@ EOF"                                                                            
     fails=$((fails + 1))
   fi
 
+  # -- U1: the READONLY_EXACT script path symlinked into server/clones --
+  U1_FAKE_ROOT=$(mktemp -d) || U1_FAKE_ROOT=""
+  if [ -n "$U1_FAKE_ROOT" ]; then
+    trap 'rm -rf "$U1_FAKE_ROOT"' RETURN
+    mkdir -p "$U1_FAKE_ROOT/.claude/scripts" "$U1_FAKE_ROOT/server/clones/x"
+    FIXTURE_ROOT="$U1_FAKE_ROOT"
+    printf 'console.log(1)\n' > "$U1_FAKE_ROOT/server/clones/x/evil.mjs"
+    ln -s ../../server/clones/x/evil.mjs "$U1_FAKE_ROOT/.claude/scripts/harness-usage.mjs"
+    runj "U1 usage script symlinked into clones" readonly "node .claude/scripts/harness-usage.mjs" "$FIXTURE_ROOT" 2
+    rm -rf "$U1_FAKE_ROOT"
+    FIXTURE_ROOT="$BASE_FIXTURE"
+    trap - RETURN
+  else
+    printf 'FAIL  %s (could not create the fake project root)\n' "U1 usage script symlinked into clones"
+    fails=$((fails + 1))
+  fi
+
   # -- T23 (rev 3, S12): a write-path exception is a deny, not fail-open. path.isAbsolute
   # throws on a non-string file_path, which used to reach write_eval's fail-open outer
   # catch. Full dispatch through "$SELF" write <profile>, payload built by node/
@@ -2211,7 +2331,7 @@ EOF"                                                                            
   NUMERIC_FP_BODY=$(node -e '
     process.stdout.write(JSON.stringify({ tool_name: "Write", tool_input: { file_path: 123 } }));
   ')
-  for wprof in tests docs retro analysis; do
+  for wprof in tests docs retro analysis spec; do
     out=$(printf '%s' "$NUMERIC_FP_BODY" | CLAUDE_PROJECT_DIR="$FIXTURE_ROOT" "$SELF" write "$wprof" 2>&1)
     got=$?
     if [ "$got" = "2" ] && printf '%s' "$out" | grep -q "BLOCKED by scope-guard (write $wprof)"; then
@@ -2521,7 +2641,7 @@ more" none 2
     runr "A2 nested analysis"              analysis Write ".harness/analysis/sub/x.md" none "x" none 0
     runr "A2 non-md analysis"              analysis Write ".harness/analysis/x.txt"    none "x" none 0
     runr "A2 wrong dir analysis"           analysis Write ".harness/x.md"              none "x" none 0
-    runr "A2 agent file"                   analysis Write ".claude/agents/planner.md"  none "x" none 0
+    runr "A2 agent file"                   analysis Write ".claude/agents/implementation-planner.md"  none "x" none 0
     runr "A2 hook file"                    analysis Write ".claude/hooks/scope-guard.sh" none "x" none 0
     runr "A2 root AGENTS.md"               analysis Write "AGENTS.md"                  none "x" none 0
     runr "A2 server INSIGHTS"              analysis Write "server/INSIGHTS.md"         none "x" none 0
@@ -2538,7 +2658,7 @@ more" none 2
     runw_json "A2 no file_path"            analysis '{"tool_name":"Write","tool_input":{}}' 0
     runr "A2 empty stem"                   analysis Write ".harness/analysis/.md"   none "x" none 0
     runr "A2 hidden stem"                  analysis Write ".harness/analysis/.x.md" none "x" none 0
-    runrd "A2 full dispatch plan write"    analysis Write ".claude/agents/planner.md"  none "x" none 2
+    runrd "A2 full dispatch plan write"    analysis Write ".claude/agents/implementation-planner.md"  none "x" none 2
     runrd "A2 full dispatch retro write"   analysis Write ".harness/retros/x.retro.md" none "x" none 2
     runrd "A2 full dispatch edit"          analysis Edit  ".harness/analysis/new.md"   "x" "y" none 2
     runrd "A2 full dispatch write over existing" analysis Write ".harness/analysis/old.md" none "x" none 2
@@ -2571,6 +2691,72 @@ more" none 2
     printf 'FAIL  %s (rc=%s out=%s)\n' "A4 write analysis garbage stdin fail-open (full dispatch)" "$ANALYSIS_GARBAGE_RC" "$ANALYSIS_GARBAGE_OUT"
     fails=$((fails + 1))
   fi
+
+  # -- spec-creator: `write spec` profile, in its own throwaway fake root, never the real
+  # .spec/ or specs/ folders. S1 allowed, S2 blocked, S3 dispatch. --
+  SPEC_FAKE_ROOT=$(mktemp -d) || SPEC_FAKE_ROOT=""
+  if [ -n "$SPEC_FAKE_ROOT" ]; then
+    trap 'rm -rf "$SPEC_FAKE_ROOT"' RETURN
+    mkdir -p "$SPEC_FAKE_ROOT/server/.spec" "$SPEC_FAKE_ROOT/client/.spec" "$SPEC_FAKE_ROOT/specs" \
+      "$SPEC_FAKE_ROOT/docs/plans" "$SPEC_FAKE_ROOT/.claude/agents" "$SPEC_FAKE_ROOT/server/src"
+    FIXTURE_ROOT="$SPEC_FAKE_ROOT"
+    printf '# Spec: d\nSpec ID: SPEC-01\nStatus: draft\n' > "$SPEC_FAKE_ROOT/server/.spec/d.spec.md"
+    printf '# Spec: a\nSpec ID: SPEC-02\nStatus: approved\n' > "$SPEC_FAKE_ROOT/specs/a.spec.md"
+    printf '# Spec: i\nSpec ID: SPEC-03\nStatus: implemented\n' > "$SPEC_FAKE_ROOT/client/.spec/i.spec.md"
+    printf '# old format, no status\n' > "$SPEC_FAKE_ROOT/client/.spec/old.spec.md"
+    printf '# Plan\n' > "$SPEC_FAKE_ROOT/docs/plans/x.plan.md"
+    ln -s ../../docs/plans/x.plan.md "$SPEC_FAKE_ROOT/server/.spec/link.spec.md"
+    SPEC_NEW=$'# Spec: x\nSpec ID: SPEC-04\nStatus: draft\nSupersedes: none\n'
+    SPEC_APPROVED=$'# Spec: x\nSpec ID: SPEC-04\nStatus: approved\n'
+
+    # -- S1: allowed --
+    runr "S1 new server spec"              spec Write "server/.spec/new.spec.md"        none "$SPEC_NEW" none 1
+    runr "S1 new client spec"              spec Write "client/.spec/new.spec.md"        none "$SPEC_NEW" none 1
+    runr "S1 new reviewer-core spec"       spec Write "reviewer-core/.spec/new.spec.md" none "$SPEC_NEW" none 1
+    runr "S1 new e2e spec"                 spec Write "e2e/.spec/new.spec.md"           none "$SPEC_NEW" none 1
+    runr "S1 new mcp-server spec"          spec Write "mcp-server/.spec/new.spec.md"    none "$SPEC_NEW" none 1
+    runr "S1 new cross-module spec"        spec Write "specs/new.spec.md"               none "$SPEC_NEW" none 1
+    runr "S1 edit draft"                   spec Edit  "server/.spec/d.spec.md" "x" "y" none 1
+    runr "S1 edit draft to approved"       spec Edit  "server/.spec/d.spec.md" "Status: draft" "Status: approved" none 1
+    runrd "S1 full dispatch new spec"      spec Write "specs/rd.spec.md"                none "$SPEC_NEW" none 0
+
+    # -- S2: blocked --
+    runr "S2 write over existing draft"    spec Write "server/.spec/d.spec.md"          none "$SPEC_NEW" none 0
+    runr "S2 new spec born approved"       spec Write "specs/b.spec.md"                 none "$SPEC_APPROVED" none 0
+    runr "S2 new spec without status"      spec Write "specs/c.spec.md"                 none "# Spec: c" none 0
+    runr "S2 edit approved"                spec Edit  "specs/a.spec.md" "x" "y" none 0
+    runr "S2 edit implemented"             spec Edit  "client/.spec/i.spec.md" "x" "y" none 0
+    runr "S2 edit old-format spec"         spec Edit  "client/.spec/old.spec.md" "x" "y" none 0
+    runr "S2 edit missing spec"            spec Edit  "specs/missing.spec.md" "x" "y" none 0
+    runr "S2 NotebookEdit"                 spec NotebookEdit "specs/n.spec.md" none "$SPEC_NEW" none 0
+    runr "S2 missing tool_name"            spec none  "specs/n.spec.md"                 none "$SPEC_NEW" none 0
+    runr "S2 package spec README"          spec Write "server/.spec/README.md"          none "$SPEC_NEW" none 0
+    runr "S2 specs README"                 spec Write "specs/README.md"                 none "$SPEC_NEW" none 0
+    runr "S2 nested spec"                  spec Write "specs/sub/x.spec.md"             none "$SPEC_NEW" none 0
+    runr "S2 non-spec md"                  spec Write "specs/x.md"                      none "$SPEC_NEW" none 0
+    runr "S2 unknown package"              spec Write "docs/.spec/x.spec.md"            none "$SPEC_NEW" none 0
+    runr "S2 production code"              spec Write "server/src/x.ts"                 none "$SPEC_NEW" none 0
+    runr "S2 plan"                         spec Write "docs/plans/y.plan.md"            none "$SPEC_NEW" none 0
+    runr "S2 agent file"                   spec Write ".claude/agents/x.md"             none "$SPEC_NEW" none 0
+    runr "S2 root AGENTS.md"               spec Write "AGENTS.md"                       none "$SPEC_NEW" none 0
+    runr "S2 server INSIGHTS"              spec Write "server/INSIGHTS.md"              none "$SPEC_NEW" none 0
+    runr "S2 traversal"                    spec Write "specs/../docs/plans/z.spec.md"   none "$SPEC_NEW" none 0
+    runr "S2 outside repo"                 spec Write "/etc/hosts"                      none "$SPEC_NEW" none 0
+    runr "S2 symlink to plan"              spec Edit  "server/.spec/link.spec.md" "x" "y" none 0
+    runr "S2 hidden stem"                  spec Write "specs/.x.spec.md"                none "$SPEC_NEW" none 0
+    runw_json "S2 no file_path"            spec '{"tool_name":"Write","tool_input":{}}' 0
+    runrd "S2 full dispatch edit approved" spec Edit  "specs/a.spec.md" "x" "y" none 2
+    runrd "S2 full dispatch README"        spec Write "specs/README.md"                 none "$SPEC_NEW" none 2
+    runrd "S2 full dispatch code"          spec Write "server/src/x.ts"                 none "$SPEC_NEW" none 2
+
+    rm -rf "$SPEC_FAKE_ROOT"
+    FIXTURE_ROOT="$BASE_FIXTURE"
+    trap - RETURN
+  else
+    printf 'FAIL  %s (could not create the spec fake root)\n' "S1 write spec fixtures"
+    fails=$((fails + 1))
+  fi
+  rund "S3 write specs typo (misconfigured)" write specs 2
 
   # -- P3 (AC1): a helper called with no fixture root refuses -- one row per tree-reading
   # helper (7), each run in a subshell so the inner refusal's own `fails` increment stays
@@ -2628,8 +2814,8 @@ case "${1:-}" in
   write)
     SUB="${2:-}"
     case "$SUB" in
-      tests|docs|retro|analysis) ;;
-      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs|retro|analysis) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
+      tests|docs|retro|analysis|spec) ;;
+      *) block_msg "write" "$SUB" "misconfigured scope-guard: unknown write profile '$SUB' (expected tests|docs|retro|analysis|spec) — a configuration fault in the calling agent's frontmatter, not a runtime error"; exit 2 ;;
     esac
     RAW=$(cat) || allow
     REASON=$(printf '%s' "$RAW" | write_eval "$SUB"); RC=$?

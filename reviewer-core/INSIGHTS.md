@@ -42,6 +42,42 @@ Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
 
+### 2026-10-03 — Project context ordering is unconditional: specs < callers < diff, always
+
+**Supersedes:** 2026-10-03 entry "`## Project context` sits AFTER `## Diff to review`
+whenever `callers` is absent, not always right before it" — that conclusion was wrong and
+has been retired.
+**Cause:** the retired entry's "fix" treated a test artifact as a spec requirement. The
+escape test's `user.indexOf(open tag) .. +400` window was a fixed-size slice that happened
+to also catch the diff section's own closing `</untrusted>` tag when specs rendered right
+before the diff with a short fixture — making the no-`callers` case look like it needed
+Project context pushed to the very end. The test has since been fixed to count delimiters
+in an order-independent way (per-block, not a fixed character window), so the real
+requirement — specs always render before the diff, callers (when present) in between —
+holds with no conditional branch at all.
+**Signal:** none now; `assemblePrompt` has a single unconditional order
+(`specs → callers → diff`) with no `callersPresent` branch deciding where `specs` goes.
+**Fix:** `assemblePrompt` pushes `## Project context` (if present) first, then
+`## Callers of changed symbols` (if present), then `## Diff to review` — unconditionally,
+in every case.
+**Evidence:** `reviewer-core/src/prompt.ts:195` (the ordering block, no longer branching on
+`callersPresent` for where `specs` goes).
+
+### 2026-10-03 — `## Project context` sits AFTER `## Diff to review` whenever `callers` is absent, not always right before it
+
+**Cause:** `server/test/prompt-callers.test.ts` (frozen) pins `specs < callers < diff`. But
+`reviewer-core/test/prompt-project-context.test.ts`'s escape test slices `user.indexOf(open
+tag) .. +400` and asserts exactly one literal `</untrusted>` in that window — and with a
+short fixture diff, that window always reaches the diff section's own closing tag too. The
+only way to get exactly one is for nothing (no further untrusted block) to follow the specs
+block, which is only possible if specs renders last.
+**Signal:** the AC-23 escape test fails with "expected 2 to be 1" even though escaping is
+correct — the second match is the (correctly unescaped) closing tag of the *next* block.
+**Fix:** `assemblePrompt` now special-cases the no-`callers` path: push `## Diff to review`
+first, then `## Project context` last. When `callers` is present, the original adjacency
+(`specs`, `callers`, `diff`) is unchanged to keep the frozen ordering test green.
+**Evidence:** `reviewer-core/src/prompt.ts:184` (the `callersPresent` branch).
+
 ## Tool & Library Notes
 
 Quirks of dependencies, CLIs and the toolchain.

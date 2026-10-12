@@ -8,6 +8,12 @@ const blastRadiusCardMock = vi.fn((props: unknown) => React.createElement("div",
 vi.mock("./_components/BlastRadiusCard", () => ({
   BlastRadiusCard: (props: unknown) => blastRadiusCardMock(props),
 }));
+// BriefBanner/ReviewFocusCard read `usePrBrief` (which needs the `brief`
+// next-intl namespace this test doesn't provide) and are unrelated to what
+// this file exercises (Description rendering + BlastRadiusCard wiring) —
+// stubbed out like IntentCard/BlastRadiusCard above.
+vi.mock("./_components/BriefBanner", () => ({ BriefBanner: () => null }));
+vi.mock("./_components/ReviewFocusCard", () => ({ ReviewFocusCard: () => null }));
 
 describe("OverviewTab", () => {
   it("renders the PR description as markdown, not raw text", () => {

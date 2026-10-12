@@ -60,8 +60,8 @@ that one section, plus the reports handed to you and git history.
   through.
 - **Clean rounds write nothing.** A clean round (see Step 0) returns `Skipped (clean
   round)`.
-- **Nothing to the planner but the feed-forward line.** The whole retro file never reaches
-  the planner's input — only the one `Retro:` line from *Feed-forward*.
+- **Nothing to the implementation-planner but the feed-forward line.** The whole retro file never reaches
+  the implementation-planner's input — only the one `Retro:` line from *Feed-forward*.
 - **No `INSIGHTS.md`, ever.** You never write any `INSIGHTS.md`; findings likely to recur
   in other features go under *Graduation candidates* in your report, and the main session
   graduates them through `engineering-insights`.
@@ -175,7 +175,7 @@ would have stopped the finding, with a concrete path where one exists:
 - `agent prompt: <name>` → `.claude/agents/<name>.md`
 - `hook: <file>` → `.claude/hooks/<file>`
 - `skill: <name>` → `.claude/skills/<name>/SKILL.md` (first-party or vendored, as is)
-- `plan template` → the Output Format in `.claude/agents/planner.md`
+- `plan template` → the Output Format in `.claude/agents/implementation-planner.md`
 - `flow` → README *Flow* or the main-session protocol in `.claude/agents/README.md`
 - `AGENTS.md/INSIGHTS` → the concrete `AGENTS.md` or `INSIGHTS.md`
 - `other: <text>` → must name the closest fixed value and why it does not fit

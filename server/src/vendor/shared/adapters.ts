@@ -280,6 +280,46 @@ export interface CodeIndex {
   references(repo: RepoRef, symbol: string): Promise<CodeReference[]>;
 }
 
+// ---------- Project docs (Markdown search roots in a repo's checkout) ----------
+/** One `.md` file found under the search roots, as listed from disk. */
+export interface ProjectDocEntry {
+  path: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/** Outcome of reading one document's content. */
+export type ProjectDocRead =
+  | { status: 'ok'; content: string; size: number }
+  | { status: 'missing' | 'invalid_path' | 'too_large'; size?: number };
+
+/**
+ * Outcome of listing a checkout. `root_missing` is explicit — the checkout
+ * directory itself does not exist (repo never synced, or synced then
+ * deleted) — so a caller never has to infer it from an errno.
+ */
+export type ProjectDocsListResult =
+  | { status: 'ok'; files: ProjectDocEntry[]; truncated: boolean }
+  | { status: 'root_missing' };
+
+/**
+ * Finds and reads the Markdown documents under a repo's synced checkout.
+ * Real implementation: `FsProjectDocsSource` (`node:fs` + `picomatch`, ring 2).
+ * Test implementation: `MockProjectDocsSource` (in-memory, `adapters/mocks.ts`).
+ */
+export interface ProjectDocsSource {
+  /** List every file under `root` matching `roots`, sorted by path. */
+  list(root: string, roots: string[], maxFiles: number): Promise<ProjectDocsListResult>;
+  /** Read one document's content, enforcing path containment + size limit. */
+  read(
+    root: string,
+    relPath: string,
+    opts: { roots: string[]; maxBytes: number },
+  ): Promise<ProjectDocRead>;
+  /** Whether `relPath` matches one of the glob `roots`. */
+  matchesRoots(relPath: string, roots: string[]): boolean;
+}
+
 // ---------- Auth (pluggable; MVP = LocalNoAuthProvider) ----------
 export interface AuthUser {
   id: string;

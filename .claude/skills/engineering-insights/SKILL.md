@@ -24,7 +24,9 @@ root file rather than duplicating it.
 ## Step 1 - Before the work (mandatory)
 
 1. Decide which package the task touches, from the table above.
-2. Read that `INSIGHTS.md` in full.
+2. Read that `INSIGHTS.md` in full. (A lane agent executing a Development Plan reads only
+   the entries the plan's *Constraints* cite, plus an `rg` for its steps' key terms — the
+   planner already read the file in full for the whole plan.)
 3. Read the skill that matches the topic, if one exists in `.claude/skills/` - for example
    `drizzle-orm-patterns` for schema work, `next-best-practices` for `client/`,
    `fastify-best-practices` for routes and plugins.

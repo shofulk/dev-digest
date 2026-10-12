@@ -36,11 +36,29 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-03 - the hermetic stack isolated only the DB and ports, not the seed's files on disk
+`db:seed` also writes the Project Context demo checkout into `DEVDIGEST_CLONE_DIR`, and only when
+that folder is absent. Without its own per-run value, a hermetic run wrote into the developer's
+real clone dir and could read stale fixtures. `scripts/e2e.sh` now exports a fresh `mktemp -d`
+clone dir after its cleanup trap; any new seed write outside the DB needs the same treatment.
+**Evidence:** scripts/e2e.sh:98, server/src/db/seed-project-context.ts:69
+
 ## Codebase Patterns
 
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-03 — a flow that opens a run trace needs `seed-project-context.ts`, not just `seed()`
+
+`server/src/db/seed.ts`'s `seed()` writes PR #482's demo review straight to `reviews` /
+`findings`; it never inserts an `agent_runs` row. The only place an `agent_runs` row (with a
+matching `run_traces` document) gets created is `seedProjectContextDemo` (fixed
+`DEMO_RUN_ID`), called only from `seed.ts`'s CLI entrypoint (`pnpm db:seed`), not from
+`seed()` itself. A flow that opens the run trace drawer therefore depends on running the full
+seed CLI, not on calling `seed()` directly (as some server tests do) — check which one a
+fixture setup actually calls before assuming a run trace exists.
+**Evidence:** `server/src/db/seed.ts`, `server/src/db/seed-project-context.ts:24`
 
 ## Tool & Library Notes
 
@@ -53,6 +71,19 @@ Quirks of dependencies, CLIs and the toolchain.
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-04 — a `find … click` on a below-the-fold control reports `✓ Done` but nothing happens
+
+**Cause:** the app scrolls the nested `<main>` (`overflow:auto`), not the document. agent-browser
+acts by viewport coordinates: `find … click`, top-level `focus <sel>` and `scrollintoview` all return
+`Done` without scrolling `<main>`, so a control below the fold is clicked off-screen and nothing fires.
+`find role button focus` does not exist (`✗ Unknown subaction: focus`).
+**Signal:** the click step passes, the next `wait --url` / `wait --text` times out; in a probe the
+target's `getBoundingClientRect().y` is greater than `innerHeight` and `main.scrollTop` stays `0`.
+**Fix:** add `["set", "viewport", "1280", "1600"]` right after `open` so the control is on-screen,
+then click by role as usual. Flows run in one shared session, so a later flow that needs the default
+size must set its own viewport.
+**Evidence:** `client/src/vendor/ui/shell/AppFrame.tsx:29`, `e2e/specs/12-pr-brief.flow.json:6`
 
 ### 2026-09-28 — `wait --text "Blast radius"` times out while the card is plainly on screen
 

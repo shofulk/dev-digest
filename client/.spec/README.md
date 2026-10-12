@@ -1,12 +1,14 @@
 # `.spec/` — `client`
 
-Feature contracts, written **before** the implementation. A spec is what the code
-is checked against, not a description of code that already exists.
+Feature contracts for features that touch **only** `client`, written **before** the
+implementation. A spec is what the code is checked against, not a description of code
+that already exists. A feature that touches two or more packages has one spec in the
+root [`specs/`](../../specs/README.md) instead.
 
 - One file per feature: `<feature>.spec.md`, kebab-case.
-- Required sections: **Goal** (one sentence) · **Acceptance criteria**
-  (checkable, numbered) · **Out of scope** · **Open questions**.
-- Name the contracts the feature touches (routes, Zod schemas, tables) — that is
-  what makes the spec checkable.
-- When the feature ships, the spec stays as the record. Corrections are edits to
-  the spec, not notes appended to it.
+- Format of record — template, EARS acceptance criteria, Spec ID, statuses — is
+  [`specs/README.md`](../../specs/README.md). New specs are written by the
+  `spec-creator` agent in that format.
+- Specs written before that format (Goal / Acceptance criteria / Out of scope / Open
+  questions) stay as they are, as the record.
+- An `approved` spec is frozen. A change is a new spec with `Supersedes:`.

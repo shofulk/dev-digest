@@ -18,3 +18,8 @@ export type AgentRunRow = typeof t.agentRuns.$inferSelect;
 export type SkillRow = typeof t.skills.$inferSelect;
 export type SkillVersionRow = typeof t.skillVersions.$inferSelect;
 export type ConventionRow = typeof t.conventions.$inferSelect;
+export type PrBriefRow = typeof t.prBrief.$inferSelect;
+export type EvalCaseRow = typeof t.evalCases.$inferSelect;
+export type EvalRunRow = typeof t.evalRuns.$inferSelect;
+/** One `eval_runs` row with the case it ran. */
+export type EvalRunJoinedRow = { run: EvalRunRow; evalCase: EvalCaseRow };

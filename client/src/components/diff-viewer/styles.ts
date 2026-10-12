@@ -118,6 +118,14 @@ export function lineRowFor(kind: Line["kind"]): CSSProperties {
   return { display: "flex", alignItems: "stretch", fontSize: 13, lineHeight: "20px", background };
 }
 
+/** D4/AC-58 — the Files changed tab's focus target, once resolved to a line:
+    a visible style distinct from `lineRowFor(ln.kind)`'s add/del tint, so it
+    reads as "this is the row" regardless of the line's own kind. */
+export const lineHighlight: CSSProperties = {
+  background: "var(--accent-bg)",
+  boxShadow: "inset 0 0 0 1px var(--accent)",
+};
+
 /** Gutter sign colour per line kind. */
 export function lineSignFor(kind: Line["kind"]): CSSProperties {
   return {

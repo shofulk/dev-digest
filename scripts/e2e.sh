@@ -51,9 +51,12 @@ command -v pnpm   >/dev/null || { echo "pnpm not found (npm i -g pnpm)"; exit 1;
 command -v agent-browser >/dev/null || \
   warn "agent-browser not found — install once: npm i -g agent-browser && agent-browser install"
 
-# --- teardown trap (installed before we start anything) ----------------------
+# --- teardown trap (installed before we create or start anything) -----------
 SERVER_PID=""
 WEB_PID=""
+# Initialised empty so `cleanup`'s `rm -rf "$CLONE_DIR"` is a safe no-op (under
+# `set -u`) if a prerequisite check above exits before CLONE_DIR is assigned.
+CLONE_DIR=""
 # Recursively kill a process and all its descendants. `pnpm exec tsx` / `next dev`
 # spawn the real listener as a GRANDCHILD, so a plain `kill $PID` + `pkill -P`
 # leaves it orphaned (port stays bound). Walk the tree leaves-first instead.
@@ -77,9 +80,22 @@ cleanup() {
     [ -n "$pids" ] && kill $pids 2>/dev/null || true
   done
   docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  rm -rf "$CLONE_DIR" 2>/dev/null || true
   exit "$code"
 }
 trap cleanup EXIT INT TERM
+
+# A fresh temp dir per run, created AFTER the trap (so an early exit never
+# leaks it) and BEFORE the seed, so `db:seed`'s D10 demo checkout
+# (server/src/db/seed-project-context.ts) writes its fixtures into an
+# isolated tree instead of the developer's real DEVDIGEST_CLONE_DIR (default
+# ~/.devdigest/workspace, or server/.env's ./clones). Removed on teardown.
+# NOTE: this does NOT relax seed-project-context.ts's "write only when the
+# demo folder is absent" idempotency rule (D10) — a fresh, never-before-seen
+# dir just means that check always finds the folder absent and always writes,
+# which is the point: every hermetic run gets its own fixtures.
+CLONE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/devdigest-e2e-clone.XXXXXX")"
+export DEVDIGEST_CLONE_DIR="$CLONE_DIR"
 
 # --- fresh isolated Postgres (ephemeral: --rm, no named volume) --------------
 log "starting isolated Postgres '$PG_CONTAINER' on :$PG_PORT (ephemeral)"

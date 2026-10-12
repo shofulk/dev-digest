@@ -16,6 +16,7 @@ export function toSkillDto(row: SkillRow, tokens?: number | null): Skill {
     version: row.version,
     evidence_files: row.evidenceFiles ?? null,
     created_at: row.createdAt.toISOString(),
+    context_docs: row.contextDocs,
     ...(tokens !== undefined ? { tokens } : {}),
   };
 }

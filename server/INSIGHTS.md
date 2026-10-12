@@ -36,6 +36,141 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - a strict Zod field inside a jsonb read-back envelope drops the whole row when one pinned value is invalid
+`EvalRunActualOutput.expectation` was `EvalExpectation.nullish()`, while `EvalRepository.updateCase` pins the case's raw pre-edit `expected_output` into older `eval_runs` rows. One legacy expectation that no longer matched the schema made `EvalRunActualOutput.safeParse` fail, `parseRow` returned null, and those past runs silently vanished from history, metrics and Compare - the opposite of "an edit never changes past results". Read nested jsonb leniently (`z.unknown().nullish()`) and parse the field on its own with a fallback, or pin only an already-parsed value. Same edit: lock the parent row first (`select … for update`) before touching child rows, or it inverts the lock order of a cascading DELETE.
+**Evidence:** server/src/vendor/shared/contracts/eval-ci.ts, server/src/modules/eval/helpers.ts, server/src/modules/eval/repository.ts
+
+### 2026-10-12 - an eval IT test cannot count LLM calls through `MockLLMProvider.calls`
+`ScriptedLLM` wraps a fresh `MockLLMProvider` per call, so the instance the test holds never records anything and `llm.calls` stays empty; a "the LLM was not called" assertion on it passes vacuously. Count through the wrapper's own `callCount`.
+**Evidence:** server/test/eval.it.test.ts:58-70
+
+### 2026-10-12 - `config.rateLimit.groupId` does not make several routes share one counter
+The `groupId` only suffixes the rate-limit key. Each route with its own `config.rateLimit` gets its own `LocalStore` (`store.child(...)`), so three routes with the same `groupId` still count separately (5 + 5 + 5, not 15). A shared budget needs one store shared by the routes (a custom `child()` returning itself, registered in `app.ts`) or one encapsulated plugin; `groupId` alone is not enough.
+**Evidence:** server/node_modules/@fastify/rate-limit/index.js:190-196, server/node_modules/@fastify/rate-limit/store/LocalStore.js:46
+
+### 2026-10-12 - a Zod `.optional()` body schema answers 422 to a bodyless POST
+Fastify hands the validator `null` for a missing body, which `.optional()` rejects; use `.nullish()` and pass `req.body ?? undefined` to the service.
+**Evidence:** server/src/modules/eval/routes.ts (`POST /findings/:id/eval-case`)
+
+### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
+`brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
+finding title/file, file headers) and never counted the system prompt, the injection guard, the
+`## <heading>` lines or any `<untrusted source="…">…</untrusted>` wrapper — all of which
+`renderBriefMessages` adds afterwards. The fix passes `renderBriefMessages` itself into
+`fitToBudget` as a `render` callback and measures tokens on its actual output, which is strictly
+more accurate — but a frozen red test (`brief-facts.test.ts`'s two AC-14 cases) was written
+against the OLD, under-counting math: its fixture sizes were tuned so exactly one document/one
+severity class needed dropping under the raw-field total, and the corrected (larger) total now
+needs more dropped to fit the same 8,000-token budget. Fixing a real budget-accuracy bug can make
+a frozen test fail even though nothing about the SPEC changed — the test's specific "which item
+survives" assertions were implementation-coupled, not requirement-coupled. The same applies to
+`SEVERITY_DROP_ORDER`: production findings carry `Severity` (`CRITICAL`/`WARNING`/`SUGGESTION`,
+`contracts/findings.ts`), never `low`/`medium`/`high` (that vocabulary belongs to
+`PrBriefDraft.risks[].severity`, the MODEL's own output schema) — a frozen test using
+`low`/`medium`/`high` for a *finding* fixture was exercising a vocabulary no real data ever
+produces.
+**Evidence:** server/src/modules/brief/facts.ts (`fitToBudget`, `SEVERITY_DROP_ORDER`), server/test/brief-facts.test.ts:330-394, server/test/brief-fixes.test.ts
+
+### 2026-10-03 - a containment check alone lets an in-checkout symlink read the clone's `.git/config` (GitHub token)
+Every clone stores the token in its remote URL (`withGitHubToken`), so `.git/config` inside the
+checkout is a secret. `realpath` containment passes a symlink like `docs/x.md → ../.git/config`.
+Any new reader of checkout files must re-apply its path policy (`.md`, roots, `dot:false`) to
+the realpath-resolved repo-relative path, not only to the requested path. The pre-existing
+`readClone` in repo-intel follows symlinks with no containment at all.
+**Evidence:** server/src/adapters/project-docs/index.ts:114, server/src/modules/repos/helpers.ts:29, server/src/modules/repo-intel/service.ts:907
+
+### 2026-10-03 — `seedProjectContextDemo` re-ran `.set({ clonePath, contextDocs })` unconditionally on every seed, clobbering a user's own edits
+
+`seedProjectContextDemo` (`src/db/seed-project-context.ts`) is called on every
+`pnpm db:seed`, not just the first one. Its two `db.update(...)` calls that
+point `repos.clone_path` at the demo checkout and set the Security Reviewer
+agent's `context_docs` to `['docs/architecture.md']` used to run unconditionally
+every time — so a user who repointed `clone_path` at a real checkout, or edited
+`context_docs` through the UI, lost that edit on the next `db:seed` (e.g. after
+pulling a migration). Fix: guard each write — `clonePath` only when it is still
+`null`, `contextDocs` only when still empty — so the demo values are a one-time
+default, not a reset-on-every-seed.
+**Evidence:** `server/src/db/seed-project-context.ts:87` (`if (repo.clonePath
+=== null)`), `:95` (`if (agent && (agent.contextDocs?.length ?? 0) === 0)`),
+`server/test/seed-project-context.it.test.ts`.
+
+### 2026-10-03 — `js-tiktoken`'s default `encode()` throws on untrusted text containing a special-token string, and the tokenizer adapter latched `broken` on it forever
+
+`TiktokenTokenizer.count()` (`adapters/tokenizer/index.ts`) counts every document
+passed through Project Context / repo-map, and some of that text is untrusted (a
+PR body, a doc from the repo). `js-tiktoken`'s `encode(text)` throws
+`"The text contains a special token that is not allowed: <|endoftext|>"` for any
+text containing one of cl100k_base's reserved special-token strings — this is
+intentional upstream behavior (it assumes the caller controls the input), not a
+bug in the library. The adapter's catch block treated that exception exactly
+like an encoder-load failure and set `this.broken = true`, which is a field on
+the single shared `TiktokenTokenizer` instance — so one untrusted document
+containing that literal string silently downgraded EVERY later `count()` call,
+for the rest of the process, to the `ceil(chars/4)` heuristic. Fix: pass `'all'`
+as the second argument (`encode(text, 'all')`) so each recognized special-token
+string maps to the ONE special token it represents instead of throwing — not,
+as the code once mis-stated in a comment, counted as ordinary text (which
+would cost ~7 plain-text tokens instead of 1); `broken` now only latches on an
+actual encoder-load failure.
+**Evidence:** `server/src/adapters/tokenizer/index.ts:41` (`encode(text,
+'all')`), `server/test/tokenizer.test.ts`.
+
+### 2026-10-03 — `seedProjectContextDemo` writes its fixtures only once, keyed on the clone dir, not the DB
+
+Follow-up to the entry directly below: the idempotency check (`writes the demo checkout
+fixtures, only when the folder is absent`) is a filesystem check on `<cloneDir>/acme/
+payments-api`, run BEFORE the DB insert, not a DB-state check. `cloneDir` is
+`config.cloneDir`, i.e. `DEVDIGEST_CLONE_DIR` (default `~/.devdigest/workspace`); this
+repo's `server/.env` sets it to `./clones`, so the demo tree actually lands at
+`server/clones/acme/payments-api`. Deleting that folder and re-running `db:seed` writes
+the fixtures again even though the `repos`/`agents` rows from the first run are still
+there — and, conversely, wiping the DB but leaving the folder means the fixture content
+is never rewritten (the inserts guard separately on `DEMO_RUN_ID`). The two idempotency
+checks are independent and can disagree.
+**Evidence:** `server/src/db/seed-project-context.ts:52` (`access(path)` gate before the
+write), `:71` (`join(cloneDir, 'acme', 'payments-api')`), `server/src/platform/config.ts`
+(`cloneDir` ← `DEVDIGEST_CLONE_DIR`), `server/.env` (`DEVDIGEST_CLONE_DIR=./clones`).
+
+### 2026-10-03 — `seed-project-context`'s demo checkout is a plain folder, so Resync on it degrades silently instead of reporting `index_failed`
+
+D10's seeded `acme/payments-api` checkout (`server/src/db/seed-project-context.ts`) is a
+plain directory under `DEVDIGEST_CLONE_DIR` (default `~/.devdigest/workspace`) with no
+`git init` and no `.git` — by design, so the demo never needs a real upstream to clone
+from. Clicking Resync on that repo therefore fails at `this.container.git.sync(ref,
+defaultBranch)` (`modules/repo-intel/service.ts:151`, `resyncRepo`): `simple-git`'s
+`fetch()` throws `fatal: not a git repository (or any of the parent directories): .git`,
+caught and turned into `{ status: 'degraded', reason: 'sync_failed:...' }`.
+
+The assumption going in was that this would surface as `GET /repos/:id/index-state`
+reporting `degradedReason: 'index_failed'` — confirmed WRONG by running the actual
+request. `resyncRepo`'s early-return-on-sync-failure branch never calls
+`repository.upsertIndexState`, and the enqueuing job handler swallows the returned
+`IndexResult` entirely (`registerIndexJobHandlers`, "handlers swallow the IndexResult on
+purpose"), so nothing is ever persisted to `repo_index_state` for this repo. A repo that
+was never indexed has no row there at all, so `getIndexState` keeps returning its
+synthesised fallback — `degradedReason: 'no_data'` — **before and after** clicking
+Resync, unchanged. `index_failed` is a real `DegradedReason` value, but only for a
+different failure mode (an indexer-internal crash that DOES reach
+`upsertIndexState` with `status: 'degraded'|'failed'` and no explicit reason); this path
+never reaches it.
+**Evidence:** `server/src/modules/repo-intel/service.ts:143-160` (`resyncRepo`),
+`server/src/modules/repo-intel/repository.ts:204-234` (`tryGetIndexState` default
+`degradedReason: 'index_failed'` only applies to a persisted degraded/failed row),
+`server/src/modules/repo-intel/service.ts:188-202` (`getIndexState`'s no-row fallback:
+`reason: 'no_data'`), `server/src/db/seed-project-context.ts`.
+
+### 2026-10-03 — importing a `modules/_shared/*` pure helper from an adapter raises the `arch` warn count even though the helper is ring 1
+
+`src/adapters/project-docs/index.ts` (ring 2) needs the same path-syntax check as
+`modules/_shared/project-context/helpers.ts#checkDocPathSyntax` (D6: relative, no `..`,
+no backslash, ends `.md`). Importing that helper from the adapter compiles and
+typechecks fine, but `pnpm arch` adds a new `adapters-dont-know-modules` violation — the
+rule is `from: src/adapters/` → `to: src/modules/`, with no carve-out for `_shared`. The
+baseline (17 warnings) is a ceiling, not a target, so this one new edge fails the gate.
+**Fix:** duplicate the handful of lines of pure logic inside the adapter instead of
+importing across the boundary; it is cheap and keeps ring 2 from depending on ring 1.
+**Evidence:** `server/src/adapters/project-docs/index.ts` (`syntaxOk`), `server/src/modules/_shared/project-context/helpers.ts` (`checkDocPathSyntax`), `server/.dependency-cruiser.cjs` (`adapters-dont-know-modules`).
+
 ### 2026-09-20 — every local gate reads the WORKING TREE, so a file left uncommitted is invisible until CI
 
 `routes.ts` imported `SKILL_BODY_BODY_LIMIT` from a commit that never carried
@@ -114,6 +249,109 @@ does, treat a conventions scan of a monorepo as source-only.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-11 — an eval "suite run" has no table: rows are grouped by `actual_output->>'run_id'`, and every late write is guarded on `status = 'pending'`
+
+`eval_runs` holds one row per (case, run); the run itself exists only as the `run_id` string
+inside each row's `actual_output`. Completing or erroring a row is an `UPDATE ... WHERE
+status = 'pending'`, so a row that was reconciled (or whose case was deleted) while the LLM call
+was in flight is never resurrected by the late result. Keep that guard on any new write path.
+For deterministic 409 / per-case-error tests, subclass the mock LLM and hold its call on a
+promise gate (`ScriptedLLM.gate`) instead of racing timers.
+**Evidence:** `server/src/modules/eval/repository.ts:155`, `server/test/eval.it.test.ts:57`
+
+### 2026-10-11 — seeded agents have no `agent_versions` row, so anything that records "the prompt this run used" must snapshot first
+
+`seed.ts` inserts agents directly; only `AgentsRepository.insert/update` write a version
+snapshot. An eval run therefore calls `ensureVersionSnapshot` before inserting its rows, or
+run compare has no prompt to show for the seeded Security Reviewer. It never overwrites an
+existing snapshot, so it is safe to call on every start.
+**Evidence:** `server/src/modules/agents/repository.ts:167`, `server/src/modules/eval/service.ts:191`
+
+### 2026-10-11 — the client `vendor/shared` mirror had silently drifted from the server copy at the base commit
+
+`client/src/vendor/shared/contracts/eval-ci.ts` differed from the server source before the
+eval work started and nothing noticed. `test/eval-contract-parity.test.ts` now asserts the two
+files are byte-identical (`eval-ci.ts`, `knowledge.ts`); when it fails, re-mirror from
+`server/src/vendor/shared`, never edit the client copy. Add a file to its list when a new
+contract is mirrored.
+**Evidence:** `server/test/eval-contract-parity.test.ts:12`
+
+### 2026-10-03 - `pnpm arch` stays at baseline while a ring-1 function takes a raw `Db`
+depcruise checks import edges, and `_shared/agent-skills.ts` already imports the `Db` type, so a
+new ring-1 function with a `db: Db` parameter (or a service field typed `Container['db']`) is
+invisible to it. "arch 0 errors" does not prove a service avoids raw DB access. Reach agent-skill
+data through `Container['agentSkills']` (the ring-2 `AgentSkillsRepository`), resolved in the constructor.
+**Evidence:** server/src/modules/_shared/repository/agent-skills-port.repo.ts:15, server/src/modules/_shared/agent-skills.ts:78
+
+### 2026-10-03 — a ring-2 class that needs both another ring-2 file's row-fetchers AND a ring-1 file's pure helpers goes in its own, third file
+
+Fixing ARCH-7 (F8, project-context round 2) needed a `AgentSkillsRepository` that
+implements the ring-1-declared `AgentSkillsPort`: it must call
+`linkedSkillRowsForAgent(s)` (ring 2, `_shared/repository/agent-skills.repo.ts`) and then
+`toSkillSet` (ring 1, `_shared/agent-skills.ts`, which itself imports the row-fetchers from
+that same `.repo.ts`). Putting the class straight into `agent-skills.repo.ts` would have
+made that file import back from `agent-skills.ts` — a two-file cycle, caught by
+`no-circular` the moment it is added — because `agent-skills.ts` already imports from
+`agent-skills.repo.ts`. Fix: a third, sibling file
+(`_shared/repository/agent-skills-port.repo.ts`) that imports from both and is imported by
+neither. The general rule: when a ring-2 implementation needs ring-1 pure logic, it cannot
+live inside the same file ring-1 already depends on for its own data access — check `rg -n
+"^import" <the ring-2 file ring-1 already imports>` before placing the new class, not after
+`pnpm arch` flags it.
+**Evidence:** `server/src/modules/_shared/repository/agent-skills-port.repo.ts`.
+
+### 2026-10-03 — `ProjectDocsSource.list` surfacing a bare `ENOENT` for "checkout missing" (ARCH-3) forces every caller to re-derive the errno check
+
+**Supersedes:** 2026-10-03 entry "detecting \"the checkout directory itself is gone\" from
+a ring-1 service without giving `ProjectDocsSource` an `exists` method" — that approach
+(service catches the adapter's thrown `ENOENT`, reads `(err as
+NodeJS.ErrnoException).code`) is exactly what the architecture review flagged: a ring-1
+service naming a Node errno is ring 1 knowing a ring-2 implementation detail, and it means
+every future caller of `list()` has to remember to add the same `try/catch`. Fix: `list()`
+now returns a discriminated union, `ProjectDocsListResult = { status: 'ok'; files; truncated
+} | { status: 'root_missing' }` (added next to the existing `ProjectDocRead` union in
+`@devdigest/shared`, so "missing root" is a first-class outcome of the port, not an
+exception). `FsProjectDocsSource.list` is the only place that still touches
+`NodeJS.ErrnoException` — it maps `ENOENT` on the initial `fs.access(root)` to `{ status:
+'root_missing' }` internally and lets every other `fs` error propagate as a real throw.
+`ProjectContextService.scan()` just checks `result.status === 'root_missing'`.
+`MockProjectDocsSource` takes an `{ rootMissing }` constructor option to produce the same
+outcome without touching a filesystem.
+**Evidence:** `server/src/vendor/shared/adapters.ts` (`ProjectDocsListResult`),
+`server/src/adapters/project-docs/index.ts` (`list`), `server/src/modules/project-context/service.ts` (`scan`).
+
+### 2026-10-03 — detecting "the checkout directory itself is gone" from a ring-1 service without giving `ProjectDocsSource` an `exists` method
+
+D5 defines "no checkout" as `repos.clone_path` null OR the directory missing on disk, but
+`ProjectDocsSource` (D2) is fixed at exactly `list`/`read`/`matchesRoots` — no `node:fs` in
+ring 1 to check directory existence directly, and adding a fourth port method widens an
+interface three lanes already implement against (`FsProjectDocsSource`,
+`MockProjectDocsSource`). Fix: `FsProjectDocsSource.list` calls `fs.access(root)` first and
+lets `ENOENT` propagate; `ProjectContextService.scan()` wraps the `list()` call and
+re-throws any `ENOENT`-coded error as `AppError('repository_not_synced', …, 409)`. This
+keeps the existence check entirely inside the one adapter that is allowed `node:fs`, with
+the service only inspecting an error code (no fs import needed there).
+**Evidence:** `server/src/modules/project-context/service.ts` (`scan`), `server/src/adapters/project-docs/index.ts` (`list`).
+
+### 2026-10-03 — a new ring-1 service needs another module's shared repository type without naming that module
+
+A service that needs `container.reposRepo` (or `agentsRepo`/`reviewRepo` — the
+cross-cutting repos the composition root builds, per the comment in
+`platform/container.ts`) must not `import type { RepoRepository } from
+'../repos/repository.js'`: that is exactly the "module importing another
+module's repository.ts" anti-pattern dependency-cruiser's
+`no-cross-module-internals` rule flags, even though the value itself flows
+through `container`, not a direct import. The fix already in the codebase
+(`modules/conventions/service.ts:65`) is to type the field with an indexed
+access on `Container` itself — `private readonly reposRepo:
+Container['reposRepo'];` — which resolves to the same `RepoRepository` type
+without a second import site. `modules/smart-diff/service.ts` takes the
+alternative route (a hand-written structural interface) when the consumer
+only needs a few methods; the indexed-access form is less code when the whole
+repository type is wanted.
+**Evidence:** `server/src/modules/conventions/service.ts:65`,
+`server/src/modules/project-context/service.ts:21`
 
 ### 2026-09-28 — a blast caller's `file:line` is correct and its GitHub link still opens unrelated code
 Every repo-intel line number (`references.line`, `symbols.line`) belongs to the commit the
@@ -291,6 +529,20 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-04 — `MockLLMProvider.completeStructured` hardcodes `attempts: 1` and never throws — a test asserting retries or a model failure needs its own fake provider
+
+`server/src/adapters/mocks.ts:98-114`'s `MockLLMProvider.completeStructured` always resolves
+with `attempts: 1` from a fixed fixture and has no path that rejects. A test for AC-12
+(schema-repair attempts counted into the one request) or AC-32/AC-65 (timeout/failure ends
+the job `failed`, no retry) cannot express either case through `MockLLMProvider` — asserting
+`attempts: 2` or a thrown error against it just asserts the mock's own constant back at
+itself. `server/test/brief-model.test.ts`'s `fakeLlm()` is the pattern: a small hand-rolled
+object satisfying `LLMProvider`, with `completeStructured` scripted per test (`impl: (req) =>
+Promise<...>`, can resolve with any `attempts` or `throw`), while `listModels`/`complete`/
+`embed` stay stubs. Reach for this whenever a test's assertion is ABOUT what
+`completeStructured` returns or throws, not just about what request it was called with.
+**Evidence:** server/src/adapters/mocks.ts:98-114, server/test/brief-model.test.ts:84-98
+
 ### 2026-09-26 — `tsc --noEmit -p tsconfig.json` never sees `test/*.ts`, so a type error injected only into a test file is invisible to `pnpm typecheck`
 
 `server/tsconfig.json` is `"include": ["src/**/*.ts"]` — `test/` is out of scope for the
@@ -384,6 +636,24 @@ Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
 
+### 2026-10-04 — an `*.it.test.ts` that destructures `job_id` from a non-202 response and then awaits `runBus.onDone(job_id, …)` hangs for the full 120s test timeout
+**Cause:** a detached-job route (`POST /pulls/:id/brief/generate`) can answer 202 `{job_id, reused}` or, on a different branch, something else entirely (409/500/200 `{brief}`) with no `job_id` field — `res.json().job_id` is then `undefined`, and `bus.onDone(undefined, cb)` waits on a run id nothing will ever call `complete()` on. The test then runs to `vitest.config.ts`'s `testTimeout: 120_000` before failing, instead of failing fast on the real assertion.
+**Signal:** a brief/job test takes ~120s to fail (or times out) instead of failing in milliseconds on a wrong status code; the stack trace points at the `onDone` `await`, not at the response assertion.
+**Fix:** assert `res.statusCode` (and, for a 202, that `job_id` is a string) BEFORE destructuring and awaiting `onDone` — every `brief.it.test.ts` case does `expect(res.statusCode).toBe(202)` first.
+**Evidence:** server/test/brief.it.test.ts:117 (AC-64/AC-62 cases assert the status and return before touching any job id), server/vitest.config.ts:16
+
+### 2026-10-04 — `server/src/adapters/mocks.ts` and `db:seed` both broke a CI job that installs fewer deps than `server/`'s own
+**Cause:** two independent CI jobs resolve `server/src/**` modules with a lighter dependency set than `pnpm --dir server install` gives you locally: (1) `reviewer-core.yml`'s `tests` job runs `npm ci` inside `reviewer-core/` only, and `reviewer-core/test/run.test.ts` / `run-project-context.test.ts` import `../../server/src/adapters/mocks.ts` directly — any runtime (non-type, non-relative) import added to `mocks.ts` must resolve from `reviewer-core/node_modules`, which it never does; (2) `e2e-web.yml`'s `browser flows` job runs `pnpm db:seed` in `server/` BEFORE its separate "Install reviewer-core deps" step, so anything `db:seed` imports that transitively pulls in `@devdigest/reviewer-core` (its `structured.ts` imports `openai`) crashes with `ERR_MODULE_NOT_FOUND` mid-seed.
+**Signal:** `Cannot find module './lib/picomatch'` from a `reviewer-core/test/*.test.ts` that only imports `server/src/adapters/mocks.ts`; or `ERR_MODULE_NOT_FOUND: Cannot find package 'openai'` during `pnpm db:seed` pointing at `reviewer-core/src/llm/structured.ts`.
+**Fix:** keep `mocks.ts` free of any runtime third-party import — reimplement the small amount of logic needed locally instead (e.g. a hand-rolled glob matcher instead of `picomatch`, parity-tested against the real `picomatch({ dot: false })` in a server-only test). Keep `src/db/seed-project-context.ts` free of any `@devdigest/reviewer-core` import — build the fixed demo string it needs as a literal, and pin it to the real function's output with a dedicated server test (`vitest` resolves the `@devdigest/reviewer-core` alias; `db:seed` does not).
+**Evidence:** server/src/adapters/mocks.ts:1 (header comment), server/src/db/seed-project-context.ts:33, server/test/mocks-project-docs-matcher-parity.test.ts, server/test/seed-project-context.test.ts, .github/workflows/reviewer-core.yml, .github/workflows/e2e-web.yml:65-80
+
+### 2026-10-03 - an `*.it.test.ts` error assertion on `res.json().message` can never pass
+**Cause:** the app-wide error handler sends `{ error: { code, message, details } }`; there is no top-level `message`, and `.error` is an object.
+**Signal:** `.toMatch()` throws a TypeError, or the test fails although the route returns the right status and text.
+**Fix:** assert `res.json().error.message` (and `error.code`), as the other module tests do.
+**Evidence:** server/src/app.ts:120, server/test/skills.it.test.ts:338
+
 ### 2026-09-25 — a pre-work LLM call sharing an injected mock provider silently steals `llm.calls[0]` from the review's own assertion
 
 **Cause:** the intent layer's pre-work step (`run-executor.ts` `resolveIntent`, before the
@@ -432,6 +702,10 @@ is not a promise that the run's side documents are on disk.
 Dated summaries of sessions worth remembering as a whole.
 
 <!-- newest first: session-notes -->
+
+### 2026-10-12 - the eval suite separates a precision regression from a recall regression, and also exposes a prompt edit that did nothing
+Security Reviewer (deepseek-v4-flash) on four hand-written cases (2 `must_find`, 2 `must_not_flag`), one suite run per version: v1 baseline 1.0/1.0; v2 = an appended "security is out of scope" line → no change at all (the long security prompt outweighed one trailing line); v3 = "flag every changed line" → precision 0.6, `benign-local-rename` pass→fail; v4 = prompt replaced by a performance-only reviewer → recall 0.5, `hardcoded-admin-password` pass→fail. Compare names the flipped case and the prompt diff each time. Appending a scope override to the end of a focused prompt is not a reliable way to change an agent's behaviour - measure it. One run per version is a demonstration, not a statistic.
+**Evidence:** docs/eval-regression-experiment.md (run ids b2999286, b45e6b18, 3b48ace4, 349031dc on the isolated `devdigest_l06` database)
 
 ## Open Questions
 

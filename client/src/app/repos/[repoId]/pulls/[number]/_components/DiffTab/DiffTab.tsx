@@ -3,12 +3,24 @@
 import React from "react";
 import { useTranslations } from "next-intl";
 import { SectionLabel, Button, Skeleton, ErrorState } from "@devdigest/ui";
-import { DiffViewer, orderBySmartDiff, type DiffCommentApi, type DiffFindingApi } from "@/components/diff-viewer";
+import {
+  DiffViewer,
+  orderBySmartDiff,
+  resolveDiffFocus,
+  type DiffCommentApi,
+  type DiffFindingApi,
+} from "@/components/diff-viewer";
 import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
+import { useEvalCaseDraft } from "@/lib/hooks/eval";
+import { ApiError } from "@/lib/api";
+import { caseErrorKey } from "@/lib/eval-metrics";
 import { notify } from "@/lib/toast";
-import { FindingCard } from "../FindingCard";
+import { EvalCaseModal, type EvalCaseModalSource } from "@/components/eval-ui/EvalCaseModal";
+import { FindingCard, evalSourceFor } from "../FindingCard";
 import type { PrFile } from "@devdigest/shared";
+
+type EvalModalState = { agentId: string; source: EvalCaseModalSource; opener: HTMLElement };
 
 type Order = "smart" | "original";
 
@@ -22,6 +34,9 @@ interface DiffTabProps {
   headSha: string | null;
   /** Inline commenting is offered only on open PRs (GitHub rejects otherwise). */
   canComment?: boolean;
+  /** Files changed tab `?file=&line=` target (D4, AC-58). */
+  focusFile?: string | null;
+  focusLine?: string | null;
 }
 
 /**
@@ -38,12 +53,16 @@ export function DiffTab({
   repoFullName,
   headSha,
   canComment,
+  focusFile,
+  focusLine,
 }: DiffTabProps) {
   const t = useTranslations("prReview");
   const { data: comments } = usePrComments(prId);
   const create = useCreatePrComment(prId);
   const { data: reviews } = usePrReviews(prId);
   const action = useFindingAction();
+  const evalDraft = useEvalCaseDraft();
+  const [evalModal, setEvalModal] = React.useState<EvalModalState | null>(null);
   const {
     data: smartDiff,
     isLoading: smartDiffLoading,
@@ -95,6 +114,17 @@ export function DiffTab({
         onAction={(a) => {
           if (prId) action.mutate({ findingId: f.id, action: a, prId });
         }}
+        evalPending={evalDraft.isPending}
+        onEvalCase={(opener) =>
+          evalDraft.mutate(f.id, {
+            onSuccess: (r) => {
+              const source = evalSourceFor(f.id, r);
+              if (source) setEvalModal({ agentId: r.agent_id, source, opener });
+              else notify.error(t(caseErrorKey(undefined)));
+            },
+            onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
+          })
+        }
         repoFullName={repoFullName}
         headSha={headSha}
       />
@@ -104,6 +134,12 @@ export function DiffTab({
   const groups = order === "smart" ? orderBySmartDiff(files, smartDiff ?? null) : null;
   const smartLoading = order === "smart" && smartDiffLoading;
   const smartFailed = order === "smart" && smartDiffError;
+
+  // D4/AC-58..61 — the Files changed tab's `?file=&line=` focus target.
+  // `missing` renders a notice above the list and passes no focus down;
+  // `target` is handed to `DiffViewer` to scroll/highlight.
+  const diffFocus = resolveDiffFocus(files, focusFile, focusLine);
+  const viewerFocus = diffFocus.kind === "target" ? { path: diffFocus.path, line: diffFocus.line } : null;
 
   return (
     <section>
@@ -147,12 +183,27 @@ export function DiffTab({
         {t("smartDiff.title")} · {t("smartDiff.summary", { files: filesCount, additions, deletions })}
       </SectionLabel>
 
+      {diffFocus.kind === "missing" && (
+        <div role="status" style={{ marginBottom: 10 }}>
+          {t("smartDiff.focusFileMissing")}
+        </div>
+      )}
+
       {smartLoading ? (
         <Skeleton height={200} />
       ) : smartFailed ? (
         <ErrorState title={t("smartDiff.loadFailed")} onRetry={() => refetchSmartDiff()} />
       ) : (
-        <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} />
+        <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} focus={viewerFocus} />
+      )}
+
+      {evalModal && (
+        <EvalCaseModal
+          agentId={evalModal.agentId}
+          source={evalModal.source}
+          returnFocusTo={evalModal.opener}
+          onClose={() => setEvalModal(null)}
+        />
       )}
     </section>
   );

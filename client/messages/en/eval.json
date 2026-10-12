@@ -12,7 +12,8 @@
     "metrics": {
       "recall": "RECALL",
       "precision": "PRECISION",
-      "citationAccuracy": "CITATION ACCURACY"
+      "citationAccuracy": "CITATION ACCURACY",
+      "passed": "PASSED"
     },
     "legend": {
       "recall": "Recall",
@@ -28,7 +29,29 @@
       "cost": "Cost"
     },
     "pass": "pass",
-    "fail": "fail"
+    "fail": "fail",
+    "subtitle": "Recall, precision and citation accuracy per agent, scored by code",
+    "agents": "Agents",
+    "empty": "No agent has eval cases yet.",
+    "loadFailed": "Could not load the eval dashboard",
+    "columns": {
+      "agent": "Agent",
+      "version": "Version",
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation",
+      "passed": "Passed",
+      "trend": "Recall trend"
+    },
+    "runAll": "Run all agents",
+    "lastRun": "Last run v{version} · {date} · {passed}/{total} pass",
+    "neverRun": "never run",
+    "short": {
+      "recall": "RECALL",
+      "precision": "PREC",
+      "citation": "CITE"
+    },
+    "recentRunsAll": "Recent eval runs · all agents"
   },
   "caseEditor": {
     "newCase": "New eval case",
@@ -55,7 +78,56 @@
     "invalidJson": "invalid JSON",
     "lastRunPassed": "Last run passed",
     "lastRunFailed": "Last run failed",
-    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s"
+    "resultSummary": "recall {recall}% · precision {precision}% · citation {citation}% · {duration}s",
+    "alreadyInSet": "Already in the eval set",
+    "cancel": "Cancel",
+    "created": "Eval case created",
+    "saved": "Eval case saved",
+    "discard": {
+      "title": "Discard changes?",
+      "body": "Your edits to this case will be lost.",
+      "confirm": "Discard",
+      "keep": "Keep editing"
+    },
+    "expectationHeading": "Expected output",
+    "typeLabel": "Type",
+    "fileLabel": "File",
+    "fileEmpty": "Select a file",
+    "startLineLabel": "Start line",
+    "endLineLabel": "End line",
+    "severityLabel": "Severity",
+    "categoryLabel": "Category",
+    "expectationTitleLabel": "Finding title",
+    "notesLabel": "Notes",
+    "notesPlaceholder": "Why this case matters",
+    "lockedHint": "The type and the diff come from the finding and cannot be changed.",
+    "busyHint": "A run is already in progress for this agent.",
+    "errors": {
+      "invalid_name": "Name must be 1–120 characters",
+      "invalid_diff": "Not a unified diff with file headers and a hunk",
+      "frozen_diff_too_large": "The diff is larger than 200 KB",
+      "expectation_not_grounded": "The expectation must point at a line of the diff",
+      "invalid_lines": "Start and end lines must be whole numbers of 1 or more, with the end not before the start",
+      "locked_field": "Type and diff of a case from a finding cannot change",
+      "run_in_flight": "A run is already in flight for this agent",
+      "provider_not_configured": "The agent's provider is not configured",
+      "dry_run_timeout": "The run took longer than 2 minutes",
+      "dry_run_failed": "The model call failed",
+      "generic": "Something went wrong"
+    },
+    "result": {
+      "heading": "Dry run result",
+      "pass": "Pass",
+      "fail": "Fail",
+      "findings": "Findings",
+      "noFindings": "The agent reported no findings.",
+      "matched": "matched",
+      "unmatched": "no match",
+      "grounding": "{kept} kept · {dropped} dropped",
+      "cost": "Cost {cost}",
+      "version": "Agent v{version}",
+      "duration": "{seconds}s"
+    }
   },
   "evalsTab": {
     "metricsTitle": "Eval metrics",
@@ -80,5 +152,110 @@
     "crumbEvals": "Evals",
     "crumbNewCase": "New case",
     "crumbEvalCase": "Eval case"
+  },
+  "suite": {
+    "runAll": "Run all evals",
+    "metricsLabel": "Eval metrics",
+    "dashboardLink": "View full dashboard →",
+    "passingBadge": "{passing} / {total} passing",
+    "expectedFind": "expected ≥1 finding, got {got}",
+    "expectedNone": "expected 0 findings, got {got}",
+    "deltaUp": "▲ {points}pt",
+    "deltaDown": "▼ {points}pt",
+    "deltaFlat": "±0pt",
+    "metricEmpty": "—",
+    "tracesPassed": "TRACES PASSED",
+    "progress": "{done} / {total}",
+    "history": "Run history",
+    "compare": "Compare",
+    "compareHint": "Select exactly two runs to compare",
+    "typeMustFind": "must find",
+    "typeMustNotFlag": "must not flag",
+    "result": {
+      "pass": "pass",
+      "fail": "fail",
+      "errored": "errored",
+      "never_run": "never run"
+    },
+    "columns": {
+      "time": "Time",
+      "version": "Version",
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation",
+      "passed": "Passed",
+      "cost": "Cost"
+    },
+    "emptyCases": "No eval cases yet. Turn an accepted or dismissed finding into one from a PR's findings.",
+    "noRuns": "No runs yet. Run the evals to get a baseline.",
+    "deleteCase": "Delete case",
+    "vsPrevious": "vs previous run",
+    "casesHeading": "Eval cases",
+    "running": "Running…",
+    "loadFailed": "Could not load eval data",
+    "errors": {
+      "noCases": "This agent has no eval cases yet.",
+      "providerNotConfigured": "The agent's provider has no API key configured.",
+      "runInFlight": "A run is already in progress for this agent.",
+      "generic": "Could not start the eval run"
+    }
+  },
+  "compare": {
+    "title": "Compare runs",
+    "promptDiff": "System prompt diff",
+    "promptUnavailable": "The prompt of one of these versions was not stored.",
+    "samePrompt": "Prompts are identical",
+    "flipped": "Cases that flipped",
+    "noFlips": "No case changed its result",
+    "versions": "v{a} → v{b}",
+    "passToFail": "pass → fail",
+    "failToPass": "fail → pass",
+    "onlyInA": "Only in the older run",
+    "onlyInB": "Only in the newer run",
+    "close": "Close",
+    "loadFailed": "Could not load the comparison",
+    "titleVersions": "Compare runs · v{a} → v{b}",
+    "subtitle": "Old prompt vs new",
+    "legendOld": "v{version} (old)",
+    "legendNew": "v{version} (new)",
+    "tile": {
+      "recall": "RECALL",
+      "precision": "PRECISION",
+      "citation": "CITATION",
+      "cost": "COST"
+    },
+    "promote": "Promote v{version}",
+    "promoted": "v{from} restored as v{to}",
+    "promoteFailed": "Couldn't promote v{version}"
+  },
+  "runAll": {
+    "title": "Run all agents?",
+    "body": "{agents, plural, one {# agent} other {# agents}} × their eval cases = {calls, plural, one {# model call} other {# model calls}} ({cases, plural, one {# case} other {# cases}} in total).",
+    "confirm": "Run {calls, plural, one {# call} other {# calls}}",
+    "cancel": "Cancel",
+    "started": "{count, plural, one {# run started} other {# runs started}}",
+    "refusedLine": "{agent}: {reason}",
+    "reason": {
+      "run_in_flight": "a run is already in flight",
+      "provider_not_configured": "provider not configured",
+      "no_cases": "no eval cases",
+      "start_failed": "could not start"
+    },
+    "failed": "Couldn't start the runs"
+  },
+  "agentPage": {
+    "backToAll": "← All agents",
+    "subtitle": "Regression harness · {runs, plural, one {# run} other {# runs}} on the {cases}-case set",
+    "pickerLabel": "Agent",
+    "runEval": "Run eval",
+    "calloutUp": "{metric} rose {points}pt on v{version}",
+    "calloutDown": "{metric} dipped {points}pt on v{version}",
+    "metric": {
+      "recall": "Recall",
+      "precision": "Precision",
+      "citation": "Citation"
+    },
+    "trendTooFew": "Run the suite twice to see a trend",
+    "loadFailed": "Could not load this agent's evals"
   }
 }

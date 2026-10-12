@@ -30,16 +30,28 @@ export function FileGroup({
   role,
   filesCount,
   findingFilesCount,
+  focusKey,
   children,
 }: {
   role: SmartDiffRole;
   filesCount: number;
   /** Number of files in the group with at least one OPEN finding (D4). */
   findingFilesCount: number;
+  /** D4/AC-59 — set only when this group contains the Files changed tab's
+      focus target; forces the group open, re-applied whenever it changes. */
+  focusKey?: string | null;
   children: React.ReactNode;
 }) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(!DEFAULT_COLLAPSED_ROLES.has(role));
+  // D4 — render-time reset keyed on the focus key: force the group open the
+  // first render a new target lands inside it, but let the user collapse it
+  // again afterwards (a plain effect would re-open it on every render).
+  const [appliedFocusKey, setAppliedFocusKey] = React.useState<string | null>(null);
+  if (focusKey != null && focusKey !== appliedFocusKey) {
+    setAppliedFocusKey(focusKey);
+    setOpen(true);
+  }
 
   return (
     <div style={s.fileGroup}>

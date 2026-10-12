@@ -10,7 +10,19 @@
     "replyToAuthor": "Reply to author",
     "replyPlaceholder": "Reply to the author about this finding…",
     "sendReply": "Send reply",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "evalCase": "Turn into eval case",
+    "evalCaseMustFind": "as must_find",
+    "evalCaseMustNotFlag": "as must_not_flag",
+    "evalCaseNeedsTriage": "Accept or dismiss this finding first",
+    "evalCaseFailed": "Could not create the eval case",
+    "evalCaseErrors": {
+      "noAgent": "The agent that produced this finding no longer exists",
+      "notTriaged": "Accept or dismiss this finding first",
+      "noDiff": "This file has no stored diff to freeze into a case",
+      "diffTooLarge": "This file's diff is too large to freeze into a case",
+      "notGrounded": "This finding does not point at a line of its own diff"
+    }
   },
   "trifecta": {
     "lethal": "LETHAL TRIFECTA — ALL 3 PRESENT",
@@ -75,7 +87,8 @@
     "loadFailed": "Couldn't load the reviewer-ordered diff.",
     "showComments": "Show comments",
     "hideComments": "Hide comments",
-    "commentFailed": "Couldn't post the comment to GitHub."
+    "commentFailed": "Couldn't post the comment to GitHub.",
+    "focusFileMissing": "This file is no longer in this PR."
   },
   "list": {
     "breadcrumb": "Pull Requests",

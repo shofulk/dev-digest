@@ -1,4 +1,5 @@
 import { pgTable, uuid, text, integer, boolean, jsonb, primaryKey, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 import { now } from './_shared';
 import { workspaces } from './core';
 
@@ -17,6 +18,10 @@ export const skills = pgTable('skills', {
   enabled: boolean('enabled').notNull().default(true),
   version: integer('version').notNull().default(1),
   evidenceFiles: jsonb('evidence_files').$type<string[]>(),
+  // Repository-relative paths of attached Project Context documents, in order.
+  // NOT part of a `skill_versions` snapshot — attaching a document does not
+  // change the skill's version.
+  contextDocs: jsonb('context_docs').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   createdAt: now(),
 }, (t) => ({
   // Every list read filters on workspace_id; Postgres does not index FK columns itself.

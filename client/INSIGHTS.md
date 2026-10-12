@@ -36,6 +36,73 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - the kit `Modal` neither moves focus into the dialog nor traps it, and the host page's window shortcuts keep firing under it
+`@devdigest/ui` `Modal` renders `role="dialog"` but leaves focus where it was, so Tab walks the page behind the backdrop, and any `window` keydown handler on the host page still runs. `FindingsPanel`'s j/k/a/d triage shortcuts dismissed the finding behind an open `EvalCaseModal` when `d` was pressed on a focused button or `<select>` (its guard skipped only INPUT/TEXTAREA). A modal mounted over a page with window shortcuts must set its own initial focus and trap Tab, and the host handler must return early while the modal is open (and skip SELECT, contentEditable and `[role=dialog]` targets).
+**Evidence:** client/src/vendor/ui/kit/Modal.tsx, client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel/FindingsPanel.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
+
+### 2026-10-12 - the `@devdigest/ui` `SelectInput` and `Textarea` take no `id`, so `<label htmlFor>` cannot bind to them
+Both components render their native element without forwarding `id`, so `getByLabelText` finds nothing (and throws outright when `htmlFor` points at a span or pre). `EvalCaseModal` uses native `<select>`/`<textarea>` where a labelled control is needed. Separately, an `afterEach` that asserts on the DOM must call `cleanup()` first, or the previous test's tree is still mounted.
+**Evidence:** client/src/vendor/ui/kit/Textarea.tsx, client/src/vendor/ui/kit/SelectInput.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
+
+### 2026-10-04 — a job-stream hook keyed only on the job id never recovers when the server hands back the SAME running job id
+After `onerror` marks the job `failed`, Retry/Generate can resolve with the id of the
+job that is still running (`POST /brief/generate` → `{job_id: <same>, reused: true}`,
+by design: D2/AC-31). A render-time reset and an effect keyed on `jobId` alone see no
+change, so `failed` sticks, no new `EventSource` opens and the finished brief never
+appears until a reload. Key the reset and the subscription on the job id **plus** a
+per-mutation attempt counter (bumped in `onSuccess`), never on the id text alone.
+Applies to any SSE job hook over a deduping endpoint.
+**Evidence:** server/src/modules/brief/service.ts:108-109; client/src/lib/hooks/brief.ts:56 (`attempt`), brief.ts:4-6 (reset keyed on `(jobId, attempt)`); client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.retrySameJob.test.tsx
+
+### 2026-10-04 — a "stays true until X" `useState` latch (`canRetry`) enumerates exits, and misses one
+
+**Cause:** `BriefBanner`'s `canRetry` (F22) was set `true` on `job.failed` and cleared only
+on `job.done`. A Retry/Generate click can also resolve with `GenerateBriefCurrent`
+(`{brief}`, no `job_id`) — `useGenerateBrief`'s `onSuccess` (`brief.ts`) then writes
+`job: null` into the query cache, so `jobId` goes `null` and `job.done` can never become
+`true` for that resolution. The latch stayed `true` forever next to a freshly rendered
+brief, and clicking it sent `{force: true}` — a paid regeneration nobody asked for (F22b).
+**Signal:** a derived boolean driven by a `useState` latch that only clears on ONE named
+terminal event; any other way the same async flow can resolve bypasses the clear.
+**Fix:** stopped naming the terminal case and instead cleared on the absence of the start
+case: `else if (!isGenerating && !job.failed && canRetry) setCanRetry(false)` — "no longer
+failed and nothing in flight" covers `job.done`, `GenerateBriefCurrent`, and any future
+resolution shape, without enumerating each one.
+**Evidence:** `client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.tsx:43-55`,
+`client/src/lib/hooks/brief.ts:60-69` (the `job: null` write that breaks a `job.done`-only clear).
+
+### 2026-10-04 — an EventSource hook's `onerror` that only `close()`s leaves derived `running` stuck `true` forever
+
+**Cause:** a native `onerror` fires when the stream itself drops (API restart, an evicted
+job) — it is never followed by a `done`/`failed` event on that same connection. A hook that
+derives `running` from "not done and not failed" (e.g. `useBriefJob`, round 1) and whose
+`onerror` handler only calls `es.close()` never reaches a terminal state: `running` stays
+`true` across the API's process lifetime, and any UI gated on it (Generate/Regenerate/Retry
+buttons) stays disabled forever after a single dropped connection.
+**Signal:** `onerror = () => { es.close(); }` with nothing else in the handler body, next to
+a `running` derived as `!done && !failed`.
+**Fix:** `onerror` must reach the same terminal state a `failed` SSE event would (set
+`failed`/`ended`, whichever the hook's terminal flag is) AND invalidate the TanStack query
+key so the server's own state takes over on refetch — `useConventionScan`
+(`client/src/lib/hooks/conventions.ts:189-193`) already does both; it was the correct
+reference during the F12 fix, not a second instance of the bug. `useBriefJob` was the one
+hook missing it (`client/src/lib/hooks/brief.ts`, fix-list F12, round 2).
+**Evidence:** `client/src/lib/hooks/brief.ts:115-128`, `client/src/lib/hooks/conventions.ts:189-193`,
+`client/src/lib/hooks/brief.onerror.test.ts`.
+
+### 2026-10-03 — gating a TanStack Query loading view on `isLoading` renders the "ready" view for a disabled query (`repoId` null/undefined)
+
+`isLoading` is `isPending && isFetching` — a query disabled via `enabled: !!repoId` is
+never fetching, so `isLoading` stays `false` even while it has no data. A component that
+checks only `isLoading` before rendering rows therefore renders the data-shaped branch
+with `data` undefined: in `ContextDocPicker`, that meant every row the caller passed as
+`attached` showed the "Missing" badge and a live Detach button, and one click
+permanently dropped it (F12, round-3 fix list). Gate on `!repoId || query.isPending`
+instead — `isPending` is true whenever there is no data and no error, which also covers
+the disabled case. A mock that hand-rolls `{ isLoading, isError }` for a hook under test
+needs an `isPending` field added too, or the real bug reappears as a false-green test.
+**Evidence:** `client/src/components/context-docs/ContextDocPicker.tsx:57`
+
 ### 2026-09-26 — a test for an ordering function passed while the function used the wrong order, because both used the same order
 
 `orderBySmartDiff`'s original T8 built its `SmartDiff` fixture with each group's
@@ -133,6 +200,20 @@ boots — load one route before calling client work done.
 Conventions and structural decisions that are not stated in the code.
 
 <!-- newest first: codebase-patterns -->
+
+### 2026-10-04 — a data hook reports failure as a stable `code` only; the component maps code → `t()` key
+`client/AGENTS.md` says "no literal copy in components", which reads as if hooks were
+exempt — they are not: user-facing strings live in `messages/<locale>/*.json`. Hooks are
+tested without `NextIntlClientProvider`, so copy put in a hook escapes `next-intl`
+entirely (one round shipped an English `STREAM_ERROR_MESSAGE` and a dead
+`banner.streamError` key). The hook sets e.g. `{ code: "stream_error", message: "" }`;
+the rendering component owns the only code → key mapping.
+**Evidence:** client/src/lib/hooks/brief.ts:155; client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.tsx:71; client/src/lib/hooks/conventions.ts:208-212 (same shape)
+
+### 2026-10-03 — a nav entry added straight to `vendor/ui/nav.ts` is a deliberate exception, not drift to clean up
+
+`client/src/vendor/ui/nav.ts` is mirrored from `@devdigest/ui` and is otherwise do-not-touch, but `NAV`/`SHORTCUTS` have no other home: they are plain data, not a primitive, so an entry added only here is lost the moment the mirror is re-vendored. The Conventions nav item (`d30ff64`) and the Project Context nav item (`key: "context"`, `gKey: "x"`) are both this deliberate exception. When the mirror is next re-vendored, re-add every such entry by hand instead of treating its presence in `nav.ts` as drift to clean up.
+**Evidence:** `client/src/vendor/ui/nav.ts:40-46,78`
 
 ### 2026-09-20 — an `EventSource` hook that resets its state inside the effect trips `react-hooks/set-state-in-effect`; reset during render instead
 
@@ -242,6 +323,41 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 - jsdom has no `isContentEditable`, and a focus-trap test needs a focusable element outside the dialog
+jsdom leaves `HTMLElement.isContentEditable` undefined even with `contenteditable="true"`, so a keyboard-shortcut guard that skips editable targets cannot be exercised until the test sets it: `Object.defineProperty(el, "isContentEditable", { value: true })`. With no `@testing-library/user-event` in `client`, a Tab-trap test fires `fireEvent.keyDown(el, { key: "Tab" })` and asserts the return value (`false` = `preventDefault` called) plus `toHaveFocus` on the wrap target; it is only non-vacuous when a focusable element exists outside the dialog for native Tab to reach.
+**Evidence:** client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel/FindingsPanel.test.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.test.tsx
+
+### 2026-10-11 — vendor `Sparkline` renders `NaN` coordinates for a single data point
+
+It maps `i / (data.length - 1)`, so a series of length 1 divides by zero (only an empty one is
+guarded). Render it only when `data.length >= 2`, and show a plain value otherwise — a new
+agent with one eval run is the normal case, not an edge.
+**Evidence:** `client/src/vendor/ui/charts/Sparkline.tsx:15`
+
+### 2026-10-11 — there is no `--danger` colour token; the red in `vendor/ui` is `--crit`
+
+`var(--danger)` resolves to nothing and fails silently (no colour, no error). Tokens live in
+`vendor/ui/styles.css`; use `--crit` for error/regression states.
+**Evidence:** `client/src/vendor/ui/styles.css:25`
+
+### 2026-10-04 — `@testing-library/user-event` is not installed; component tests use `fireEvent`
+Only `@testing-library/react` and `jest-dom` are dependencies, so the RTL skill's
+"prefer `userEvent`" advice does not apply here without adding a package (a lockfile
+change). A reviewer flagging `fireEvent` as an anti-pattern is a false positive.
+**Evidence:** client/package.json:30-31
+
+### 2026-10-03 — `@devdigest/ui` primitives like `IconBtn` are plain function components, not `forwardRef` — you cannot get a DOM ref from them directly
+
+A control that must hand focus back to itself after closing an overlay (AC-37's "Escape
+returns focus to the row's Preview button") needs a real `HTMLButtonElement` to call
+`.focus()` on. Passing `ref={...}` straight to `IconBtn` (or `Button`, `Checkbox`, etc. —
+none of them call `React.forwardRef`) is silently dropped; React only warns "Function
+components cannot be given refs" in the console, the build and tests stay green. Fix:
+wrap the primitive in a plain `<span ref={(el) => ...el?.querySelector("button")}>` and
+capture the native button that way, since none of these can be edited (`vendor/ui` is
+do-not-touch).
+**Evidence:** `client/src/components/context-docs/ContextDocPicker.tsx` (the `registerPreviewButton` wrapper), `client/src/vendor/ui/primitives/IconBtn.tsx:4`
+
 ### 2026-09-28 — `MonoLink` with `href` unset renders a `<button>`, not a link — passing it a possibly-`undefined` href for a "should be plain text" case silently ships a clickable no-op button
 
 `MonoLink({ href })` branches on truthiness: `href` set → `<a target="_blank">`, `href`
@@ -260,6 +376,60 @@ fallback to represent "no link".
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-04 - an absence assertion in `waitFor` passes trivially right after a raw `FakeEventSource.emit()`
+**Cause:** `waitFor` runs its callback once synchronously before polling. A test-double
+`emit()`/`triggerError()` called outside `act`/`fireEvent` has not flushed its React
+update yet, so `expect(queryByRole(...)).toBeNull()` (or a flipped negative control)
+can pass on that first check before the code under test ever reacted.
+**Signal:** a negative control (assertion flipped) still passes; `not wrapped in act(...)`
+warnings on stderr.
+**Fix:** after a raw emit, first `waitFor` a real async signal the reaction produces
+(e.g. the brief GET counter rising after `invalidateQueries`, or new status text), then
+assert presence/absence.
+**Evidence:** client/src/app/repos/[repoId]/pulls/[number]/_components/OverviewTab/_components/BriefBanner/BriefBanner.retryExits.test.tsx:192-193
+
+### 2026-10-04 - Do not override `notifyManager`'s scheduler globally to fix a test; assert `mutateAsync`'s resolved value instead
+**Supersedes:** 2026-10-04 entry "`useMutation().data` is stale right after `await
+mutateAsync(...)`, flaky even alone" — the fix below (module-scope
+`notifyManager.setScheduler((cb) => queueMicrotask(cb))` in `client/src/lib/hooks/brief.ts`)
+was rejected on review: `notifyManager` is process-wide, so it changed notification timing
+for every query and mutation in the app to stabilise one test's assertion style.
+**Cause:** the underlying race was real (query-core defers the store-change notification
+that updates `.data` through a real `setTimeout(cb, 0)`), but the fix belonged in the test,
+not in app code: `mutateAsync(...)`'s own resolved promise already carries the mutation's
+result with no timer involved, so there is never a reason for a caller — test or component
+— to read a mutation hook's `.data` synchronously right after `await mutateAsync(...)`.
+**Signal:** a `notifyManager.setScheduler(...)` call anywhere outside a test setup file, or
+a `.data` read immediately after `await mutateAsync(...)`.
+**Fix:** assert on `mutateAsync`'s resolved value (`const result = await
+mutateAsync(...)`), or consume the result inside the mutation's own `onSuccess`, never
+`result.current.data` read right after the await. Leave `notifyManager`'s scheduler at its
+default everywhere.
+**Evidence:** client/src/lib/hooks/brief.ts (scheduler override removed);
+client/src/lib/hooks/brief.test.ts:140-149 (asserts `mutateAsync`'s resolved value).
+
+### 2026-10-04 - `useMutation().data` is stale right after `await mutateAsync(...)`, flaky even alone
+**Cause:** `@tanstack/query-core`'s `notifyManager` is a process-wide singleton whose
+default scheduler defers every store-change notification through a real
+`setTimeout(cb, 0)` (`timeoutManager.js` → `systemSetTimeoutZero`) — including the one
+that makes `useMutation()`'s `.data` reflect a just-settled mutation. `mutation.execute()`
+sets `this.state.data` synchronously and resolves the promise `mutateAsync` awaits
+*before* that timer fires, so a test (or component) that reads `.data` immediately after
+`await mutateAsync(...)` races a real macrotask that `await` does not wait for — `act()`
+only flushes microtasks. This is **not** cross-test pollution: it reproduced failing in
+isolation (`vitest run brief.test.ts` alone, 3 of 5 runs failed) as often as "in a full
+run", despite how it first looked.
+**Signal:** `expected undefined to deeply equal {...}` on a `useMutation` result read
+synchronously after `await mutateAsync(...)`, passing most but not all runs of the same
+single test file.
+**Fix:** `notifyManager.setScheduler((cb) => queueMicrotask(cb))` once, at module scope
+(`client/src/lib/hooks/brief.ts`) — routes notifications through the same microtask queue
+`await` already drains, instead of a real timer. Safe to set globally: it only changes
+*when* a React Query update flushes (microtask vs. next real tick), not whether updates
+are batched. Confirmed with 8 standalone runs + 3 consecutive full `pnpm --dir client
+test` runs, all green.
+**Evidence:** client/src/lib/hooks/brief.ts:11-28; client/node_modules/@tanstack/query-core/build/modern/notifyManager.js; client/node_modules/@tanstack/query-core/build/modern/timeoutManager.js (`systemSetTimeoutZero`); client/node_modules/@tanstack/react-query/build/modern/useMutation.js (`notifyManager.batchCalls(onStoreChange)`).
 
 ## Session Notes
 

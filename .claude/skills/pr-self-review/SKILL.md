@@ -60,6 +60,13 @@ Read `severity.md` §1 and run every check it lists for the touched packages: `t
 `vendor/**` edited outside the source, lockfile drift, broken `CLAUDE.md` shells, secrets,
 grounding-gate weakening, unregistered modules).
 
+**Reuse a fresh checks record.** If `.harness/checks/<feature>.md` exists for the branch's
+feature and `.claude/scripts/checks.sh status <feature>` prints `fresh`, its `Mode` is
+`full` and its `Packages` cover every touched package, take `typecheck`, `lint`, `test`,
+`.it` and `arch` from it and name the record in the report instead of re-running them. Only
+the tripwires run in any case. Otherwise run `.claude/scripts/checks.sh run <feature>
+<pkg>...` (full mode) — it writes that record for the next reader.
+
 These have **fixed severities** — no judgement, no negotiation. A critical here does not stop
 the run: the buckets still run so the user gets one complete report, but the verdict is
 already decided.

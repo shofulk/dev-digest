@@ -1,24 +1,40 @@
 {
-  "title": "Project Context",
-  "chunks": "{count} chunks",
-  "reindex": "Re-index",
-  "indexing": "Indexing…",
-  "resync": "Resync",
-  "resyncing": "Resyncing…",
-  "indexStatus": "Index status: {status}",
-  "loadError": "Couldn’t load specs",
-  "kb": "{kb}kb",
-  "empty": {
-    "title": "No spec files yet",
-    "body": "Drop your PRDs, tech specs, and acceptance criteria under .devdigest/specs/. Every agent and the PR brief read them as grounding context."
+  "page": {
+    "title": "Project Context",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing…",
+    "loadError": "Couldn't load the project's documents",
+    "docError": "Couldn't load this document",
+    "summary": "{count} documents · ≈ {tokens} tokens · scanned {scannedAt}",
+    "truncated": "Showing the first {count} documents; more were found.",
+    "usedBy": "Used by {count, plural, =1 {1 agent} other {# agents}}",
+    "tokens": "≈ {tokens} tokens",
+    "empty": {
+      "title": "No documents found",
+      "body": "No Markdown documents were found under {roots}."
+    },
+    "selectPrompt": "Select a document to preview it."
   },
-  "mode": {
-    "preview": "preview",
-    "edit": "edit"
-  },
-  "editor": {
-    "loadError": "Couldn’t load spec",
-    "save": "Save",
-    "saving": "Saving…"
+  "picker": {
+    "title": "Project context documents",
+    "attachedCount": "{attached} of {total} attached",
+    "tokens": "≈ {tokens} tokens",
+    "untrustedNote": "Injected as an untrusted \"## Project context\" block into every run.",
+    "filterPlaceholder": "Filter documents…",
+    "loadError": "Couldn't load the project's documents",
+    "previewError": "Couldn't load this document",
+    "missing": "Missing",
+    "detach": "Detach {name}",
+    "preview": "Preview {name}",
+    "moveUp": "Move {name} up",
+    "moveDown": "Move {name} down",
+    "reorderKeys": "Alt+Arrow Up/Down to reorder",
+    "reorderPaused": "Clear the filter to reorder",
+    "previewTokens": "≈ {tokens} tokens",
+    "types": {
+      "specs": "specs",
+      "docs": "docs",
+      "insights": "insights"
+    }
   }
 }

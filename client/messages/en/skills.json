@@ -182,6 +182,7 @@
     "tabs": {
       "config": "Config",
       "preview": "Preview",
+      "context": "Context",
       "stats": "Stats",
       "versions": "Versions"
     },
@@ -296,5 +297,12 @@
   },
   "drawerStub": {
     "placeholder": "Import from file is not built yet."
+  },
+  "context": {
+    "title": "Project context to use",
+    "attachedCount": "{count, plural, one {# attached} other {# attached}}",
+    "inheritNote": "Any agent using this skill inherits these documents.",
+    "serializesAs": "Serializes as",
+    "tokens": "≈ {tokens} tokens"
   }
 }

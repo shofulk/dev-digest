@@ -36,7 +36,24 @@ const EnvSchema = z.object({
     (v) => (v === '' ? undefined : v),
     z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
   ),
+  // Project Context (D4): `;`-separated globs — commas would clash with the
+  // brace-alternation glob syntax (`{specs,docs,insights}`).
+  PROJECT_CONTEXT_ROOTS: z.string().optional(),
+  // Blank ('' from .env/.env.example) must fall through to the default, same
+  // as LOG_LEVEL above; `positive()` rejects 0 and negatives instead of
+  // silently producing a zero budget/limit.
+  PROJECT_CONTEXT_BUDGET_TOKENS: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
+  PROJECT_CONTEXT_MAX_DOC_BYTES: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.coerce.number().int().positive().optional(),
+  ),
 });
+
+/** Default search roots when `PROJECT_CONTEXT_ROOTS` is unset (D4). */
+export const DEFAULT_PROJECT_CONTEXT_ROOTS = ['**/{specs,docs,insights}/**/*.md'];
 
 export type AppConfig = {
   databaseUrl: string;
@@ -59,6 +76,15 @@ export type AppConfig = {
    * EXACTLY like the ripgrep-only baseline.
    */
   repoIntelEnabled: boolean;
+  /**
+   * Project Context: where to search a repo's checkout for `.md` documents,
+   * and the budget/size limits applied when they're injected into a review.
+   */
+  projectContext: {
+    roots: string[];
+    budgetTokens: number;
+    maxDocBytes: number;
+  };
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -77,5 +103,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     webOrigin: `http://localhost:${parsed.WEB_PORT}`,
     embeddingsEnabled: parsed.EMBEDDINGS_ENABLED === 'true',
     repoIntelEnabled: parsed.REPO_INTEL_ENABLED !== 'false',
+    projectContext: {
+      roots: parsed.PROJECT_CONTEXT_ROOTS
+        ? parsed.PROJECT_CONTEXT_ROOTS.split(';').filter((s) => s.length > 0)
+        : DEFAULT_PROJECT_CONTEXT_ROOTS,
+      budgetTokens: parsed.PROJECT_CONTEXT_BUDGET_TOKENS ?? 8000,
+      maxDocBytes: parsed.PROJECT_CONTEXT_MAX_DOC_BYTES ?? 262144,
+    },
   };
 }

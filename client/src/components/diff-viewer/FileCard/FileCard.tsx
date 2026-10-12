@@ -51,15 +51,36 @@ export function FileCard({
   file,
   commenting,
   findings,
+  focus,
 }: {
   file: PrFile;
   commenting?: DiffCommentApi;
   findings?: DiffFindingApi;
+  /** D4/AC-58..60 — set only when this file is the Files changed tab's
+      focus target; `line` is the matching new-side line, or `null` when
+      none (AC-60) or unresolved yet. */
+  focus?: { line: number | null } | null;
 }) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
     (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const focusKey = focus ? `${file.path}:${focus.line ?? ""}` : null;
+  // D4 — render-time reset keyed on the focus key, same pattern as
+  // `FileGroup`: force this card open the first render a new target lands
+  // on it, but let the user collapse it again afterwards.
+  const [appliedFocusKey, setAppliedFocusKey] = React.useState<string | null>(null);
+  if (focusKey != null && focusKey !== appliedFocusKey) {
+    setAppliedFocusKey(focusKey);
+    setOpen(true);
+  }
+  // AC-58/AC-60 — scroll the card only when there is no line to focus on;
+  // with a line, `CodeLine` scrolls that row itself (the more precise
+  // target the spec names).
+  React.useEffect(() => {
+    if (focusKey != null && focus?.line == null) rootRef.current?.scrollIntoView?.({ block: "start" });
+  }, [focusKey, focus?.line]);
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
 
   const renderedKeys = React.useMemo(() => {
@@ -92,7 +113,7 @@ export function FileCard({
     : 0;
 
   return (
-    <div style={s.fileCard}>
+    <div style={s.fileCard} ref={rootRef}>
       <div onClick={() => setOpen((o) => !o)} style={s.fileHeader}>
         <Icon.ChevronRight size={13} style={chevronFor(open)} />
         <Icon.FileText size={14} style={s.fileIcon} />
@@ -128,6 +149,7 @@ export function FileCard({
                 commenting={commenting}
                 findings={findingsForLine(ln, findingsMatched)}
                 findingApi={findings}
+                highlighted={focus != null && focus.line != null && ln.newNo === focus.line}
               />
             ))
           )}

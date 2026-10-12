@@ -126,8 +126,21 @@ export type BlastRadius = z.infer<typeof BlastRadius>;
 export const RiskSeverity = z.enum(['high', 'medium', 'low']);
 export type RiskSeverity = z.infer<typeof RiskSeverity>;
 
+/** Closed list of risk kinds a PR Brief can surface (AC-16). */
+export const RiskKind = z.enum([
+  'auth_surface',
+  'dependency',
+  'performance',
+  'data_migration',
+  'api_contract',
+  'config_secrets',
+  'test_coverage',
+  'other',
+]);
+export type RiskKind = z.infer<typeof RiskKind>;
+
 export const Risk = z.object({
-  kind: z.string(),
+  kind: RiskKind,
   title: z.string(),
   explanation: z.string(),
   severity: RiskSeverity,
@@ -191,11 +204,60 @@ export const SmartDiff = z.object({
 });
 export type SmartDiff = z.infer<typeof SmartDiff>;
 
-// ---- Composed PR Brief (pr_brief.json) ----
+// ---- Review focus ----
+export const ReviewFocusItem = z.object({
+  file: z.string(),
+  line: z.number().int().nullable(),
+  reason: z.string(),
+});
+export type ReviewFocusItem = z.infer<typeof ReviewFocusItem>;
+
+// ---- Missing inputs (D6) ----
+export const MissingInputName = z.enum(['intent', 'blast', 'description', 'findings', 'document', 'files']);
+export type MissingInputName = z.infer<typeof MissingInputName>;
+
+export const MissingInputState = z.enum(['missing', 'stale', 'degraded', 'skipped', 'trimmed']);
+export type MissingInputState = z.infer<typeof MissingInputState>;
+
+export const MissingInput = z.object({
+  input: MissingInputName,
+  state: MissingInputState,
+  detail: z.string().nullable(),
+});
+export type MissingInput = z.infer<typeof MissingInput>;
+
+// ---- Brief generation stats (D1) ----
+export const BriefStats = z.object({
+  tokens_in: z.number().int(),
+  tokens_out: z.number().int(),
+  cost_usd: z.number().nullable(),
+  attempts: z.number().int(),
+  duration_ms: z.number().int(),
+});
+export type BriefStats = z.infer<typeof BriefStats>;
+
+// ---- Composed PR Brief (pr_brief.json + D1 columns) ----
 export const PrBrief = z.object({
-  intent: Intent,
-  blast: BlastRadius,
-  risks: Risks,
-  history: PrHistory,
+  pr_id: z.string(),
+  head_sha: z.string(),
+  summary: z.string(),
+  risks: z.array(Risk),
+  review_focus: z.array(ReviewFocusItem),
+  missing_inputs: z.array(MissingInput),
+  model: z.string(),
+  provider: z.string(),
+  generated_at: z.string(),
+  stats: BriefStats,
 });
 export type PrBrief = z.infer<typeof PrBrief>;
+
+// ---- Brief job phases / SSE events (D3) ----
+export const BriefPhase = z.enum(['assembling', 'calling_model', 'grounding', 'saving']);
+export type BriefPhase = z.infer<typeof BriefPhase>;
+
+export const BriefJobEvent = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('phase'), phase: BriefPhase }),
+  z.object({ type: z.literal('done'), brief: PrBrief }),
+  z.object({ type: z.literal('failed'), code: z.string(), message: z.string() }),
+]);
+export type BriefJobEvent = z.infer<typeof BriefJobEvent>;

@@ -73,13 +73,18 @@ flowchart TB
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
     blast["blast<br/>/pulls/:id/blast"]
+    brief["brief<br/>/pulls/:id/brief · /pulls/:id/brief/generate<br/>/pulls/:id/brief/jobs/:jobId/events"]
   end
   subgraph Agents["Agents"]
-    agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId]"]
+    agents["agents<br/>/agents · /agents/:id · /agents/:id/skills[/:skillId] · /agents/:id/versions[/:v][/restore]"]
     skills["skills<br/>/skills[/:id] · /skills/:id/(versions[/:v][/restore]|stats)<br/>/skills/import[/preview] · /skills/tokens"]
+    evals["eval<br/>/findings/:id/(eval-case|eval-case-draft) · /agents/:id/(eval-cases[/dry-run]|eval-runs)<br/>/eval-cases/:id[/runs] · /eval-runs/(:runId|compare) · /eval/dashboard<br/>/eval/runs/all"]
   end
   subgraph Intel["Repo intelligence"]
     repoIntel["repo-intel<br/>/repos/:id/index-state · /resync"]
+  end
+  subgraph ProjectContext["Project context"]
+    projectContext["project-context<br/>/repos/:id/context[/file] · /repos/:id/context/reindex<br/>/agents/:id/context-docs · /skills/:id/context-docs"]
   end
   subgraph Platform["Platform"]
     settings["settings<br/>/settings · /providers"]
@@ -99,6 +104,35 @@ PR's changed files, so `degraded`/`reason` reflect the index's own state
 (`flag_off`, `index_failed`, `index_partial`, `repo_too_large`, `no_data`)
 rather than the facade's ripgrep-fallback semantics, which stay unchanged for
 every other consumer of `getBlastRadius`. The response's `indexed_sha` is the commit the index (and so every caller line) was read from, and it is null when the map did not come from the index; the UI links callers to it and falls back to the PR head.
+
+`brief` (`src/modules/brief/`) generates one grounded **PR Brief** per pull
+request — a summary, up to 6 risk areas and up to 5 review-focus items — with
+exactly one model call per generation (feature model `risk_brief`,
+`resolveUsableFeatureModel`). `GET /pulls/:id/brief` only ever reads the
+stored `pr_brief` row plus the PR's current `head_sha` (never calls the
+model) and returns the brief or `null`, an `outdated` flag, and any running
+generation job. `POST /pulls/:id/brief/generate` (rate-limited 10/min, like
+intent derive) starts a **detached background job** keyed by a `randomUUID()`
+on `container.runBus` — not `JobRunner`, so the paid call is never retried
+(`server/src/modules/brief/service.ts`); a second request for the same PR
+while a job runs gets back the running job's id instead of starting another
+one. `GET /pulls/:id/brief/jobs/:jobId/events` (SSE, no rate limit) streams
+the job's `assembling` → `calling_model` → `grounding` → `saving` phases, then
+one `done` (with the brief) or `failed` (with an error code/message) event,
+replaying earlier events to a late subscriber. Every file reference and line
+the model returns is checked against the PR's changed-file hunk ranges and
+blast-caller lines before it is stored — a reference that does not check out
+is dropped, never rewritten (`src/modules/brief/grounding.ts`). See
+[`.doc/pr-brief.md`](.doc/pr-brief.md) for why the module is shaped this way.
+
+`eval` scores an agent with code only: no LLM judge, and no `agent_runs` or `findings` writes.
+A case is a frozen single-file snapshot taken from a triaged finding, so later edits to the PR do not move it.
+A suite run is not a table: its rows are grouped by `actual_output.run_id`.
+`POST /eval/runs/all` starts one suite run per agent with cases through the same start path and refuses agents one by one.
+The client polls the run until every row has left `pending`.
+A case can also be written by hand or edited, and every run row stores the expectation it was scored with, so an edit never re-scores history.
+A one-case run (`POST /eval-cases/:id/runs`) is stored like a suite run but left out of history, the dashboard and compare; a dry run stores nothing.
+Suite, one-case and dry runs share one 5/min start budget (`plugins/rate-limit-store.ts` gives routes with the same `groupId` one counter); `POST /eval/runs/all` keeps its own.
 
 ## Environment
 
@@ -169,6 +203,24 @@ What the reviewer actually sends to the model is assembled in
   same PR share one in-flight map instead of racing two LLM calls. All
   derivation logging (stats + per-source warnings) lives in `IntentService`,
   never in `intent/routes.ts` itself.
+- **Project Context is injected as a read, not a model call.** Before
+  `reviewPullRequest` runs, `run-executor.ts` resolves the agent's own
+  `context_docs` plus each included skill's own `context_docs`
+  (`modules/_shared/project-context/resolve.ts`), reading every path from the
+  repo's **default-branch checkout** (`repos.clone_path`), never the PR head —
+  so an attacker can't rewrite the rule a PR is being checked against. Each
+  document is read via `ProjectDocsSource` (`src/adapters/project-docs/`,
+  ring 2), token-counted and budget-trimmed (`PROJECT_CONTEXT_BUDGET_TOKENS`),
+  then passed to `reviewPullRequest` as `specs` and rendered as a
+  path-labelled, delimiter-wrapped `## Project context` block
+  (`reviewer-core/prompt.ts`) — omitted entirely when nothing resolves, so the
+  prompt stays byte-identical to a no-project-context run. Every resolved
+  document (included, missing, invalid path, over budget, too large) is
+  recorded in the run trace's `context_docs`, and the injected paths in
+  `specs_read`. The five routes (`modules/project-context/routes.ts`) are
+  workspace-scoped through `getContext` and serve the Project Context page:
+  listing/scanning a repo's checkout, reading one document, and attaching
+  documents to an agent or a skill.
 - **Source-fetch caps and residual SSRF risk (R1).** Every reference the
   classifier resolves goes only through `GitHubClient` — no generic URL
   fetcher exists. Each GitHub call is bounded to 5 s

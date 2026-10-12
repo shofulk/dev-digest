@@ -8,13 +8,12 @@ import type { ReviewRepository, FindingRow, PullRow, ReviewRow } from './reposit
 import { REVIEW_STRATEGY } from './constants.js';
 import { taskLine, toReviewIntent } from './helpers.js';
 import { loadDiff } from './diff-loader.js';
-import {
-  formatSkillBlock,
-  resolveAgentSkillSet,
-  skillsForPrompt,
-  type ResolvedSkill,
-} from '../_shared/agent-skills.js';
+import { formatSkillBlock, skillsForPrompt, type AgentSkillSet } from '../_shared/agent-skills.js';
 import type { IntentDeriver } from '../_shared/intent/derive.js';
+import { resolveProjectContext } from '../_shared/project-context/resolve.js';
+import type { ProjectDocsSource } from '@devdigest/shared';
+import type { Tokenizer } from '../../adapters/tokenizer/index.js';
+import type { AppConfig } from '../../platform/config.js';
 
 /** Thrown by a run when the user cancels it mid-flight (between map files). */
 export class RunCancelledError extends Error {
@@ -48,12 +47,26 @@ export type RunOutcome = {
  * review. Per-agent failures are isolated.
  */
 export class ReviewRunExecutor {
+  private readonly projectDocs: ProjectDocsSource;
+  private readonly tokenizer: Tokenizer;
+  private readonly projectContextConfig: AppConfig['projectContext'];
+  private readonly agentSkills: Container['agentSkills'];
+
   constructor(
     private container: Container,
     private repo: ReviewRepository,
     private agents: Container['agentsRepo'],
     private intentDeriver: IntentDeriver,
-  ) {}
+  ) {
+    // D12 — new dependencies resolved here, in the constructor, rather than
+    // reached through `this.container` in method bodies (onion-architecture:
+    // existing `this.container.*` call sites above are pre-existing debt, not
+    // converted by this change).
+    this.projectDocs = container.projectDocs;
+    this.tokenizer = container.tokenizer;
+    this.projectContextConfig = container.config.projectContext;
+    this.agentSkills = container.agentSkills;
+  }
 
   /**
    * Background execution of the queued agent runs (NOT awaited by the route).
@@ -230,8 +243,26 @@ export class ReviewRunExecutor {
       // Skills: resolved bodies go in as instructions (see _shared/agent-skills.ts).
       // With none included `skills` is omitted, so the prompt is byte-identical to
       // a skill-less run and `assembly.skills` stays null.
-      const includedSkills = await this.resolveSkills(agent.id, runLog);
+      const skillSet = await this.resolveSkills(agent.id, runLog);
+      const includedSkills = skillSet.skills;
       const skills = skillsForPrompt(includedSkills);
+
+      // D12/AC-21/AC-22/AC-24/AC-26/AC-27/AC-28/AC-29/AC-42 — Project Context:
+      // resolve the agent's + included skills' attached documents from the
+      // repo's DEFAULT-BRANCH checkout (never the PR head), budget them, and
+      // inject the survivors as a path-labelled `specs` block. No extra model
+      // call: this is a pure read + token count, done before `reviewPullRequest`.
+      const projectContext = await resolveProjectContext({
+        checkoutRoot: repo.clonePath,
+        agentDocs: agent.contextDocs ?? [],
+        skills: skillSet.docSources,
+        roots: this.projectContextConfig.roots,
+        budgetTokens: this.projectContextConfig.budgetTokens,
+        maxDocBytes: this.projectContextConfig.maxDocBytes,
+        source: this.projectDocs,
+        tokenizer: this.tokenizer,
+      });
+      for (const line of projectContext.logLines) runLog.info(`project context: ${line}`);
 
       // ---- Engine: assemble → single-pass → grounding -----------------------
       // The pure review pipeline lives in @devdigest/reviewer-core (shared with
@@ -251,6 +282,9 @@ export class ReviewRunExecutor {
         // T3 — repo skeleton, same omit-when-empty contract.
         ...(repoMap ? { repoMap } : {}),
         ...(skills ? { skills } : {}),
+        // AC-27 — omitted when no document survived resolution, so the prompt
+        // stays byte-identical to a no-project-context run.
+        ...(projectContext.specs.length > 0 ? { specs: projectContext.specs } : {}),
         // PR author's description/body — untrusted; assemblePrompt wraps +
         // truncates it. Omitted when the PR has no body.
         ...(pull.body ? { prDescription: pull.body } : {}),
@@ -335,7 +369,10 @@ export class ReviewRunExecutor {
         })),
         raw_output: outcome.raw,
         memory_pulled: [],
-        specs_read: [],
+        // AC-29: paths actually injected, and every resolved document (incl.
+        // skipped ones) with its origin/tokens/status.
+        specs_read: projectContext.specsRead,
+        context_docs: projectContext.trace,
         // Persisted log = the run's FULL event buffer (incl. shared pre-work:
         // diff load + intent), not just events recorded inside this method.
         log: runLog.logFor(runId),
@@ -377,9 +414,10 @@ export class ReviewRunExecutor {
    * one summary line. A tokenizer failure only drops the `~n tokens` suffix. The
    * summary is skipped for an agent that links nothing (no noise on every run).
    */
-  private async resolveSkills(agentId: string, runLog: RunLogger): Promise<ResolvedSkill[]> {
-    const { skills, linkedCount } = await resolveAgentSkillSet(this.container.db, agentId);
-    if (linkedCount === 0) return skills;
+  private async resolveSkills(agentId: string, runLog: RunLogger): Promise<AgentSkillSet> {
+    const resolved = await this.agentSkills.resolveAgentSkillSet(agentId);
+    const { skills, linkedCount } = resolved;
+    if (linkedCount === 0) return resolved;
 
     let total: number | null = 0;
     for (const skill of skills) {
@@ -390,7 +428,7 @@ export class ReviewRunExecutor {
     runLog.info(
       `skills: ${skills.length} of ${linkedCount} linked enabled${total === null ? '' : ` → ~${total} tokens`}`,
     );
-    return skills;
+    return resolved;
   }
 
   private countTokens(text: string): number | null {

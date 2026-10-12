@@ -54,6 +54,19 @@ export const PromptAssembly = z.object({
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;
 
+/** Outcome of resolving one attached Project Context document for a run. */
+export const ContextDocStatus = z.enum(['included', 'missing', 'budget', 'invalid_path', 'too_large']);
+export type ContextDocStatus = z.infer<typeof ContextDocStatus>;
+
+/** One resolved document in the run trace — path, who attached it, and its fate. */
+export const ContextDocTrace = z.object({
+  path: z.string(),
+  origin: z.string(),
+  tokens: z.number().int().nullable(),
+  status: ContextDocStatus,
+});
+export type ContextDocTrace = z.infer<typeof ContextDocTrace>;
+
 export const MemoryPulled = z.object({
   pr: z.number().int().nullish(),
   text: z.string(),
@@ -98,6 +111,13 @@ export const RunTrace = z.object({
   raw_output: z.string(),
   memory_pulled: z.array(MemoryPulled),
   specs_read: z.array(z.string()),
+  /**
+   * Every resolved Project Context document attempted for this run, in
+   * resolution order. NULLISH, not nullable — a RunTrace is replayed verbatim
+   * from the run_traces jsonb blob, and every trace persisted before this
+   * field existed has no such key (`server/INSIGHTS.md`, 2026-09-17).
+   */
+  context_docs: z.array(ContextDocTrace).nullish(),
   log: z.array(RunLogLine),
 });
 export type RunTrace = z.infer<typeof RunTrace>;

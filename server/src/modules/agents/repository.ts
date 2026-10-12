@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import * as t from '../../db/schema.js';
 import type { CiFailOn, Provider, ReviewStrategy, SkillType } from '@devdigest/shared';
@@ -157,6 +157,50 @@ export class AgentsRepository {
 
     if (configChanged && row) await this.snapshotVersion(row, nextVersion);
     return row;
+  }
+
+  /**
+   * Restore a recorded config as a NEW version: always bumps (no `isConfigChange`
+   * gate) and never touches name, description, enabled, context_docs or skill links.
+   */
+  async restoreVersion(
+    workspaceId: string,
+    id: string,
+    config: {
+      provider: Provider;
+      model: string;
+      systemPrompt: string;
+      outputSchema: unknown;
+      strategy: ReviewStrategy;
+      ciFailOn: CiFailOn;
+      repoIntel: boolean;
+    },
+  ): Promise<AgentRow | undefined> {
+    const [row] = await this.db
+      .update(t.agents)
+      .set({
+        provider: config.provider,
+        model: config.model,
+        systemPrompt: config.systemPrompt,
+        outputSchema: (config.outputSchema as object | null | undefined) ?? null,
+        strategy: config.strategy,
+        ciFailOn: config.ciFailOn,
+        repoIntel: config.repoIntel,
+        version: sql`${t.agents.version} + 1`,
+      })
+      .where(and(eq(t.agents.workspaceId, workspaceId), eq(t.agents.id, id)))
+      .returning();
+    if (row) await this.snapshotVersion(row, row.version);
+    return row;
+  }
+
+  /**
+   * Make sure `row.version` has an `agent_versions` snapshot. Agents created
+   * outside `insert`/`update` (the seed) have none, and an eval run needs the
+   * prompt it ran with to stay readable. Never overwrites an existing snapshot.
+   */
+  async ensureVersionSnapshot(row: AgentRow): Promise<void> {
+    await this.snapshotVersion(row, row.version);
   }
 
   private async snapshotVersion(row: AgentRow, version: number): Promise<void> {
