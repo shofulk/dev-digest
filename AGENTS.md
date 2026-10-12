@@ -27,6 +27,30 @@ Node >= 22 | pnpm >= 10 | TypeScript 5 | Fastify 5 | Drizzle ORM + Postgres (pgv
 Migrations do **not** run on boot. `relation … does not exist` means you skipped
 `db:migrate`.
 
+### Harness evals (`evals/`)
+
+| Task | Command |
+|------|---------|
+| Static SKILL.md checks — no model, free | `pnpm --dir evals eval:quality [<skill>]` |
+| Skill evals (content tier) | `pnpm --dir evals eval:skills` · one: `pnpm --dir evals exec vitest run skills/<name>/` |
+| Subagent evals (tool tier) | `pnpm --dir evals eval:agents` · one: `pnpm --dir evals exec vitest run agents/<name>/` |
+| Workflow evals (CLAUDE.md / AGENTS.md routing, skill activation, dispatch) | `pnpm --dir evals eval:workflow` |
+| Pass rate over N runs, before/after delta | `pnpm --dir evals eval:repeat <suite> -n 5 --label <x>` · `eval:delta` |
+
+Model evals need `OPENROUTER_API_KEY` and `EVAL_BACKEND=openrouter`; the agent and workflow
+tiers also need the proxy (`pnpm --dir evals proxy:up`). Setup and models: `evals/README.md`.
+Keep the trailing `/` on a suite path — `agents/architecture-reviewer` also matches `-lite`.
+
+Which change runs which evals (CI does the same on every PR — `evals/scripts/ci-detect.mjs`):
+
+| You changed | Run |
+|-------------|-----|
+| `.claude/skills/<name>/**` | `eval:quality <name>`, then `vitest run skills/<name>/` |
+| `.claude/agents/<name>.md` | `vitest run agents/<name>/`, then `eval:workflow` |
+| `AGENTS.md` / `CLAUDE.md` (root or package), `.claude/settings.json` | `eval:workflow` |
+| `evals/src/**` (the engine) | every suite: `eval:skills`, `eval:agents`, `eval:workflow` |
+| An artifact with no `evals/<tier>/<name>/` | nothing — add evals or note the gap; never treat it as passed |
+
 ## Where things live
 
 | Path | What |
@@ -41,6 +65,7 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 | `e2e/` | deterministic browser flows (`specs/NN-name.flow.json`) |
 | `mcp-server/` | local stdio MCP server — a thin HTTP-API client exposing reviewer agents, PR review runs, findings and conventions to MCP clients (Claude Code) |
 | `docs/agent-prompts/` | built-in reviewer system prompts |
+| `evals/` | harness evals — skills, subagents and the CLAUDE.md/AGENTS.md workflow, run on OpenRouter; CI in `.github/workflows/evals.yml` |
 | `docs/retros/` | committed run retros (`<feature>.md`) and `ledger.md`, one row per `/sdd-run` |
 | `specs/` | cross-module feature specs; its `README.md` is the spec format of record (template, EARS) |
 
@@ -57,6 +82,13 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
   **Session protocol** below).
 - **Asking "why is it built this way"** → read `<pkg>/.doc/<topic>.md`.
 - **Changing tests or CI** → read `TESTING.md`.
+- **After editing the harness** — a skill, a subagent, `AGENTS.md`/`CLAUDE.md` or
+  `.claude/settings.json` → run the evals that change touches (table under **Commands →
+  Harness evals**) before you call the edit done, and report the pass/fail per case. A skill
+  edit runs `eval:quality <name>` first: it is free and catches broken structure before any
+  model call. A red case is a finding to diagnose from its verdict and trace, not a prompt to
+  tweak until it turns green. If the key or proxy is unavailable, say the evals were not run
+  — never report them as passed.
 
 ## Session protocol
 

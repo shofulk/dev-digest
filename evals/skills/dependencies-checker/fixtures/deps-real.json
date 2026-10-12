@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "offline": true,
+  "packages": [
+    {
+      "name": "server",
+      "lockfile": "pnpm-lock.yaml",
+      "packageManager": "pnpm@10.34.5",
+      "outdated": {
+        "note": "offline: --offline given, outdated check not run",
+        "status": "skipped"
+      },
+      "dependencies": [
+        {
+          "name": "@fastify/autoload",
+          "kind": "prod",
+          "declared": "^6.0.3",
+          "installed": "6.3.1",
+          "usage": "unused-candidate",
+          "usageEvidence": null,
+          "exclusiveBytes": 1245184,
+          "deprecated": null,
+          "latest": null
+        },
+        {
+          "name": "drizzle-orm",
+          "kind": "prod",
+          "declared": "^0.38.3",
+          "installed": "0.38.4",
+          "usage": "imported",
+          "usageEvidence": "server/src/adapters/auth/local.ts:2",
+          "exclusiveBytes": 13807616,
+          "deprecated": null,
+          "latest": null
+        },
+        {
+          "name": "zod",
+          "kind": "prod",
+          "declared": "^3.24.1",
+          "installed": "3.25.76",
+          "usage": "imported",
+          "usageEvidence": "server/src/adapters/mocks.ts:1",
+          "exclusiveBytes": 5259264,
+          "deprecated": null,
+          "latest": null
+        }
+      ]
+    },
+    {
+      "name": "reviewer-core",
+      "lockfile": "package-lock.json",
+      "packageManager": "npm",
+      "outdated": {
+        "note": "offline: --offline given, outdated check not run",
+        "status": "skipped"
+      },
+      "dependencies": [
+        {
+          "name": "tsx",
+          "kind": "dev",
+          "declared": "^4.19.2",
+          "installed": "4.22.4",
+          "usage": "unused-candidate",
+          "usageEvidence": null,
+          "exclusiveBytes": 11378688,
+          "deprecated": null,
+          "latest": null
+        },
+        {
+          "name": "zod",
+          "kind": "prod",
+          "declared": "^3.24.1",
+          "installed": "3.25.76",
+          "usage": "imported",
+          "usageEvidence": "reviewer-core/src/llm/structured.ts:1",
+          "exclusiveBytes": 5259264,
+          "deprecated": null,
+          "latest": null
+        }
+      ]
+    },
+    {
+      "name": "mcp-server",
+      "lockfile": "pnpm-lock.yaml",
+      "packageManager": "pnpm@10.34.5",
+      "outdated": {
+        "note": "offline: --offline given, outdated check not run",
+        "status": "skipped"
+      },
+      "dependencies": [
+        {
+          "name": "zod",
+          "kind": "prod",
+          "declared": "^4.6.5",
+          "installed": "4.6.5",
+          "usage": "imported",
+          "usageEvidence": "mcp-server/src/tools/get-blast-radius.ts:4",
+          "exclusiveBytes": 0,
+          "deprecated": null,
+          "latest": null
+        }
+      ]
+    },
+    {
+      "name": "client",
+      "lockfile": "pnpm-lock.yaml",
+      "packageManager": "pnpm@10.34.5",
+      "outdated": {
+        "note": "offline: --offline given, outdated check not run",
+        "status": "skipped"
+      },
+      "dependencies": [
+        {
+          "name": "zod",
+          "kind": "prod",
+          "declared": "^3.24.1",
+          "installed": "3.25.76",
+          "usage": "imported",
+          "usageEvidence": "client/src/vendor/shared/adapters.ts:1",
+          "exclusiveBytes": 0,
+          "deprecated": null,
+          "latest": null
+        }
+      ]
+    }
+  ],
+  "duplicates": [
+    {
+      "majorSplit": true,
+      "name": "zod",
+      "uses": [
+        {
+          "declared": "^3.24.1",
+          "kind": "prod",
+          "package": "client",
+          "version": "3.25.76"
+        },
+        {
+          "declared": "^4.6.5",
+          "kind": "prod",
+          "package": "mcp-server",
+          "version": "4.6.5"
+        },
+        {
+          "declared": "^3.24.1",
+          "kind": "prod",
+          "package": "reviewer-core",
+          "version": "3.25.76"
+        },
+        {
+          "declared": "^3.24.1",
+          "kind": "prod",
+          "package": "server",
+          "version": "3.25.76"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "alias": "@devdigest/shared",
+      "from": "client",
+      "kind": "tsconfig-path",
+      "target": "client/src/vendor/shared/index.ts",
+      "to": "client"
+    },
+    {
+      "alias": "@devdigest/shared",
+      "from": "reviewer-core",
+      "kind": "tsconfig-path",
+      "target": "server/src/vendor/shared/index.ts",
+      "to": "server"
+    },
+    {
+      "alias": "@devdigest/shared",
+      "from": "server",
+      "kind": "tsconfig-path",
+      "target": "server/src/vendor/shared/index.ts",
+      "to": "server"
+    }
+  ]
+}
