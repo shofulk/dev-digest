@@ -9,13 +9,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
 import type {
   EvalCaseCreated,
+  EvalCaseDraftResponse,
+  EvalCaseFields,
+  EvalCaseFromFindingInput,
   EvalCaseView,
   EvalCompare,
   EvalDashboardOverview,
+  EvalDryRunResult,
   EvalRunAllResult,
   EvalStartRunResponse,
   EvalSuiteRun,
 } from "@devdigest/shared/contracts/eval-ci";
+import type { EvalCase } from "@devdigest/shared/contracts/knowledge";
 
 /** Poll period while a suite run is in flight. */
 export const EVAL_POLL_MS = 2000;
@@ -46,6 +51,7 @@ export function useEvalCases(agentId: string | null | undefined) {
     queryFn: () => api.get<EvalCaseView[]>(`/agents/${agentId}/eval-cases`),
     enabled: !!agentId,
     refetchOnWindowFocus: REFETCH_ON_FOCUS,
+    refetchInterval: (q) => casesPollInterval(q.state.data),
   });
 }
 
@@ -100,15 +106,6 @@ export function useEvalDashboard() {
 
 /* ---- writes ---- */
 
-/** POST /findings/:id/eval-case — freeze a triaged finding into a case (idempotent). */
-export function useCreateEvalCase() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (findingId: string) => api.post<EvalCaseCreated>(`/findings/${findingId}/eval-case`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
-  });
-}
-
 export function useDeleteEvalCase(agentId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -137,4 +134,76 @@ export function useRunAllEvals() {
     mutationFn: () => api.post<EvalRunAllResult>("/eval/runs/all", { confirm: true }),
     onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
   });
+}
+
+/* ---- case editor (SPEC-03) ---- */
+
+/** Refetch period for the cases list while any case has a run in flight. */
+export function casesPollInterval(cases: readonly EvalCaseView[] | undefined): number | false {
+  return cases?.some((c) => c.running) ? EVAL_POLL_MS : false;
+}
+
+/** True when the agent has a suite run or a one-case run in flight. */
+export function agentRunBusy(
+  runs: readonly EvalSuiteRun[] | undefined,
+  cases: readonly EvalCaseView[] | undefined,
+): boolean {
+  return !!runs?.some((r) => r.status === "running") || !!cases?.some((c) => c.running);
+}
+
+/** GET /findings/:id/eval-case-draft — a mutation, so no cache can hand back a stale draft. */
+export function useEvalCaseDraft() {
+  return useMutation<EvalCaseDraftResponse, Error, string>({
+    mutationFn: (findingId) => api.get<EvalCaseDraftResponse>(`/findings/${findingId}/eval-case-draft`),
+  });
+}
+
+/** POST /findings/:id/eval-case with the (possibly edited) fields. */
+export function useSaveEvalCaseFromFinding() {
+  const qc = useQueryClient();
+  return useMutation<EvalCaseCreated, Error, { findingId: string; body: EvalCaseFromFindingInput }>({
+    mutationFn: ({ findingId, body }) => api.post<EvalCaseCreated>(`/findings/${findingId}/eval-case`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
+  });
+}
+
+/** POST /agents/:id/eval-cases — a hand-written case. */
+export function useCreateEvalCaseByHand(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation<EvalCase, Error, EvalCaseFields>({
+    mutationFn: (fields) => api.post<EvalCase>(`/agents/${agentId}/eval-cases`, fields),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
+  });
+}
+
+/** PUT /eval-cases/:id — edit a case; past results keep the expectation they ran with. */
+export function useUpdateEvalCase(_agentId: string) {
+  const qc = useQueryClient();
+  return useMutation<EvalCase, Error, { caseId: string; fields: EvalCaseFields }>({
+    mutationFn: ({ caseId, fields }) => api.put<EvalCase>(`/eval-cases/${caseId}`, fields),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.all }),
+  });
+}
+
+/** POST /eval-cases/:id/runs — a one-case run; only this agent's case list refreshes. */
+export function useStartCaseRun(agentId: string) {
+  const qc = useQueryClient();
+  return useMutation<EvalStartRunResponse, Error, string>({
+    mutationFn: (caseId) => api.post<EvalStartRunResponse>(`/eval-cases/${caseId}/runs`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: evalKeys.cases(agentId) }),
+  });
+}
+
+/** POST /agents/:id/eval-cases/dry-run — scores the form content, stores nothing. */
+export function useDryRunEvalCase(agentId: string) {
+  return useMutation<EvalDryRunResult, Error, EvalCaseFields>({
+    mutationFn: (fields) => api.post<EvalDryRunResult>(`/agents/${agentId}/eval-cases/dry-run`, fields),
+  });
+}
+
+/** True while a suite run or a one-case run is in flight for the agent. */
+export function useAgentEvalBusy(agentId: string | null | undefined): boolean {
+  const runs = useEvalRuns(agentId);
+  const cases = useEvalCases(agentId);
+  return agentRunBusy(runs.data, cases.data);
 }

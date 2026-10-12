@@ -22,3 +22,15 @@ export const DASHBOARD_RECENT_RUNS = 20;
 
 /** Longest title slug in a generated case name. */
 export const CASE_NAME_SLUG_MAX = 60;
+
+/** Longest case name accepted from a form. */
+export const CASE_NAME_MAX = 120;
+
+/** A dry run gives up (and releases its lock) after this long. */
+export const EVAL_DRY_RUN_TIMEOUT_MS = 120_000;
+
+/** Rate-limit group shared by the routes that start a model call for a single case. */
+export const EVAL_RUN_RATE_LIMIT_GROUP = 'eval-run-starts';
+
+/** Body limit of the case create/update/dry-run routes (a frozen diff plus PR text). */
+export const EVAL_CASE_BODY_LIMIT_BYTES = 4 * 1024 * 1024;

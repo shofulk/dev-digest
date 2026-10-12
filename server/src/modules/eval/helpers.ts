@@ -133,13 +133,14 @@ export interface LatestResult {
   matched: number | null;
 }
 
-export function toCaseView(row: EvalCaseRow, latest: LatestResult): EvalCaseView {
+export function toCaseView(row: EvalCaseRow, latest: LatestResult, running = false): EvalCaseView {
   return {
     case: toEvalCaseDto(row),
     expectation: parseExpectation(row.expectedOutput),
     last_result: latest.result,
     last_run_id: latest.run_id,
     last_matched: latest.matched,
+    running,
   };
 }
 
@@ -163,7 +164,9 @@ export function parseRow(joined: EvalRunJoinedRow): ParsedRow | null {
   return {
     joined,
     output: output.data,
-    expectation: parseExpectation(joined.evalCase.expectedOutput),
+    // The expectation stored at run start wins; only rows written before it was
+    // stored fall back to the case's current one.
+    expectation: output.data.expectation ?? parseExpectation(joined.evalCase.expectedOutput),
   };
 }
 
@@ -233,11 +236,14 @@ export function groupSuites(rows: EvalRunJoinedRow[]): Suite[] {
   return suites.sort(byNewest);
 }
 
-/** The case's result in the newest COMPLETED suite that ran it; a newer running suite is ignored. */
+/**
+ * The case's result in its newest row that is not `pending`, walking suites newest
+ * first. Row-level: it counts even when that row's suite is still running, and
+ * whether the row came from a suite run or a one-case run.
+ */
 export function latestCompletedResult(caseId: string, suites: Suite[]): LatestResult {
   for (const suite of [...suites].sort(byNewest)) {
-    if (suite.summary.status !== 'completed') continue;
-    const row = suite.rows.find((r) => r.joined.evalCase.id === caseId);
+    const row = suite.rows.find((r) => r.joined.evalCase.id === caseId && r.output.status !== 'pending');
     if (!row) continue;
     const result: EvalCaseResult =
       row.output.status === 'completed' && row.joined.run.pass !== null
@@ -398,4 +404,20 @@ export function runAllRefusal(code: string | undefined): EvalRunAllRefusal {
     default:
       return 'start_failed';
   }
+}
+
+// ------------------------------------------------------------- one-case runs
+
+/** True when the suite holds a single-case run (kept out of suite metrics). */
+export function isOneCaseSuite(suite: Suite): boolean {
+  return suite.rows.length > 0 && suite.rows.every((r) => r.output.one_case === true);
+}
+
+/** True when a run for the case is pending right now. */
+export function caseIsRunning(caseId: string, rows: EvalRunJoinedRow[]): boolean {
+  return rows.some((joined) => {
+    if (joined.evalCase.id !== caseId) return false;
+    const parsed = parseRow(joined);
+    return parsed !== null && parsed.output.status === 'pending';
+  });
 }

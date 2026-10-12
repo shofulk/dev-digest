@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { NextIntlClientProvider } from "next-intl";
 import type { FindingRecord } from "@devdigest/shared";
@@ -8,9 +8,26 @@ vi.mock("../../../../../../../lib/hooks/reviews", () => ({
   useFindingAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
-const createEvalCase = vi.fn();
+const draftMutate = vi.fn();
+let draftPending = false;
 vi.mock("../../../../../../../lib/hooks/eval", () => ({
-  useCreateEvalCase: () => ({ mutate: createEvalCase, isPending: false }),
+  useEvalCaseDraft: () => ({ mutate: draftMutate, isPending: draftPending }),
+}));
+
+vi.mock("../../../../../../../components/eval-ui/EvalCaseModal", () => ({
+  EvalCaseModal: ({
+    agentId,
+    source,
+    returnFocusTo,
+  }: {
+    agentId: string;
+    source: { kind: string; alreadyInSet?: boolean };
+    returnFocusTo?: HTMLElement | null;
+  }) => (
+    <div data-testid="case-modal">
+      {`${source.kind}|${agentId}|${source.alreadyInSet ? "already" : "fresh"}|${returnFocusTo?.tagName}`}
+    </div>
+  ),
 }));
 
 const notifySuccess = vi.fn();
@@ -104,56 +121,54 @@ describe("FindingsPanel (smoke)", () => {
 });
 
 describe("FindingsPanel eval-case action", () => {
-  it("passes the accepted finding's id to the create-eval-case mutation", () => {
-    const accepted = { ...FINDINGS[0]!, accepted_at: "2026-10-01T00:00:00Z" };
-    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
-    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
-    expect(createEvalCase).toHaveBeenCalledTimes(1);
-    expect(createEvalCase.mock.calls[0]![0]).toBe("f1");
-  });
-});
-
-describe("FindingsPanel eval-case toast", () => {
   const accepted = { ...FINDINGS[0]!, accepted_at: "2026-10-01T00:00:00Z" };
+  const EXISTING = { id: "c1", name: "saved" };
+  const DRAFT = { name: "draft" };
 
-  /** Click the action and let the mutation succeed with the given `created` flag. */
-  function clickAndSucceed(created: boolean) {
-    createEvalCase.mockImplementationOnce((_id: string, opts: { onSuccess: (r: { created: boolean }) => void }) =>
-      opts.onSuccess({ created }),
-    );
+  beforeEach(() => {
+    draftMutate.mockReset();
+    notifyError.mockClear();
+    draftPending = false;
+  });
+
+  /** Click the action; the draft mutation answers via the given callback. */
+  function clickWith(answer: (opts: { onSuccess: (r: unknown) => void; onError: (e: Error) => void }) => void) {
+    draftMutate.mockImplementationOnce((_id: string, opts: never) => answer(opts));
     renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
     fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
   }
 
-  it("says the case was created when the server created it", () => {
-    notifySuccess.mockClear();
-    clickAndSucceed(true);
-    expect(notifySuccess).toHaveBeenCalledWith("Eval case created");
+  it("asks for the draft by finding id, and opens the modal on the draft with the agent id", () => {
+    clickWith((o) => o.onSuccess({ agent_id: "ag1", existing_case: null, draft: DRAFT }));
+    expect(draftMutate.mock.calls[0]![0]).toBe("f1");
+    expect(screen.getByTestId("case-modal")).toHaveTextContent("finding|ag1|fresh|BUTTON");
   });
 
-  it("says it is already in the eval set when the server reused an existing case", () => {
-    notifySuccess.mockClear();
-    clickAndSucceed(false);
-    expect(notifySuccess).toHaveBeenCalledWith("Already in the eval set");
+  it("opens the modal in edit mode, flagged already in the set, when a case exists", () => {
+    clickWith((o) => o.onSuccess({ agent_id: "ag1", existing_case: EXISTING, draft: null }));
+    expect(screen.getByTestId("case-modal")).toHaveTextContent("edit|ag1|already|BUTTON");
   });
 
-  /** Click the action and let the mutation fail with the given error. */
-  function clickAndFail(err: Error) {
-    createEvalCase.mockImplementationOnce((_id: string, opts: { onError: (e: Error) => void }) => opts.onError(err));
-    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
-    fireEvent.click(screen.getByRole("button", { name: /Turn into eval case/ }));
-  }
-
-  it("shows the translated message for a known error code, never the server's text", () => {
-    notifyError.mockClear();
-    clickAndFail(new ApiError("server says no", 422, "expectation_not_grounded"));
-    expect(notifyError).toHaveBeenCalledWith("This finding does not point at a line of its own diff");
+  it("shows the translated message for a known error code and opens no modal", () => {
+    clickWith((o) => o.onError(new ApiError("no diff", 422, "no_diff_available")));
+    expect(notifyError).toHaveBeenCalledWith("This file has no stored diff to freeze into a case");
+    expect(screen.queryByTestId("case-modal")).not.toBeInTheDocument();
   });
 
-  it("falls back to the generic failure for an unknown code or a bare status error", () => {
-    notifyError.mockClear();
-    clickAndFail(new ApiError("500 Internal Server Error", 500));
+  it("falls back to the generic failure for an unknown code, and for an answer with neither case nor draft", () => {
+    clickWith((o) => o.onError(new ApiError("500 Internal Server Error", 500)));
     expect(notifyError).toHaveBeenCalledWith("Could not create the eval case");
+    cleanup();
+    notifyError.mockClear();
+    clickWith((o) => o.onSuccess({ agent_id: "ag1", existing_case: null, draft: null }));
+    expect(notifyError).toHaveBeenCalledWith("Could not create the eval case");
+    expect(screen.queryByTestId("case-modal")).not.toBeInTheDocument();
+  });
+
+  it("disables the button while the draft is pending", () => {
+    draftPending = true;
+    renderWithIntl(<FindingsPanel findings={[accepted]} prId="pr1" />);
+    expect(screen.getByRole("button", { name: /Turn into eval case/ })).toBeDisabled();
   });
 });
 

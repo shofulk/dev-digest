@@ -8,7 +8,7 @@ import type {
   UnifiedDiff,
 } from '@devdigest/shared';
 import { groundFindings } from '@devdigest/reviewer-core';
-import { CASE_NAME_SLUG_MAX, MAX_FROZEN_DIFF_BYTES } from './constants.js';
+import { CASE_NAME_MAX, CASE_NAME_SLUG_MAX, MAX_FROZEN_DIFF_BYTES } from './constants.js';
 
 /**
  * Freezing a triaged finding into an eval case — ring 1, PURE. Everything a case
@@ -84,6 +84,21 @@ export function caseName(title: string): string {
   return slug || 'finding';
 }
 
+/** The expectation as a finding, so the review gate's grounding rule can test it. */
+function probeOf(expectation: EvalExpectation, id: string, rationale: string): Finding {
+  return {
+    id,
+    severity: expectation.severity,
+    category: expectation.category,
+    title: expectation.title,
+    file: expectation.file,
+    start_line: expectation.start_line,
+    end_line: expectation.end_line,
+    rationale,
+    confidence: 1,
+  };
+}
+
 export function freezeCase(input: {
   finding: FreezableFinding;
   type: EvalExpectationType;
@@ -113,17 +128,7 @@ export function freezeCase(input: {
   };
 
   // Same rule as the review gate: the expectation must cite a line of its own diff.
-  const probe: Finding = {
-    id: finding.id,
-    severity: expectation.severity,
-    category: expectation.category,
-    title: expectation.title,
-    file: expectation.file,
-    start_line: expectation.start_line,
-    end_line: expectation.end_line,
-    rationale: finding.rationale,
-    confidence: 1,
-  };
+  const probe = probeOf(expectation, finding.id, finding.rationale);
   if (groundFindings([probe], input.parseDiff(inputDiff)).kept.length !== 1) {
     return { ok: false, code: 'expectation_not_grounded' };
   }
@@ -146,4 +151,44 @@ export function freezeCase(input: {
       notes: finding.rationale,
     },
   };
+}
+
+export type CaseFieldFailure =
+  | 'invalid_name'
+  | 'frozen_diff_too_large'
+  | 'invalid_diff'
+  | 'expectation_not_grounded';
+
+/**
+ * Validates the form fields of a hand-written or edited case. Precedence:
+ * name (only with `checkName`) → byte size (before parsing) → diff shape →
+ * expectation grounding. On success returns the trimmed name and the paths of the
+ * files that have at least one hunk, in diff order.
+ */
+export function validateCaseFields(
+  input: { name?: string; input_diff: string; expectation: EvalExpectation },
+  parseDiff: (text: string) => UnifiedDiff,
+  opts: { checkName: boolean },
+): { ok: true; value: { name: string; input_files: string[] } } | { ok: false; code: CaseFieldFailure } {
+  const name = (input.name ?? '').trim();
+  if (opts.checkName && (name === '' || name.length > CASE_NAME_MAX)) {
+    return { ok: false, code: 'invalid_name' };
+  }
+  if (new TextEncoder().encode(input.input_diff).length > MAX_FROZEN_DIFF_BYTES) {
+    return { ok: false, code: 'frozen_diff_too_large' };
+  }
+
+  const diff = parseDiff(input.input_diff);
+  const paths: string[] = [];
+  for (const file of diff.files) {
+    if (file.path && file.hunks.length > 0 && !paths.includes(file.path)) paths.push(file.path);
+  }
+  if (paths.length === 0) return { ok: false, code: 'invalid_diff' };
+
+  const { expectation } = input;
+  if (!paths.includes(expectation.file)) return { ok: false, code: 'expectation_not_grounded' };
+  if (groundFindings([probeOf(expectation, 'case-fields', '')], diff).kept.length !== 1) {
+    return { ok: false, code: 'expectation_not_grounded' };
+  }
+  return { ok: true, value: { name, input_files: paths } };
 }

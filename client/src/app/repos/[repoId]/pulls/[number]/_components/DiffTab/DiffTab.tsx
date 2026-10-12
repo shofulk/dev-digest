@@ -12,12 +12,15 @@ import {
 } from "@/components/diff-viewer";
 import { usePrComments, useCreatePrComment, usePrReviews, useFindingAction } from "@/lib/hooks/reviews";
 import { useSmartDiff } from "@/lib/hooks/smart-diff";
-import { useCreateEvalCase } from "@/lib/hooks/eval";
+import { useEvalCaseDraft } from "@/lib/hooks/eval";
 import { ApiError } from "@/lib/api";
 import { caseErrorKey } from "@/lib/eval-metrics";
 import { notify } from "@/lib/toast";
-import { FindingCard } from "../FindingCard";
+import { EvalCaseModal, type EvalCaseModalSource } from "@/components/eval-ui/EvalCaseModal";
+import { FindingCard, evalSourceFor } from "../FindingCard";
 import type { PrFile } from "@devdigest/shared";
+
+type EvalModalState = { agentId: string; source: EvalCaseModalSource; opener: HTMLElement };
 
 type Order = "smart" | "original";
 
@@ -58,7 +61,8 @@ export function DiffTab({
   const create = useCreatePrComment(prId);
   const { data: reviews } = usePrReviews(prId);
   const action = useFindingAction();
-  const evalCase = useCreateEvalCase();
+  const evalDraft = useEvalCaseDraft();
+  const [evalModal, setEvalModal] = React.useState<EvalModalState | null>(null);
   const {
     data: smartDiff,
     isLoading: smartDiffLoading,
@@ -110,11 +114,14 @@ export function DiffTab({
         onAction={(a) => {
           if (prId) action.mutate({ findingId: f.id, action: a, prId });
         }}
-        evalPending={evalCase.isPending}
-        onEvalCase={() =>
-          evalCase.mutate(f.id, {
-            onSuccess: (r) =>
-              notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
+        evalPending={evalDraft.isPending}
+        onEvalCase={(opener) =>
+          evalDraft.mutate(f.id, {
+            onSuccess: (r) => {
+              const source = evalSourceFor(f.id, r);
+              if (source) setEvalModal({ agentId: r.agent_id, source, opener });
+              else notify.error(t(caseErrorKey(undefined)));
+            },
             onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
           })
         }
@@ -188,6 +195,15 @@ export function DiffTab({
         <ErrorState title={t("smartDiff.loadFailed")} onRetry={() => refetchSmartDiff()} />
       ) : (
         <DiffViewer files={files} commenting={commenting} groups={groups} findings={findingApi} focus={viewerFocus} />
+      )}
+
+      {evalModal && (
+        <EvalCaseModal
+          agentId={evalModal.agentId}
+          source={evalModal.source}
+          returnFocusTo={evalModal.opener}
+          onClose={() => setEvalModal(null)}
+        />
       )}
     </section>
   );

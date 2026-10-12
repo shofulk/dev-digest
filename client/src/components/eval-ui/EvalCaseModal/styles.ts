@@ -1,0 +1,72 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for EvalCaseModal. */
+const control = {
+  width: "100%",
+  padding: "10px 12px",
+  borderRadius: 7,
+  border: "1px solid var(--border-strong)",
+  background: "var(--bg-elevated)",
+  color: "var(--text-primary)",
+  fontSize: 14,
+  outline: "none",
+} satisfies CSSProperties;
+
+export const s = {
+  body: { padding: 24, display: "flex", flexDirection: "column", gap: 18 } satisfies CSSProperties,
+  field: { display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 } satisfies CSSProperties,
+  label: { fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" } satisfies CSSProperties,
+  row: { display: "flex", gap: 12 } satisfies CSSProperties,
+  heading: { fontSize: 13, fontWeight: 700 } satisfies CSSProperties,
+  section: { display: "flex", flexDirection: "column", gap: 12 } satisfies CSSProperties,
+  select: { ...control, appearance: "auto", cursor: "pointer" } satisfies CSSProperties,
+  textarea: { ...control, resize: "vertical", lineHeight: 1.55 } satisfies CSSProperties,
+  diffPre: {
+    margin: 0,
+    padding: 12,
+    maxHeight: 280,
+    overflow: "auto",
+    whiteSpace: "pre",
+    fontSize: 12,
+    background: "var(--bg-surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 8,
+  } satisfies CSSProperties,
+  chip: {
+    alignSelf: "flex-start",
+    padding: "4px 10px",
+    borderRadius: 999,
+    fontSize: 12.5,
+    fontWeight: 600,
+    background: "var(--bg-surface)",
+    border: "1px solid var(--border)",
+  } satisfies CSSProperties,
+  note: { fontSize: 12.5, color: "var(--text-muted)" } satisfies CSSProperties,
+  fieldError: { fontSize: 12.5, color: "var(--crit)" } satisfies CSSProperties,
+  formError: { fontSize: 13, color: "var(--crit)", marginBottom: 12 } satisfies CSSProperties,
+  footer: { display: "flex", alignItems: "center", gap: 10 } satisfies CSSProperties,
+  footerSpacer: { marginLeft: "auto", display: "flex", gap: 10 } satisfies CSSProperties,
+  result: {
+    background: "var(--bg-surface)",
+    border: "1px solid var(--border)",
+    borderRadius: 9,
+    padding: 14,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  } satisfies CSSProperties,
+  verdict: (pass: boolean): CSSProperties => ({
+    fontSize: 14,
+    fontWeight: 700,
+    color: pass ? "var(--ok)" : "var(--crit)",
+  }),
+  resultMeta: { display: "flex", gap: 14, fontSize: 12.5, color: "var(--text-muted)", flexWrap: "wrap" } satisfies CSSProperties,
+  findingRow: { display: "flex", gap: 10, fontSize: 13, alignItems: "baseline" } satisfies CSSProperties,
+  matched: (on: boolean): CSSProperties => ({
+    fontSize: 12,
+    fontWeight: 600,
+    color: on ? "var(--ok)" : "var(--text-muted)",
+  }),
+  confirmBody: { padding: 24, fontSize: 14 } satisfies CSSProperties,
+  confirmFooter: { display: "flex", justifyContent: "flex-end", gap: 10 } satisfies CSSProperties,
+} as const;

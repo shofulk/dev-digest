@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import type { PgTable } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
 import type { AuthProvider, StructuredRequest, StructuredResult } from '@devdigest/shared';
 import { startPg, dockerAvailable, type PgFixture } from './helpers/pg.js';
@@ -62,6 +63,11 @@ class ScriptedLLM extends MockLLMProvider {
 
   constructor() {
     super('openrouter', {});
+  }
+
+  /** How many review calls reached this provider (counted on entry, before the gate). */
+  get callCount(): number {
+    return this.n;
   }
 
   override async completeStructured<T>(req: StructuredRequest<T>): Promise<StructuredResult<T>> {
@@ -799,5 +805,857 @@ d('eval module (Testcontainers pg)', () => {
     expect(cases).toHaveLength(1);
     expect(cases[0]!.case).toMatchObject({ id: row!.id, name: legacyName });
     expect(cases[0]!.last_result).toBe('never_run');
+  });
+
+  // ================================================== case editor (SPEC-03, rev 6)
+
+  /** `PATCH` framed as the case freezer frames it: new-side lines 1..12 are in the hunk. */
+  const A_DIFF = `diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n${PATCH}`;
+  /** New-side lines 1..3 of every file below are inside its hunk. */
+  const fileDiff = (path: string) =>
+    [`diff --git a/${path} b/${path}`, `--- a/${path}`, `+++ b/${path}`, '@@ -1,2 +1,3 @@', ' one', '+two', ' three'].join('\n');
+  const TWO_FILE_DIFF = `${fileDiff('src/x.ts')}\n${fileDiff('src/y.ts')}`;
+
+  const expectationAt = (line: number, over: Record<string, unknown> = {}) => ({
+    type: 'must_find',
+    file: 'src/a.ts',
+    start_line: line,
+    end_line: line,
+    severity: 'WARNING',
+    category: 'test',
+    title: 'expected finding',
+    ...over,
+  });
+
+  /** A hand-written case body: a two-file diff, expectation on `src/x.ts` line 2. */
+  const handFields = (over: Record<string, unknown> = {}) => ({
+    name: 'hand-written',
+    notes: 'why it matters',
+    pr_title: 'Hand PR',
+    pr_body: 'Hand body',
+    input_diff: TWO_FILE_DIFF,
+    expectation: expectationAt(2, { file: 'src/x.ts' }),
+    ...over,
+  });
+
+  /** A body for `src/a.ts` + `PATCH`, expecting a finding at `line`. */
+  const aFields = (line: number, over: Record<string, unknown> = {}) => ({
+    name: `a-case-${line}`,
+    notes: null,
+    pr_title: 'Add the thing',
+    pr_body: 'This PR adds the thing.',
+    input_diff: A_DIFF,
+    expectation: expectationAt(line),
+    ...over,
+  });
+
+  /** A hand-written case inserted straight into the table, so edit tests do not depend on the create route. */
+  async function insertHandCase(agentId: string, line = 3, over: { name?: string; workspaceId?: string } = {}) {
+    seq += 1;
+    const [row] = await pg.handle.db
+      .insert(t.evalCases)
+      .values({
+        workspaceId: over.workspaceId ?? workspaceA,
+        ownerKind: 'agent',
+        ownerId: agentId,
+        name: over.name ?? `hand-case-${seq}`,
+        inputDiff: A_DIFF,
+        inputFiles: ['src/a.ts'],
+        inputMeta: { pr_title: 'Hand PR', pr_body: 'Hand body', created_at: new Date().toISOString() },
+        expectedOutput: expectationAt(line),
+        notes: null,
+      })
+      .returning();
+    return row!.id;
+  }
+
+  async function caseRow(id: string) {
+    const [row] = await pg.handle.db.select().from(t.evalCases).where(eq(t.evalCases.id, id));
+    return row!;
+  }
+
+  async function countOf(table: PgTable): Promise<number> {
+    const [row] = await pg.handle.db.select({ n: sql<number>`count(*)::int` }).from(table);
+    return row!.n;
+  }
+
+  /** Row counts of every table an eval write could touch. */
+  async function storeCounts() {
+    return [t.evalCases, t.evalRuns, t.agentRuns, t.reviews, t.findings, t.runTraces].map((tbl) => countOf(tbl));
+  }
+
+  interface CaseListEntry {
+    case: { id: string };
+    running: boolean;
+    last_result: string;
+    last_run_id: string | null;
+    last_matched: number | null;
+  }
+  async function listCases(app: FastifyInstance, agentId: string): Promise<CaseListEntry[]> {
+    const res = await app.inject({ url: `/agents/${agentId}/eval-cases` });
+    expect(res.statusCode).toBe(200);
+    return res.json() as CaseListEntry[];
+  }
+
+  /** Bounded poll; a hung condition fails the test, not the suite. */
+  async function waitFor(check: () => Promise<boolean>, what: string) {
+    for (let i = 0; i < 200; i++) {
+      if (await check()) return;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect.fail(`timed out waiting for ${what}`);
+  }
+
+  /** One-case runs have no detail route: completion is read off the case list. */
+  async function waitIdle(app: FastifyInstance, agentId: string) {
+    await waitFor(async () => (await listCases(app, agentId)).every((c) => !c.running), 'every case to stop running');
+  }
+
+  async function startCaseRun(app: FastifyInstance, caseId: string) {
+    return app.inject({ method: 'POST', url: `/eval-cases/${caseId}/runs` });
+  }
+
+  async function dryRun(app: FastifyInstance, agentId: string, payload: unknown) {
+    return app.inject({ method: 'POST', url: `/agents/${agentId}/eval-cases/dry-run`, payload: payload as object });
+  }
+
+  /** A provider held on a gate; `release()` is idempotent so a failed test can always let go. */
+  function gatedLLM() {
+    const llm = new ScriptedLLM();
+    let open!: () => void;
+    llm.gate = new Promise<void>((r) => (open = r));
+    return { llm, release: () => open() };
+  }
+
+  /** Waits until the provider has been entered, i.e. a held run is really in flight. */
+  async function waitForProviderCall(llm: ScriptedLLM, calls = 1) {
+    await waitFor(async () => llm.callCount >= calls, `${calls} provider call(s)`);
+  }
+
+  const errorCode = (res: { json: () => unknown }) => (res.json() as { error: { code: string } }).error.code;
+
+  // ----------------------------------------------------------- draft and save
+
+  describe('case editor: draft and save', () => {
+    it('AC39: drafts an accepted finding without storing anything', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted', line: 3 });
+      const before = await countOf(t.evalCases);
+
+      const res = await app.inject({ url: `/findings/${findingId}/eval-case-draft` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.agent_id).toBe(agentId);
+      expect(body.existing_case).toBeNull();
+      expect(body.draft).toMatchObject({
+        name: 'original-finding-at-line-3',
+        input_files: ['src/a.ts'],
+        pr_title: 'Add the thing',
+        pr_body: 'This PR adds the thing.',
+        notes: 'The branch is never asserted.',
+        expectation: { type: 'must_find', file: 'src/a.ts', start_line: 3, end_line: 3 },
+      });
+      expect(body.draft.input_diff.startsWith('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@')).toBe(
+        true,
+      );
+      expect(await countOf(t.evalCases)).toBe(before);
+      expect(llm.callCount).toBe(0);
+    });
+
+    it('AC40: refuses to draft an untriaged finding (422 finding_not_triaged)', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const res = await app.inject({ url: `/findings/${await newFinding({ agentId, triage: 'open' })}/eval-case-draft` });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('finding_not_triaged');
+    });
+
+    it('AC40: refuses to draft a finding whose review has no agent (422 finding_has_no_agent)', async () => {
+      const app = await makeApp();
+      const res = await app.inject({
+        url: `/findings/${await newFinding({ agentId: null, triage: 'accepted' })}/eval-case-draft`,
+      });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('finding_has_no_agent');
+    });
+
+    it('AC40: refuses to draft a finding whose file has no stored diff (422 no_diff_available)', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted', file: 'src/nopatch.ts' });
+      const res = await app.inject({ url: `/findings/${findingId}/eval-case-draft` });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('no_diff_available');
+    });
+
+    it('AC40: refuses to draft a finding whose file diff is over 200 KB (422 frozen_diff_too_large)', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      await pg.handle.db
+        .insert(t.prFiles)
+        .values({ prId, path: 'src/big.ts', patch: `@@ -1,1 +1,1 @@\n+${'x'.repeat(210 * 1024)}` });
+      const findingId = await newFinding({ agentId, triage: 'accepted', file: 'src/big.ts', line: 1 });
+      const res = await app.inject({ url: `/findings/${findingId}/eval-case-draft` });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('frozen_diff_too_large');
+    });
+
+    it('AC40: refuses to draft a finding that points outside its own diff (422 expectation_not_grounded)', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const res = await app.inject({
+        url: `/findings/${await newFinding({ agentId, triage: 'accepted', line: 40 })}/eval-case-draft`,
+      });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('expectation_not_grounded');
+    });
+
+    it('AC40: a finding reached from another workspace is a 404', async () => {
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted' });
+      const appB = await makeApp(new ScriptedLLM(), workspaceB);
+      expect((await appB.inject({ url: `/findings/${findingId}/eval-case-draft` })).statusCode).toBe(404);
+    });
+
+    it('AC41: after a freeze the draft route answers with the existing case and no draft', async () => {
+      const app = await makeApp();
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted' });
+      const first = await freeze(app, findingId);
+      expect(first.res.statusCode).toBe(201);
+
+      const res = await app.inject({ url: `/findings/${findingId}/eval-case-draft` });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.existing_case).toMatchObject({ id: first.body.id });
+      expect(body.draft).toBeNull();
+    });
+
+    it('AC42: saving a finding with a body stores the edited fields, keeps the frozen diff and type, and is idempotent', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'dismissed', line: 3 });
+      const draft = (await app.inject({ url: `/findings/${findingId}/eval-case-draft` })).json().draft;
+
+      const first = await app.inject({
+        method: 'POST',
+        url: `/findings/${findingId}/eval-case`,
+        payload: {
+          name: '  renamed  ',
+          notes: 'n',
+          pr_title: 'T2',
+          pr_body: 'B2',
+          expectation: {
+            file: 'src/a.ts',
+            start_line: 2,
+            end_line: 4,
+            severity: 'CRITICAL',
+            category: 'security',
+            title: 'X',
+          },
+        },
+      });
+      expect(first.statusCode).toBe(201);
+      expect(first.json().name).toBe('renamed');
+      const stored = await caseRow(first.json().id);
+      expect(stored.name).toBe('renamed');
+      expect(stored.notes).toBe('n');
+      expect(stored.inputDiff).toBe(A_DIFF);
+      expect(stored.inputDiff).toBe(draft.input_diff);
+      expect(stored.inputMeta).toMatchObject({ source_finding_id: findingId, pr_title: 'T2', pr_body: 'B2' });
+      expect(stored.expectedOutput).toMatchObject({
+        type: 'must_not_flag',
+        file: 'src/a.ts',
+        start_line: 2,
+        end_line: 4,
+        severity: 'CRITICAL',
+        category: 'security',
+        title: 'X',
+      });
+
+      // A second save with a different body, and a third with none, change nothing.
+      const second = await app.inject({
+        method: 'POST',
+        url: `/findings/${findingId}/eval-case`,
+        payload: {
+          name: 'another-name',
+          expectation: { file: 'src/a.ts', start_line: 5, end_line: 5, severity: 'SUGGESTION', category: 'style', title: 'Y' },
+        },
+      });
+      expect(second.statusCode).toBe(200);
+      expect(second.json()).toMatchObject({ id: first.json().id, created: false, name: 'renamed' });
+      const third = await freeze(app, findingId);
+      expect(third.res.statusCode).toBe(200);
+      expect(third.body).toMatchObject({ id: first.json().id, created: false, name: 'renamed' });
+      expect(await caseRow(first.json().id)).toEqual(stored);
+      expect(llm.callCount).toBe(0);
+    });
+
+    it('AC43: creates a hand-written two-file case owned by the agent', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+
+      const res = await app.inject({ method: 'POST', url: `/agents/${agentId}/eval-cases`, payload: handFields() });
+      expect(res.statusCode).toBe(201);
+      const body = res.json() as Created;
+      expect(body).toMatchObject({ owner_id: agentId, name: 'hand-written', input_files: ['src/x.ts', 'src/y.ts'] });
+      expect(body.input_meta.source_finding_id ?? null).toBeNull();
+      expect(body.input_meta).toMatchObject({ pr_title: 'Hand PR', pr_body: 'Hand body' });
+
+      const listed = await listCases(app, agentId);
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toMatchObject({ case: { id: body.id }, running: false, last_result: 'never_run' });
+      expect(llm.callCount).toBe(0);
+    });
+  });
+
+  // ------------------------------------------------------ validation and edit
+
+  describe('case editor: validation and edit', () => {
+    const create = (app: FastifyInstance, agentId: string, over: Record<string, unknown>) =>
+      app.inject({ method: 'POST', url: `/agents/${agentId}/eval-cases`, payload: handFields(over) });
+
+    it('AC45: create refuses a bare hunk (422 invalid_diff)', async () => {
+      const app = await makeApp();
+      const res = await create(app, await newAgent(), { input_diff: '@@ -1 +1 @@\n+x' });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('invalid_diff');
+    });
+
+    it('AC48: create refuses a blank name (422 invalid_name)', async () => {
+      const app = await makeApp();
+      const res = await create(app, await newAgent(), { name: '   ' });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('invalid_name');
+    });
+
+    it('AC46: create refuses a 210 KB diff (422 frozen_diff_too_large, not a framework error)', async () => {
+      const app = await makeApp();
+      const res = await create(app, await newAgent(), { input_diff: `${TWO_FILE_DIFF}\n+${'x'.repeat(210 * 1024)}` });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('frozen_diff_too_large');
+    });
+
+    it('AC46: a 1.5 MiB diff still reaches the service (the route body limit is above Fastify’s 1 MiB default)', async () => {
+      const app = await makeApp();
+      const res = await create(app, await newAgent(), { input_diff: `${TWO_FILE_DIFF}\n+${'x'.repeat(1_500_000)}` });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('frozen_diff_too_large');
+    });
+
+    it('AC47: create refuses an expectation on a file that is not in the diff (422 expectation_not_grounded)', async () => {
+      const app = await makeApp();
+      const res = await create(app, await newAgent(), { expectation: expectationAt(2, { file: 'src/nowhere.ts' }) });
+      expect(res.statusCode).toBe(422);
+      expect(errorCode(res)).toBe('expectation_not_grounded');
+    });
+
+    it('AC49: PUT on a hand-written case stores the new fields and recomputes input_files', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const caseId = await insertHandCase(agentId);
+
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/eval-cases/${caseId}`,
+        payload: handFields({ name: 'renamed-by-hand' }),
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({
+        id: caseId,
+        name: 'renamed-by-hand',
+        input_diff: TWO_FILE_DIFF,
+        input_files: ['src/x.ts', 'src/y.ts'],
+        expected_output: { file: 'src/x.ts', start_line: 2 },
+      });
+      const stored = await caseRow(caseId);
+      expect(stored).toMatchObject({ name: 'renamed-by-hand', inputDiff: TWO_FILE_DIFF, inputFiles: ['src/x.ts', 'src/y.ts'] });
+
+      // A bare hunk is refused and the case stays exactly as it was.
+      const bad = await app.inject({
+        method: 'PUT',
+        url: `/eval-cases/${caseId}`,
+        payload: handFields({ input_diff: '@@ -1 +1 @@\n+x' }),
+      });
+      expect(bad.statusCode).toBe(422);
+      expect(errorCode(bad)).toBe('invalid_diff');
+      expect(await caseRow(caseId)).toEqual(stored);
+      expect(llm.callCount).toBe(0);
+    });
+
+    it('AC49: PUT from another workspace, or for an unknown case, is a 404', async () => {
+      const agentId = await newAgent();
+      const caseId = await insertHandCase(agentId);
+      const before = await caseRow(caseId);
+      const appB = await makeApp(new ScriptedLLM(), workspaceB);
+
+      const other = await appB.inject({ method: 'PUT', url: `/eval-cases/${caseId}`, payload: handFields() });
+      expect(other.statusCode).toBe(404);
+      const unknown = await appB.inject({
+        method: 'PUT',
+        url: `/eval-cases/${crypto.randomUUID()}`,
+        payload: handFields(),
+      });
+      expect(unknown.statusCode).toBe(404);
+      expect(await caseRow(caseId)).toEqual(before);
+    });
+
+    it('AC50: PUT cannot flip the type or change the diff of a from-finding case (422 locked_field); a rename is fine', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const findingId = await newFinding({ agentId, triage: 'accepted', line: 3 });
+      const { res: frozen, body } = await freeze(app, findingId);
+      expect(frozen.statusCode).toBe(201);
+      const put = (over: Record<string, unknown>) =>
+        app.inject({
+          method: 'PUT',
+          url: `/eval-cases/${body.id}`,
+          payload: {
+            name: body.name,
+            notes: body.notes,
+            pr_title: 'Add the thing',
+            pr_body: 'This PR adds the thing.',
+            input_diff: body.input_diff,
+            expectation: body.expected_output,
+            ...over,
+          },
+        });
+      const before = await caseRow(body.id);
+
+      const flipped = await put({ expectation: { ...body.expected_output, type: 'must_not_flag' } });
+      expect(flipped.statusCode).toBe(422);
+      expect(errorCode(flipped)).toBe('locked_field');
+
+      // A valid, still-grounded diff, so only the lock can refuse it.
+      const rediffed = await put({ input_diff: `${body.input_diff}\n+extra` });
+      expect(rediffed.statusCode).toBe(422);
+      expect(errorCode(rediffed)).toBe('locked_field');
+      expect(await caseRow(body.id)).toEqual(before);
+
+      const renamed = await put({ name: 'renamed-case', expectation: { ...body.expected_output, start_line: 4, end_line: 4 } });
+      expect(renamed.statusCode).toBe(200);
+      expect(renamed.json()).toMatchObject({ id: body.id, name: 'renamed-case' });
+      const after = await caseRow(body.id);
+      expect(after.inputMeta).toMatchObject({ source_finding_id: findingId });
+      expect(after.expectedOutput).toMatchObject({ type: 'must_find', start_line: 4 });
+      expect(llm.callCount).toBe(0);
+    });
+  });
+
+  // ----------------------------------------------------------- frozen history
+
+  describe('case editor: frozen history', () => {
+    it('AC52: every row of a suite run stores the expectation its case had at the start', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+
+      await runAndWait(app, agentId);
+
+      const rows = await pg.handle.db.select().from(t.evalRuns).where(inArray(t.evalRuns.caseId, caseIds));
+      expect(rows).toHaveLength(2);
+      for (const row of rows) {
+        const owner = await caseRow(row.caseId);
+        expect((row.actualOutput as { expectation?: unknown }).expectation).toEqual(owner.expectedOutput);
+      }
+    });
+
+    it('AC51: a legacy row (no stored expectation) keeps its result, matched flag and run metrics after the case is edited', async () => {
+      const llm = new ScriptedLLM();
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const caseId = await insertHandCase(agentId, 3);
+
+      // Legacy row R: scored against line 3 when it ran, and carrying no `expectation`.
+      const runR = crypto.randomUUID();
+      const [rowR] = await pg.handle.db
+        .insert(t.evalRuns)
+        .values({
+          caseId,
+          ranAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          actualOutput: {
+            run_id: runR,
+            agent_id: agentId,
+            agent_version: 1,
+            status: 'completed',
+            findings: [
+              { file: 'src/a.ts', start_line: 3, end_line: 3, severity: 'WARNING', category: 'test', title: 'f' },
+            ],
+            grounding_kept: 1,
+            grounding_dropped: 0,
+            finished_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          },
+          pass: true,
+          recall: 1,
+          precision: 1,
+          citationAccuracy: 1,
+          durationMs: 10,
+          costUsd: 0.001,
+        })
+        .returning();
+
+      // A later suite run L in which the model finds nothing, so the case fails.
+      llm.fixture = reviewOf();
+      const later = await runAndWait(app, agentId);
+      const compareBefore = await app.inject({ url: `/eval-runs/compare?a=${runR}&b=${later.run_id}` });
+      expect(compareBefore.statusCode).toBe(200);
+      const runBefore = await getRun(app, runR);
+      expect(runBefore.per_case[0]).toMatchObject({ pass: true, findings: [{ matched: true }] });
+
+      const put = await app.inject({
+        method: 'PUT',
+        url: `/eval-cases/${caseId}`,
+        payload: aFields(9, { name: 'moved-to-line-9' }),
+      });
+      expect(put.statusCode).toBe(200);
+
+      const runAfter = await getRun(app, runR);
+      expect(runAfter.per_case[0]).toMatchObject({ pass: true, findings: [{ matched: true }] });
+      expect(runAfter).toMatchObject({ recall: runBefore.recall, precision: runBefore.precision });
+      const compareAfter = await app.inject({ url: `/eval-runs/compare?a=${runR}&b=${later.run_id}` });
+      // Flips carry the case's current display name, so compare identity and direction only.
+      type Flip = { case_id: string; a_pass: boolean; b_pass: boolean; direction: string; name: string };
+      const byIdentity = (flips: Flip[]) =>
+        flips.map(({ case_id, a_pass, b_pass, direction }) => ({ case_id, a_pass, b_pass, direction }));
+      const flipsBefore = compareBefore.json().flips as Flip[];
+      const flipsAfter = compareAfter.json().flips as Flip[];
+      expect(flipsBefore.length).toBeGreaterThan(0);
+      expect(byIdentity(flipsAfter)).toEqual(byIdentity(flipsBefore));
+      expect(flipsAfter.map((f) => f.name)).toEqual(['moved-to-line-9']);
+      expect(compareAfter.json().delta).toEqual(compareBefore.json().delta);
+
+      const [stored] = await pg.handle.db.select().from(t.evalRuns).where(eq(t.evalRuns.id, rowR!.id));
+      expect((stored!.actualOutput as { expectation: { start_line: number } }).expectation.start_line).toBe(3);
+      expect(stored).toMatchObject({ pass: true, recall: 1, precision: 1, citationAccuracy: 1 });
+    });
+
+    it('AC53: a row still running when its case is edited is scored against the expectation read at the start', async () => {
+      const { llm, release } = gatedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const caseId = await insertHandCase(agentId, 3);
+      try {
+        const started = await startRun(app, agentId);
+        expect(started.statusCode).toBe(202);
+        const runId = (started.json() as { run_id: string }).run_id;
+
+        const put = await app.inject({
+          method: 'PUT',
+          url: `/eval-cases/${caseId}`,
+          payload: aFields(9, { name: 'moved-mid-run' }),
+        });
+        expect(put.statusCode).toBe(200);
+
+        release();
+        const run = await waitCompleted(app, runId);
+        expect(run.per_case[0]!.pass).toBe(true);
+        const [row] = await pg.handle.db.select().from(t.evalRuns).where(eq(t.evalRuns.caseId, caseId));
+        expect(row!.pass).toBe(true);
+        expect((row!.actualOutput as { expectation: { start_line: number } }).expectation.start_line).toBe(3);
+      } finally {
+        release();
+      }
+    });
+  });
+
+  // ------------------------------------------------------------ one-case runs
+
+  describe('case editor: one-case runs', () => {
+    it('AC54: starts a run of one case, marks its row, and makes one provider call', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+
+      const res = await startCaseRun(app, caseIds[0]!);
+      expect(res.statusCode).toBe(202);
+      const started = res.json() as { run_id: string; cases_total: number };
+      expect(started.cases_total).toBe(1);
+      expect(started.run_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+      await waitIdle(app, agentId);
+      const rows = await pg.handle.db.select().from(t.evalRuns).where(inArray(t.evalRuns.caseId, caseIds));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.actualOutput).toMatchObject({ run_id: started.run_id, one_case: true, status: 'completed' });
+      expect(llm.callCount).toBe(1);
+    });
+
+    it('AC58: the case list shows only the running case as running, and clears it when the run ends', async () => {
+      const { llm, release } = gatedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      try {
+        expect((await startCaseRun(app, caseIds[0]!)).statusCode).toBe(202);
+        const during = await listCases(app, agentId);
+        expect(during.find((c) => c.case.id === caseIds[0])!.running).toBe(true);
+        expect(during.find((c) => c.case.id === caseIds[1])!.running).toBe(false);
+
+        release();
+        await waitIdle(app, agentId);
+        expect((await listCases(app, agentId)).every((c) => !c.running)).toBe(true);
+      } finally {
+        release();
+      }
+    });
+
+    it('AC57: the newest completed row wins, even when it came from a one-case run', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(); // the must_find case fails in the suite run
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      const suite = await runAndWait(app, agentId);
+      expect((await listCases(app, agentId)).find((c) => c.case.id === caseIds[0])!.last_result).toBe('fail');
+
+      llm.fixture = reviewOf(finding(3)); // and passes when run alone
+      const single = await startCaseRun(app, caseIds[0]!);
+      expect(single.statusCode).toBe(202);
+      await waitIdle(app, agentId);
+
+      const entry = (await listCases(app, agentId)).find((c) => c.case.id === caseIds[0])!;
+      expect(entry.last_result).toBe('pass');
+      expect(entry.last_run_id).toBe((single.json() as { run_id: string }).run_id);
+      expect(entry.last_run_id).not.toBe(suite.run_id);
+    });
+
+    it('AC55: a one-case run stays out of the run list and the dashboard', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      const suite = await runAndWait(app, agentId);
+
+      const single = await startCaseRun(app, caseIds[0]!);
+      expect(single.statusCode).toBe(202);
+      const singleRunId = (single.json() as { run_id: string }).run_id;
+      await waitIdle(app, agentId);
+
+      const runs = (await app.inject({ url: `/agents/${agentId}/eval-runs` })).json() as Suite[];
+      expect(runs.map((r) => r.run_id)).toEqual([suite.run_id]);
+
+      const dash = (await app.inject({ url: '/eval/dashboard' })).json() as {
+        agents: { agent_id: string; latest: { run_id: string } | null }[];
+        recent_runs: { run_id: string }[];
+      };
+      expect(dash.recent_runs.map((r) => r.run_id)).not.toContain(singleRunId);
+      expect(dash.agents.find((a) => a.agent_id === agentId)!.latest!.run_id).toBe(suite.run_id);
+    });
+
+    it('AC56: run detail and compare answer 404 for a one-case run', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      const suite = await runAndWait(app, agentId);
+      const single = await startCaseRun(app, caseIds[0]!);
+      expect(single.statusCode).toBe(202);
+      const singleRunId = (single.json() as { run_id: string }).run_id;
+      await waitIdle(app, agentId);
+
+      expect((await app.inject({ url: `/eval-runs/${singleRunId}` })).statusCode).toBe(404);
+      const cmp = await app.inject({ url: `/eval-runs/compare?a=${suite.run_id}&b=${singleRunId}` });
+      expect(cmp.statusCode).toBe(404);
+    });
+
+    it('AC54: an unknown case, or another workspace’s case, is a 404', async () => {
+      const app = await makeApp();
+      const { caseIds } = await agentWithCases(app);
+      expect((await startCaseRun(app, crypto.randomUUID())).statusCode).toBe(404);
+
+      const appB = await makeApp(new ScriptedLLM(), workspaceB);
+      expect((await startCaseRun(appB, caseIds[0]!)).statusCode).toBe(404);
+    });
+  });
+
+  // ------------------------------------------------------ dry run and run lock
+
+  describe('case editor: dry run and run lock', () => {
+    it('AC59: a valid draft is run once and answered with the scored result', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+
+      const res = await dryRun(app, agentId, aFields(3));
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body).toMatchObject({ pass: true, grounding_kept: 1, grounding_dropped: 0, agent_version: 1 });
+      expect(body.findings).toHaveLength(1);
+      expect(body.findings[0]).toMatchObject({ file: 'src/a.ts', start_line: 3, matched: true });
+      expect(typeof body.cost_usd).toBe('number');
+      expect(typeof body.duration_ms).toBe('number');
+      expect(llm.callCount).toBe(1);
+    });
+
+    it('AC60: a dry run writes no row to the case, run, review or trace tables', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+      const before = await Promise.all(await storeCounts());
+
+      const res = await dryRun(app, agentId, aFields(3));
+      expect(res.statusCode).toBe(200);
+      expect(await Promise.all(await storeCounts())).toEqual(before);
+    });
+
+    it('AC45: a dry run refuses a bare hunk (invalid_diff) and an ungrounded expectation, and accepts an empty name', async () => {
+      const llm = new ScriptedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const agentId = await newAgent();
+
+      const bare = await dryRun(app, agentId, aFields(3, { input_diff: '@@ -1 +1 @@\n+x' }));
+      expect(bare.statusCode).toBe(422);
+      expect(errorCode(bare)).toBe('invalid_diff');
+
+      const outside = await dryRun(app, agentId, aFields(90));
+      expect(outside.statusCode).toBe(422);
+      expect(errorCode(outside)).toBe('expectation_not_grounded');
+
+      const unnamed = await dryRun(app, agentId, aFields(3, { name: '' }));
+      expect(unnamed.statusCode).toBe(200);
+      expect(llm.callCount).toBe(1);
+    });
+
+    it('AC62: a failing provider answers 502 dry_run_failed with the sanitised reason', async () => {
+      const llm = new ScriptedLLM();
+      llm.failCalls.add(1);
+      const app = await makeApp(llm);
+
+      const res = await dryRun(app, await newAgent(), aFields(3));
+      expect(res.statusCode).toBe(502);
+      expect(res.json().error).toMatchObject({
+        code: 'dry_run_failed',
+        message: 'Error: scripted failure on call 1',
+      });
+    });
+
+    it('AC63: a held suite run blocks a one-case run and a dry run (409 run_in_flight)', async () => {
+      const { llm, release } = gatedLLM();
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      try {
+        const started = await startRun(app, agentId);
+        expect(started.statusCode).toBe(202);
+
+        const single = await startCaseRun(app, caseIds[0]!);
+        expect(single.statusCode).toBe(409);
+        expect(errorCode(single)).toBe('run_in_flight');
+        const dry = await dryRun(app, agentId, aFields(3));
+        expect(dry.statusCode).toBe(409);
+        expect(errorCode(dry)).toBe('run_in_flight');
+
+        release();
+        await waitCompleted(app, (started.json() as { run_id: string }).run_id);
+      } finally {
+        release();
+      }
+    });
+
+    it('AC63: a held one-case run blocks a suite run and a dry run (409 run_in_flight)', async () => {
+      const { llm, release } = gatedLLM();
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      try {
+        expect((await startCaseRun(app, caseIds[0]!)).statusCode).toBe(202);
+
+        const suite = await startRun(app, agentId);
+        expect(suite.statusCode).toBe(409);
+        expect(errorCode(suite)).toBe('run_in_flight');
+        const dry = await dryRun(app, agentId, aFields(3));
+        expect(dry.statusCode).toBe(409);
+        expect(errorCode(dry)).toBe('run_in_flight');
+      } finally {
+        release();
+      }
+      await waitIdle(app, agentId);
+    });
+
+    it('AC63: a held dry run blocks a suite run and a one-case run (409 run_in_flight)', async () => {
+      const { llm, release } = gatedLLM();
+      llm.fixture = reviewOf(finding(3));
+      const app = await makeApp(llm);
+      const { agentId, caseIds } = await agentWithCases(app);
+      const held = dryRun(app, agentId, aFields(3)); // not awaited: it sits on the gate
+      try {
+        await waitForProviderCall(llm);
+
+        const suite = await startRun(app, agentId);
+        expect(suite.statusCode).toBe(409);
+        expect(errorCode(suite)).toBe('run_in_flight');
+        const single = await startCaseRun(app, caseIds[0]!);
+        expect(single.statusCode).toBe(409);
+        expect(errorCode(single)).toBe('run_in_flight');
+      } finally {
+        release();
+      }
+      expect((await held).statusCode).toBe(200);
+    });
+
+    it('AC64: run-all lists an agent whose one-case run is held as refused (run_in_flight)', async () => {
+      const [fresh] = await pg.handle.db.insert(t.workspaces).values({ name: `lock-${Date.now()}` }).returning();
+      const { llm, release } = gatedLLM();
+      const app = await makeApp(llm, fresh!.id);
+      const agentId = await newAgent('openrouter', fresh!.id);
+      await addCases(app, agentId, fresh!.id, [3]);
+      const [only] = await listCases(app, agentId);
+      try {
+        expect((await startCaseRun(app, only!.case.id)).statusCode).toBe(202);
+
+        const res = await app.inject({ method: 'POST', url: '/eval/runs/all', payload: { confirm: true } });
+        expect(res.statusCode).toBe(202);
+        const { started } = res.json() as { started: RunAllEntry[] };
+        expect(started.find((e) => e.agent_id === agentId)).toMatchObject({
+          run_id: null,
+          refused_reason: 'run_in_flight',
+        });
+      } finally {
+        release();
+      }
+      await waitIdle(app, agentId);
+    });
+
+    it('AC63: an agent whose provider has no usable key gets 422 provider_not_configured for a one-case run and a dry run', async () => {
+      const app = await makeApp(); // only openrouter is injected
+      const agentId = await newAgent('openai');
+      const { res, body } = await freeze(app, await newFinding({ agentId, triage: 'accepted' }));
+      expect(res.statusCode).toBe(201);
+
+      const single = await startCaseRun(app, body.id);
+      expect(single.statusCode).toBe(422);
+      expect(errorCode(single)).toBe('provider_not_configured');
+      const dry = await dryRun(app, agentId, aFields(3));
+      expect(dry.statusCode).toBe(422);
+      expect(errorCode(dry)).toBe('provider_not_configured');
+    });
+
+    it('AC65: the suite, one-case and dry-run starts share one 5-per-minute budget', async () => {
+      const app = await makeApp(new ScriptedLLM(), workspaceA, 'development');
+      const noCases = await newAgent();
+      const suiteStart = () => app.inject({ method: 'POST', url: `/agents/${noCases}/eval-runs` });
+      const caseStart = () => startCaseRun(app, crypto.randomUUID());
+      const dryStart = () => dryRun(app, noCases, aFields(3, { input_diff: '@@ -1 +1 @@\n+x' }));
+
+      // Five requests spent across the three routes, none of which reaches a model.
+      expect((await suiteStart()).statusCode).toBe(422);
+      expect((await suiteStart()).statusCode).toBe(422);
+      expect((await caseStart()).statusCode).toBe(404);
+      expect((await caseStart()).statusCode).toBe(404);
+      expect((await dryStart()).statusCode).toBe(422);
+
+      // The 6th POST to any of the three is limited.
+      expect((await suiteStart()).statusCode).toBe(429);
+      expect((await caseStart()).statusCode).toBe(429);
+      expect((await dryStart()).statusCode).toBe(429);
+    });
   });
 });

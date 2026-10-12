@@ -36,6 +36,18 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - an eval IT test cannot count LLM calls through `MockLLMProvider.calls`
+`ScriptedLLM` wraps a fresh `MockLLMProvider` per call, so the instance the test holds never records anything and `llm.calls` stays empty; a "the LLM was not called" assertion on it passes vacuously. Count through the wrapper's own `callCount`.
+**Evidence:** server/test/eval.it.test.ts:58-70
+
+### 2026-10-12 - `config.rateLimit.groupId` does not make several routes share one counter
+The `groupId` only suffixes the rate-limit key. Each route with its own `config.rateLimit` gets its own `LocalStore` (`store.child(...)`), so three routes with the same `groupId` still count separately (5 + 5 + 5, not 15). A shared budget needs one store shared by the routes (a custom `child()` returning itself, registered in `app.ts`) or one encapsulated plugin; `groupId` alone is not enough.
+**Evidence:** server/node_modules/@fastify/rate-limit/index.js:190-196, server/node_modules/@fastify/rate-limit/store/LocalStore.js:46
+
+### 2026-10-12 - a Zod `.optional()` body schema answers 422 to a bodyless POST
+Fastify hands the validator `null` for a missing body, which `.optional()` rejects; use `.nullish()` and pass `req.body ?? undefined` to the service.
+**Evidence:** server/src/modules/eval/routes.ts (`POST /findings/:id/eval-case`)
+
 ### 2026-10-04 — a token-budget trim measured over raw fact fields silently under-counts the real prompt, and a frozen test's fixture sizes are themselves evidence of that bug
 `brief/facts.ts`'s `fitToBudget` summed `countTokens` over each raw field (title, doc path/content,
 finding title/file, file headers) and never counted the system prompt, the injection guard, the

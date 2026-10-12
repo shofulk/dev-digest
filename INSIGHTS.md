@@ -38,6 +38,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - SDD agents cannot work in a separate git worktree: their writes are blocked as "outside the repo"
+`scope-guard.sh` and `implementer-guard.sh` resolve the repo root from `$CLAUDE_PROJECT_DIR`, which is the main checkout, so a `spec-creator`, test-writer or implementer launched with a worktree as cwd has every write refused. Run SDD lanes in the main checkout.
+**Evidence:** .claude/hooks/scope-guard.sh:54,1169
+
 ### 2026-10-03 — summing `usage` over every assistant line of a transcript double-counts tokens: one API response is written as several JSONL lines with the same `usage`
 **Supersedes:** 2026-10-03 entry "implementer runs looked expensive 'because of tests'…" — its numbers (median 24.5M, worst 105M input per implementer run) are the naive per-line sum. Deduplicated by `message.id`, the same 25 runs give median 14.7M and worst 65.7M (`blast-radius`). Its conclusion (cost is turns × context; short lanes are the lever) still holds.
 Claude Code writes each content block (thinking, text, every `tool_use`) of one response as its own `type: "assistant"` line, and each copy carries the full `usage` — one sample session had 158 assistant lines for 82 responses. Count once per `message.id`. Do not hand-roll this again: `node .claude/scripts/harness-usage.mjs` already dedupes and prints per-feature / per-agent / per-run totals.

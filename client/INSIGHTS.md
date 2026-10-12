@@ -36,6 +36,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - the `@devdigest/ui` `SelectInput` and `Textarea` take no `id`, so `<label htmlFor>` cannot bind to them
+Both components render their native element without forwarding `id`, so `getByLabelText` finds nothing (and throws outright when `htmlFor` points at a span or pre). `EvalCaseModal` uses native `<select>`/`<textarea>` where a labelled control is needed. Separately, an `afterEach` that asserts on the DOM must call `cleanup()` first, or the previous test's tree is still mounted.
+**Evidence:** client/src/vendor/ui/kit/Textarea.tsx, client/src/vendor/ui/kit/SelectInput.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
+
 ### 2026-10-04 — a job-stream hook keyed only on the job id never recovers when the server hands back the SAME running job id
 After `onerror` marks the job `failed`, Retry/Generate can resolve with the id of the
 job that is still running (`POST /brief/generate` → `{job_id: <same>, reused: true}`,

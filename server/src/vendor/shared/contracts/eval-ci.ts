@@ -110,7 +110,7 @@ export type EvalExpectation = z.infer<typeof EvalExpectation>;
 
 /** `eval_cases.input_meta` (jsonb, read back): only the source finding is guaranteed. */
 export const EvalCaseMeta = z.object({
-  source_finding_id: z.string(),
+  source_finding_id: z.string().nullish(),
   source_review_id: z.string().nullish(),
   pr_number: z.number().int().nullish(),
   pr_title: z.string().nullish(),
@@ -135,6 +135,8 @@ export const EvalCaseView = z.object({
   last_run_id: z.string().nullish(),
   /** Findings of the newest completed run that matched the expectation; null = never run / errored. */
   last_matched: z.number().int().nullish(),
+  /** A run for this case is pending right now. */
+  running: z.boolean(),
 });
 export type EvalCaseView = z.infer<typeof EvalCaseView>;
 
@@ -165,6 +167,8 @@ export const EvalRunActualOutput = z.object({
   grounding_dropped: z.number().int().nullish(),
   reason: z.string().nullish(),
   finished_at: z.string().nullish(),
+  one_case: z.boolean().nullish(),
+  expectation: EvalExpectation.nullish(),
 });
 export type EvalRunActualOutput = z.infer<typeof EvalRunActualOutput>;
 
@@ -321,6 +325,55 @@ export const EvalRunAllResult = z.object({
   started: z.array(EvalRunAllEntry),
 });
 export type EvalRunAllResult = z.infer<typeof EvalRunAllResult>;
+
+/** Editable fields of an eval case (hand-written, edited, or from a finding). */
+export const EvalCaseFields = z.object({
+  name: z.string(),
+  notes: z.string().nullish(),
+  pr_title: z.string().nullish(),
+  pr_body: z.string().nullish(),
+  input_diff: z.string(),
+  expectation: EvalExpectation,
+});
+export type EvalCaseFields = z.infer<typeof EvalCaseFields>;
+
+/** Body of `POST /findings/:id/eval-case`: the fields without the diff; the type is implied by the verdict. */
+export const EvalCaseFromFindingInput = EvalCaseFields.omit({ input_diff: true }).extend({
+  expectation: EvalExpectation.omit({ type: true }),
+});
+export type EvalCaseFromFindingInput = z.infer<typeof EvalCaseFromFindingInput>;
+
+/** A prefilled, unsaved case built from a finding. */
+export const EvalCaseDraft = z.object({
+  name: z.string(),
+  input_diff: z.string(),
+  input_files: z.array(z.string()),
+  pr_title: z.string().nullable(),
+  pr_body: z.string().nullable(),
+  expectation: EvalExpectation,
+  notes: z.string().nullable(),
+});
+export type EvalCaseDraft = z.infer<typeof EvalCaseDraft>;
+
+/** Response of `GET /findings/:id/eval-case-draft`. */
+export const EvalCaseDraftResponse = z.object({
+  agent_id: z.string(),
+  existing_case: EvalCase.nullable(),
+  draft: EvalCaseDraft.nullable(),
+});
+export type EvalCaseDraftResponse = z.infer<typeof EvalCaseDraftResponse>;
+
+/** Response of `POST /agents/:id/eval-cases/dry-run`: nothing is stored. */
+export const EvalDryRunResult = z.object({
+  pass: z.boolean(),
+  findings: z.array(EvalActualFinding.extend({ matched: z.boolean() })),
+  grounding_kept: z.number().int(),
+  grounding_dropped: z.number().int(),
+  cost_usd: z.number().nullable(),
+  duration_ms: z.number().int(),
+  agent_version: z.number().int(),
+});
+export type EvalDryRunResult = z.infer<typeof EvalDryRunResult>;
 
 // ===========================================================================
 // Compose Review

@@ -7,11 +7,20 @@ import messages from "../../../../../../../../messages/en/eval.json";
 let cases: EvalCaseView[];
 let runs: EvalSuiteRun[];
 const startMutate = vi.fn();
+const startCaseMutate = vi.fn();
 vi.mock("@/lib/hooks/eval", () => ({
   useEvalCases: () => ({ data: cases, isLoading: false, isError: false, refetch: vi.fn() }),
   useEvalRuns: () => ({ data: runs, isLoading: false, isError: false, refetch: vi.fn() }),
   useStartEvalRun: () => ({ mutate: startMutate, isPending: false }),
   useDeleteEvalCase: () => ({ mutate: vi.fn(), isPending: false }),
+  useStartCaseRun: () => ({ mutate: startCaseMutate, isPending: false }),
+  agentRunBusy: (r: EvalSuiteRun[] | undefined, c: EvalCaseView[] | undefined) =>
+    !!r?.some((x) => x.status === "running") || !!c?.some((x) => x.running),
+}));
+vi.mock("@/components/eval-ui/EvalCaseModal", () => ({
+  EvalCaseModal: ({ source }: { source: { kind: string; evalCase?: { id: string } } }) => (
+    <div data-testid="case-modal">{`${source.kind}:${source.evalCase?.id ?? ""}`}</div>
+  ),
 }));
 vi.mock("@/components/eval-ui/CompareModal", () => ({
   CompareModal: ({ runA, runB }: { runA: string; runB: string }) => (
@@ -24,6 +33,7 @@ import { EvalsTab } from "./EvalsTab";
 afterEach(() => {
   cleanup();
   startMutate.mockReset();
+  startCaseMutate.mockReset();
 });
 
 const run = (over: Partial<EvalSuiteRun>): EvalSuiteRun => ({
@@ -69,6 +79,7 @@ const caseView = (id: string, over: Partial<EvalCaseView> = {}): EvalCaseView =>
   },
   last_result: "pass",
   last_run_id: "r1",
+  running: false,
   ...over,
 });
 
@@ -213,6 +224,75 @@ describe("EvalsTab metric tiles", () => {
     runs = [];
     renderTab();
     expect(screen.getByRole("link", { name: "View full dashboard →" })).toHaveAttribute("href", "/eval");
+  });
+});
+
+describe("EvalsTab case actions", () => {
+  const cardOf = (id: string) => screen.getByText(`case-${id}`).closest("[data-testid='eval-case-card']") as HTMLElement;
+  const runBtn = (id: string) => within(cardOf(id)).getByRole("button", { name: "Run" });
+
+  it("opens the case modal as a new case from 'New eval case'", () => {
+    cases = [caseView("1")];
+    runs = [];
+    renderTab();
+    expect(screen.queryByTestId("case-modal")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New eval case" }));
+    expect(screen.getByTestId("case-modal")).toHaveTextContent("new:");
+  });
+
+  it("gives every card Run, Edit and Delete; Edit opens that case, Run starts only that case", () => {
+    cases = [caseView("1"), caseView("2")];
+    runs = [];
+    renderTab();
+    for (const id of ["1", "2"]) {
+      const card = cardOf(id);
+      expect(within(card).getByRole("button", { name: "Run" })).toBeEnabled();
+      expect(within(card).getByRole("button", { name: "Edit" })).toBeInTheDocument();
+      expect(within(card).getByRole("button", { name: "Delete case" })).toBeInTheDocument();
+    }
+
+    fireEvent.click(runBtn("2"));
+    expect(startCaseMutate).toHaveBeenCalledTimes(1);
+    expect(startCaseMutate.mock.calls[0]![0]).toBe("2");
+    expect(startMutate).not.toHaveBeenCalled();
+
+    fireEvent.click(within(cardOf("2")).getByRole("button", { name: "Edit" }));
+    expect(screen.getByTestId("case-modal")).toHaveTextContent("edit:2");
+  });
+
+  it("shows a running case as 'Running…' with its Run disabled", () => {
+    cases = [caseView("1", { running: true }), caseView("2")];
+    runs = [];
+    renderTab();
+    expect(within(cardOf("1")).getByText("Running…")).toBeInTheDocument();
+    expect(runBtn("1")).toBeDisabled();
+  });
+
+  it("shows the refreshed pass status and match count once a case run settles", () => {
+    cases = [caseView("1", { last_result: "pass", last_matched: 1, running: false })];
+    runs = [];
+    renderTab();
+    const card = cardOf("1");
+    expect(within(card).getByRole("img", { name: "pass" })).toBeInTheDocument();
+    expect(within(card).getByText("expected ≥1 finding, got 1")).toBeInTheDocument();
+    expect(within(card).queryByText("Running…")).toBeNull();
+  });
+
+  it("disables Run all evals and every card's Run while a suite runs", () => {
+    cases = [caseView("1"), caseView("2")];
+    runs = [run({ run_id: "live", status: "running", cases_done: 1, cases_total: 2, finished_at: null })];
+    renderTab();
+    expect(runBtn("1")).toBeDisabled();
+    expect(runBtn("2")).toBeDisabled();
+    expect(screen.getByRole("button", { name: /1 \/ 2/ })).toBeDisabled();
+  });
+
+  it("disables Run all evals and every card's Run while one case runs", () => {
+    cases = [caseView("1", { running: true }), caseView("2")];
+    runs = [];
+    renderTab();
+    expect(runBtn("2")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run all evals" })).toBeDisabled();
   });
 });
 

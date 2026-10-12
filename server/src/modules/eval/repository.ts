@@ -26,6 +26,16 @@ export interface InsertEvalCase {
   notes: string | null;
 }
 
+/** The editable columns of a case; `name` through `expectedOutput` are all written together. */
+export interface UpdateEvalCase {
+  name: string;
+  notes: string | null;
+  inputDiff: string;
+  inputFiles: unknown;
+  inputMeta: unknown;
+  expectedOutput: unknown;
+}
+
 /** Columns written when a case finishes (one UPDATE, together with the status). */
 export interface CompleteRowCols {
   pass: boolean;
@@ -79,6 +89,52 @@ export class EvalRepository {
       })
       .returning();
     return row!;
+  }
+
+  /**
+   * Edit a case. In ONE transaction: first pin every older run row of the case that
+   * stores no `expectation` to the case's pre-update `expected_output` (so past
+   * results keep the expectation they were scored with), then write the case.
+   * Never touches `pass` or a metric column. `undefined` when the case is not an
+   * agent case of the workspace.
+   */
+  async updateCase(
+    workspaceId: string,
+    id: string,
+    values: UpdateEvalCase,
+  ): Promise<EvalCaseRow | undefined> {
+    return this.db.transaction(async (tx) => {
+      const inCase = and(
+        eq(t.evalCases.workspaceId, workspaceId),
+        eq(t.evalCases.id, id),
+        eq(t.evalCases.ownerKind, 'agent'),
+      );
+      await tx
+        .update(t.evalRuns)
+        .set({
+          actualOutput: sql`${t.evalRuns.actualOutput} || jsonb_build_object('expectation', (select ${t.evalCases.expectedOutput} from ${t.evalCases} where ${inCase}))`,
+        })
+        .where(
+          and(
+            eq(t.evalRuns.caseId, id),
+            sql`${t.evalRuns.actualOutput}->'expectation' IS NULL`,
+            sql`exists (select 1 from ${t.evalCases} where ${inCase})`,
+          ),
+        );
+      const [row] = await tx
+        .update(t.evalCases)
+        .set({
+          name: values.name,
+          notes: values.notes,
+          inputDiff: values.inputDiff,
+          inputFiles: values.inputFiles,
+          inputMeta: values.inputMeta,
+          expectedOutput: values.expectedOutput,
+        })
+        .where(inCase)
+        .returning();
+      return row;
+    });
   }
 
   async listCases(workspaceId: string, agentId: string): Promise<EvalCaseRow[]> {

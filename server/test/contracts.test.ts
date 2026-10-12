@@ -28,6 +28,13 @@ import {
   EvalDashboardOverview,
   EvalRunAllInput,
   EvalRunAllResult,
+  EvalCaseMeta,
+  EvalCaseView,
+  EvalCaseFields,
+  EvalCaseFromFindingInput,
+  EvalCaseDraft,
+  EvalCaseDraftResponse,
+  EvalDryRunResult,
 } from '@devdigest/shared';
 
 /**
@@ -379,6 +386,74 @@ describe('eval pipeline contracts', () => {
       finished_at: '2026-10-11T10:01:00.000Z',
     });
     expect(full.grounding_dropped).toBe(2);
+  });
+
+  it('rev-6 case-editor contracts: nullish jsonb fields, required running, new shapes', () => {
+    expect(EvalCaseMeta.safeParse({}).success).toBe(true);
+    const out = EvalRunActualOutput.parse({
+      run_id: 'r',
+      agent_id: 'a',
+      agent_version: 1,
+      status: 'pending',
+    });
+    expect(out.one_case).toBeUndefined();
+    expect(out.expectation).toBeUndefined();
+    expect(EvalRunActualOutput.safeParse({ ...out, one_case: true, expectation }).success).toBe(true);
+    const view = {
+      case: { id: 'c1', owner_kind: 'agent', owner_id: 'ag1', name: 'n', input_diff: '', input_files: null, input_meta: null, expected_output: expectation },
+      expectation,
+      last_result: 'never_run',
+    };
+    expect(EvalCaseView.safeParse(view).success).toBe(false);
+    expect(EvalCaseView.safeParse({ ...view, running: false }).success).toBe(true);
+    const fields = { name: '', input_diff: '', expectation };
+    expect(EvalCaseFields.safeParse(fields).success).toBe(true);
+    const { type: _type, ...noType } = expectation;
+    expect(EvalCaseFromFindingInput.safeParse({ name: 'n', expectation: noType }).success).toBe(true);
+    expect(EvalCaseDraftResponse.safeParse({ agent_id: 'a', existing_case: null, draft: null }).success).toBe(true);
+    const draft = { name: 'n', input_diff: 'd', input_files: [], pr_title: null, pr_body: null, expectation, notes: null };
+    expect(EvalCaseDraft.safeParse(draft).success).toBe(true);
+    expect(
+      EvalDryRunResult.safeParse({
+        pass: true,
+        findings: [],
+        grounding_kept: 0,
+        grounding_dropped: 0,
+        cost_usd: null,
+        duration_ms: 1,
+        agent_version: 1,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rev-6 T33: null source id, bogus type, missing expectation, omitted keys, draft response, dry-run matched', () => {
+    expect(EvalCaseMeta.safeParse({ source_finding_id: null }).success).toBe(true);
+    expect(EvalCaseFields.safeParse({ name: 'n', input_diff: 'd', expectation: { ...expectation, type: 'bogus' } }).success).toBe(false);
+    expect(EvalCaseFields.safeParse({ name: 'n', input_diff: 'd' }).success).toBe(false);
+
+    const { type: _t, ...noType } = expectation;
+    const parsed = EvalCaseFromFindingInput.parse({ name: 'n', input_diff: 'd', expectation: { ...noType, type: 'must_find' } });
+    expect(parsed).not.toHaveProperty('input_diff');
+    expect(parsed.expectation).not.toHaveProperty('type');
+
+    const existing = {
+      id: 'c1',
+      owner_kind: 'agent',
+      owner_id: 'ag1',
+      name: 'n',
+      input_diff: 'd',
+      input_files: null,
+      input_meta: null,
+      expected_output: expectation,
+    };
+    const draft = { name: 'n', input_diff: 'd', input_files: [], pr_title: null, pr_body: null, expectation, notes: null };
+    expect(EvalCaseDraftResponse.safeParse({ agent_id: 'a', existing_case: null, draft }).success).toBe(true);
+    expect(EvalCaseDraftResponse.safeParse({ agent_id: 'a', existing_case: existing, draft: null }).success).toBe(true);
+
+    const finding = { file: 'src/a.ts', start_line: 1, end_line: 2, severity: 'CRITICAL', category: 'security', title: 't' };
+    const dry = { pass: true, grounding_kept: 1, grounding_dropped: 0, cost_usd: null, duration_ms: 1, agent_version: 1 };
+    expect(EvalDryRunResult.safeParse({ ...dry, findings: [{ ...finding, matched: true }] }).success).toBe(true);
+    expect(EvalDryRunResult.safeParse({ ...dry, findings: [finding] }).success).toBe(false);
   });
 
   it('EvalExpectation rejects an unknown type; EvalCaseCreated requires created', () => {

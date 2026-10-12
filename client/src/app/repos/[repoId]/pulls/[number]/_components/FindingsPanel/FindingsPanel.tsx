@@ -6,15 +6,18 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Toggle, EmptyState } from "@devdigest/ui";
 import type { FindingRecord, Severity } from "@devdigest/shared";
-import { FindingCard } from "../FindingCard";
+import { FindingCard, evalSourceFor } from "../FindingCard";
 import { useFindingAction } from "../../../../../../../lib/hooks/reviews";
-import { useCreateEvalCase } from "../../../../../../../lib/hooks/eval";
+import { useEvalCaseDraft } from "../../../../../../../lib/hooks/eval";
 import { ApiError } from "../../../../../../../lib/api";
 import { caseErrorKey } from "../../../../../../../lib/eval-metrics";
 import { notify } from "../../../../../../../lib/toast";
+import { EvalCaseModal, type EvalCaseModalSource } from "../../../../../../../components/eval-ui/EvalCaseModal";
 import { KEY_TO_ACTION } from "./constants";
 import { visibleFindings } from "./helpers";
 import { s } from "./styles";
+
+type EvalModalState = { agentId: string; source: EvalCaseModalSource; opener: HTMLElement };
 
 export function FindingsPanel({
   findings,
@@ -32,7 +35,8 @@ export function FindingsPanel({
 }) {
   const t = useTranslations("prReview");
   const action = useFindingAction();
-  const evalCase = useCreateEvalCase();
+  const evalDraft = useEvalCaseDraft();
+  const [evalModal, setEvalModal] = React.useState<EvalModalState | null>(null);
   const [hideLow, setHideLow] = React.useState(false);
   const [focusIdx, setFocusIdx] = React.useState(0);
 
@@ -85,11 +89,14 @@ export function FindingsPanel({
               repoFullName={repoFullName}
               headSha={headSha}
               onAction={(act) => action.mutate({ findingId: f.id, action: act, prId })}
-              evalPending={evalCase.isPending}
-              onEvalCase={() =>
-                evalCase.mutate(f.id, {
-                  onSuccess: (r) =>
-                    notify.success(r.created ? t("finding.evalCaseCreated") : t("finding.evalCaseExists")),
+              evalPending={evalDraft.isPending}
+              onEvalCase={(opener) =>
+                evalDraft.mutate(f.id, {
+                  onSuccess: (r) => {
+                    const source = evalSourceFor(f.id, r);
+                    if (source) setEvalModal({ agentId: r.agent_id, source, opener });
+                    else notify.error(t(caseErrorKey(undefined)));
+                  },
                   onError: (e) => notify.error(t(caseErrorKey(e instanceof ApiError ? e.code : undefined))),
                 })
               }
@@ -97,6 +104,14 @@ export function FindingsPanel({
           ))
         )}
       </div>
+      {evalModal && (
+        <EvalCaseModal
+          agentId={evalModal.agentId}
+          source={evalModal.source}
+          returnFocusTo={evalModal.opener}
+          onClose={() => setEvalModal(null)}
+        />
+      )}
     </div>
   );
 }

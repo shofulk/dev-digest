@@ -21,8 +21,16 @@ import {
   startErrorKey,
   toggleSelected,
 } from "@/lib/eval-metrics";
-import { useDeleteEvalCase, useEvalCases, useEvalRuns, useStartEvalRun } from "@/lib/hooks/eval";
+import {
+  agentRunBusy,
+  useDeleteEvalCase,
+  useEvalCases,
+  useEvalRuns,
+  useStartCaseRun,
+  useStartEvalRun,
+} from "@/lib/hooks/eval";
 import { CompareModal } from "@/components/eval-ui/CompareModal";
+import { EvalCaseModal, type EvalCaseModalSource } from "@/components/eval-ui/EvalCaseModal";
 import { MetricTile } from "@/components/eval-ui/MetricTile";
 import { locationOf, passingCounts } from "./helpers";
 import { s } from "./styles";
@@ -47,6 +55,8 @@ export function EvalsTab({ agentId }: { agentId: string }) {
   const runs = useEvalRuns(agentId);
   const start = useStartEvalRun(agentId);
   const del = useDeleteEvalCase(agentId);
+  const runCase = useStartCaseRun(agentId);
+  const [modal, setModal] = React.useState<{ source: EvalCaseModalSource; opener: HTMLElement } | null>(null);
 
   // Selection belongs to one agent: reset during render, never in an effect.
   const [selected, setSelected] = React.useState<string[]>([]);
@@ -62,11 +72,20 @@ export function EvalsTab({ agentId }: { agentId: string }) {
   const running = runList.find((r) => r.status === "running") ?? null;
   const { latest, previous } = latestTwoCompleted(runList);
   const dash = t("suite.metricEmpty");
+  const busy = agentRunBusy(runList, caseList);
   const counts = passingCounts(caseList.map((c) => c.last_result));
   const pair = canCompare(selected) ? orderPair(runList, [selected[0]!, selected[1]!]) : null;
 
   const onRun = () =>
     start.mutate(undefined, {
+      onError: (e) => {
+        const code = e instanceof ApiError ? e.code : undefined;
+        notify.error(t(startErrorKey(code)));
+      },
+    });
+
+  const onRunCase = (caseId: string) =>
+    runCase.mutate(caseId, {
       onError: (e) => {
         const code = e instanceof ApiError ? e.code : undefined;
         notify.error(t(startErrorKey(code)));
@@ -134,9 +153,17 @@ export function EvalsTab({ agentId }: { agentId: string }) {
             <Button
               kind="secondary"
               size="sm"
+              icon="Plus"
+              onClick={(e) => setModal({ source: { kind: "new" }, opener: e.currentTarget })}
+            >
+              {t("caseEditor.newCase")}
+            </Button>
+            <Button
+              kind="secondary"
+              size="sm"
               icon="Play"
               loading={start.isPending}
-              disabled={running !== null || caseList.length === 0 || start.isPending}
+              disabled={busy || caseList.length === 0 || start.isPending}
               onClick={onRun}
             >
               {running
@@ -163,6 +190,7 @@ export function EvalsTab({ agentId }: { agentId: string }) {
                 e && (c.last_result === "pass" || c.last_result === "fail")
                   ? t(e.type === "must_find" ? "suite.expectedFind" : "suite.expectedNone", { got: c.last_matched ?? 0 })
                   : t(RESULT_KEYS[c.last_result]);
+              const metaLine = c.running ? t("evalsTab.running") : meta;
               return (
                 <div key={c.case.id} data-testid="eval-case-card" style={s.caseCard}>
                   <span role="img" aria-label={t(RESULT_KEYS[c.last_result])} style={{ ...s.statusIcon, color: status.color }}>
@@ -172,7 +200,7 @@ export function EvalsTab({ agentId }: { agentId: string }) {
                     <span className="mono" style={s.caseName}>
                       {c.case.name}
                     </span>
-                    <span style={s.caseMeta}>{meta}</span>
+                    <span style={s.caseMeta}>{metaLine}</span>
                     {path && (
                       <span className="mono" style={s.casePath} title={path}>
                         {path}
@@ -186,6 +214,23 @@ export function EvalsTab({ agentId }: { agentId: string }) {
                       </span>
                     )}
                     {e && <span style={s.chip}>{t(e.type === "must_find" ? "suite.typeMustFind" : "suite.typeMustNotFlag")}</span>}
+                    <Button
+                      kind="ghost"
+                      size="sm"
+                      icon="Play"
+                      aria-label={t("evalsTab.run")}
+                      title={t("evalsTab.run")}
+                      disabled={busy || c.running || runCase.isPending}
+                      onClick={() => onRunCase(c.case.id)}
+                    />
+                    <Button
+                      kind="ghost"
+                      size="sm"
+                      icon="Edit"
+                      aria-label={t("evalsTab.edit")}
+                      title={t("evalsTab.edit")}
+                      onClick={(ev) => setModal({ source: { kind: "edit", evalCase: c.case }, opener: ev.currentTarget })}
+                    />
                     <Button
                       kind="ghost"
                       size="sm"
@@ -257,6 +302,15 @@ export function EvalsTab({ agentId }: { agentId: string }) {
           </table>
         )}
       </section>
+
+      {modal && (
+        <EvalCaseModal
+          agentId={agentId}
+          source={modal.source}
+          returnFocusTo={modal.opener}
+          onClose={() => setModal(null)}
+        />
+      )}
 
       {comparing && pair && (
         <CompareModal runA={pair[0]} runB={pair[1]} onClose={() => setComparing(false)} />
