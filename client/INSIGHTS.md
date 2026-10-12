@@ -330,6 +330,15 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 — an SSE frame sent as `event: error` also fires `EventSource.onerror`
+The server frames every `RunEvent` with `event: <kind>`, and one kind is `error`. A browser
+dispatches that frame as an `error`-type event, so it reaches `es.onerror` as well as
+`addEventListener("error")`. An `onerror` that closes the source then kills the whole stream on
+the first agent error line. Tell them apart: a server frame is a `MessageEvent` with `data`; a
+transport failure has none. A test double must dispatch a named `error` frame to `onerror` too,
+or it cannot see this.
+**Evidence:** `client/src/lib/hooks/multi-agent.ts` (`useMultiRunEvents`), `client/src/lib/hooks/multi-agent-events.test.ts`
+
 ### 2026-10-12 - results-page tests must wrap the real `Providers`, and a file that mocks `@/lib/repo-context` must export `RepoProvider` too
 A results-view test with a hand-rolled QueryClient wrapper hid the real provider stack (intl, query client, repo context), so hook and error-toast behaviour differed from production. Wrap the real `Providers`. Then, if the same file does `vi.mock("@/lib/repo-context", ...)`, the factory must also return `RepoProvider`, or vitest throws `No "RepoProvider" export is defined on the mock` when `Providers` renders.
 **Evidence:** client/src/test/multi-agent-results-intl.tsx, client/src/providers.tsx

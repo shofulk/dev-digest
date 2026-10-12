@@ -537,6 +537,13 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 - correction: the `pg_sleep` race-trigger entry cites the wrong file and sleep
+**Supersedes:** the 2026-10-12 entry "a plain `Promise.all` of 5 injects does not reproduce a
+check-then-insert race" in its Evidence and duration only — the technique stands. The tests are
+in `server/test/multi-agent-concurrency.it.test.ts` (D15 on `agent_runs`, D16 on `memory`), and
+they sleep 0.3 s. Both were shown red with their advisory lock removed.
+**Evidence:** `server/test/multi-agent-concurrency.it.test.ts` (D15, D16)
+
 ### 2026-10-12 - a plain `Promise.all` of 5 injects does not reproduce a check-then-insert race; a temporary `pg_sleep` trigger does
 Five concurrent `app.inject` retries each finished their check and insert in a few ms on a local Postgres, so the unlocked code passed the race test. To make the window deterministic, create a `BEFORE INSERT ON agent_runs` trigger that calls `pg_sleep(0.2)` inside the test, fire the concurrent injects, and drop the trigger in `finally` (a leaked trigger slows every later `*.it.test.ts` in the same container). Prove the test is not vacuous by running it once against the unlocked code: it must fail.
 **Evidence:** server/test/multi-agent.it.test.ts

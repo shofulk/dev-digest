@@ -242,11 +242,14 @@ export class MultiRunService {
   }
 
   /** 404 unless the multi-run is in the workspace and every id is one of its runs. */
-  async assertRunsInMultiRun(workspaceId: string, id: string, runIds: string[]): Promise<void> {
+  async assertRunsInMultiRun(workspaceId: string, id: string, runIds: string[]): Promise<string[]> {
     const multi = await this.repo.getMultiRun(workspaceId, id);
     if (!multi) throw new NotFoundError('Multi-agent run not found');
-    const known = new Set((await this.repo.runsForMultiRun(workspaceId, id)).map((r) => r.run.id));
-    if (runIds.some((r) => !known.has(r))) throw new NotFoundError('Run not found');
+    const status = new Map((await this.repo.runsForMultiRun(workspaceId, id)).map((r) => [r.run.id, r.run.status]));
+    if (runIds.some((r) => !status.has(r))) throw new NotFoundError('Run not found');
+    // Runs no longer `running` in the DB: the stream must not wait for a done signal this
+    // process may never send (a seeded run, or one finished before a restart).
+    return runIds.filter((r) => status.get(r) !== 'running');
   }
 
   /** The newest multi-runs of a repo (or of one PR), with status and totals. */

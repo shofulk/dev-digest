@@ -64,16 +64,19 @@ export async function* runEventStream(
  * One SSE stream for several runs of a multi-run. Same semantics as
  * `runEventStream` for every id at once (replay first, drain before honouring
  * done, release every listener in `finally`). Events are framed with
- * `id: "<runId>:<seq>"`; the stream ends once every id has completed.
+ * `id: "<runId>:<seq>"`; the stream ends once every id has completed. `settledIds`
+ * (already finished in the DB) count as completed up front, after their buffer is replayed.
  */
 export async function* mergedRunEventStream(
   bus: RunBus,
   runIds: string[],
+  settledIds: string[] = [],
 ): AsyncGenerator<{ id: string; event: string; data: string }> {
   const ids = [...new Set(runIds)];
   const queue: RunEvent[] = [];
   let resolve: (() => void) | null = null;
-  let remaining = ids.length;
+  // A Set, not a counter: an id can be both settled in the DB and signalled done by the bus.
+  const done = new Set(settledIds.filter((id) => ids.includes(id)));
 
   const releases: (() => void)[] = [];
   for (const runId of ids) {
@@ -85,7 +88,7 @@ export async function* mergedRunEventStream(
     );
     releases.push(
       bus.onDone(runId, () => {
-        remaining -= 1;
+        done.add(runId);
         resolve?.();
       }),
     );
@@ -94,7 +97,7 @@ export async function* mergedRunEventStream(
   try {
     while (true) {
       if (queue.length === 0) {
-        if (remaining <= 0) break;
+        if (done.size >= ids.length) break;
         await new Promise<void>((r) => (resolve = r));
         resolve = null;
         continue;

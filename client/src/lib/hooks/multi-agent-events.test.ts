@@ -14,7 +14,7 @@ import { useMultiRunEvents } from "./multi-agent";
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onmessage: ((ev: MessageEvent) => void) | null = null;
-  onerror: (() => void) | null = null;
+  onerror: ((ev?: Event) => void) | null = null;
   closed = false;
   constructor(public url: string) {
     FakeEventSource.instances.push(this);
@@ -30,9 +30,11 @@ class FakeEventSource {
     this.onmessage?.({ data: JSON.stringify({ t: "00.00", seq: 1, ...e }) } as MessageEvent);
   }
   /** A frame sent with `event: <kind>`: a browser dispatches it to that kind's listeners only, never to onmessage. */
-  emitNamed(e: { runId: string; kind: string; msg: string }) {
-    const ev = { data: JSON.stringify({ t: "00.00", seq: 1, ...e }) } as MessageEvent;
+  /*  As in a browser, a frame named `error` is also an `error`-type event, so it reaches onerror too. */
+  emitNamed(e: { runId: string; kind: string; msg: string; seq?: number }) {
+    const ev = new MessageEvent(e.kind, { data: JSON.stringify({ t: "00.00", seq: 1, ...e }) });
     for (const fn of this.listeners.get(e.kind) ?? []) fn(ev);
+    if (e.kind === "error") this.onerror?.(ev);
   }
 }
 
@@ -92,6 +94,26 @@ describe("useMultiRunEvents", () => {
     act(() => es.emitNamed({ runId: "r1", kind: "error", msg: "boom" }));
     expect(result.current.get("r1")?.map((e) => e.msg)).toEqual(["step one", "read_file", "done", "boom"]);
     expect(notifyError).toHaveBeenCalledWith("boom");
+  });
+
+  it("C14: a server `error` frame (an agent's log line) does not close the shared stream", () => {
+    const { result, spy } = setup({ id: "mr1", ids: ["r1", "r2"] });
+    const es = open()[0]!;
+    act(() => es.emitNamed({ runId: "r1", kind: "error", msg: "intent failed" }));
+    expect(es.closed).toBe(false);
+    expect(spy).not.toHaveBeenCalledWith({ queryKey: ["multi-agent-run", "mr1"] });
+    act(() => es.emitNamed({ runId: "r2", kind: "info", msg: "still live" }));
+    expect(result.current.get("r2")?.map((e) => e.msg)).toEqual(["still live"]);
+  });
+
+  it("C14: an error replayed by the reopened stream after the id list changes is not toasted again", () => {
+    const { rerender } = setup({ id: "mr1", ids: ["r1", "r2"] });
+    act(() => open()[0]!.emitNamed({ runId: "r2", kind: "error", msg: "intent failed", seq: 3 }));
+    expect(notifyError).toHaveBeenCalledTimes(1);
+    rerender({ id: "mr1", ids: ["r2"] });
+    // the server replays r2's buffer on subscribe
+    act(() => open()[0]!.emitNamed({ runId: "r2", kind: "error", msg: "intent failed", seq: 3 }));
+    expect(notifyError).toHaveBeenCalledTimes(1);
   });
 
   it("C14: an error event raises a toast", () => {

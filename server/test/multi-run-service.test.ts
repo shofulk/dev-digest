@@ -224,9 +224,18 @@ describe('MultiRunService.assertRunsInMultiRun (D17)', () => {
       { run: { id: R2, agentId: A2, status: 'done' }, agentName: 'y' },
     ]);
 
-  it('D17: resolves when every id is a run of the multi-run', async () => {
+  it('D17: resolves when every id is a run of the multi-run, returning the ids no longer running in the DB', async () => {
     const { svc } = build({ repo: { runsForMultiRun: two() } });
-    await expect(svc.assertRunsInMultiRun(WS, MULTI, [R1, R2])).resolves.toBeUndefined();
+    await expect(svc.assertRunsInMultiRun(WS, MULTI, [R1, R2])).resolves.toEqual([R1, R2]);
+    const mixed = build({
+      repo: {
+        runsForMultiRun: vi.fn(async () => [
+          { run: { id: R1, agentId: A1, status: 'running' }, agentName: 'x' },
+          { run: { id: R2, agentId: A2, status: 'failed' }, agentName: 'y' },
+        ]),
+      },
+    });
+    await expect(mixed.svc.assertRunsInMultiRun(WS, MULTI, [R1, R2])).resolves.toEqual([R2]);
   });
 
   it('D17: an id that is not a run of the multi-run rejects with NotFoundError', async () => {

@@ -131,6 +131,9 @@ export function useMultiRunEvents(
   const [shown, setShown] = React.useState({ key, events: NO_EVENTS });
   // Reset during render (not in the effect): the log of a previous id list is not this list's.
   if (shown.key !== key) setShown({ key, events: NO_EVENTS });
+  // `${runId}:${seq}` of every error already toasted. It outlives id-list changes: a reopened
+  // stream replays each run's buffer, and a replayed error must not toast again.
+  const toasted = React.useRef(new Set<string>());
 
   React.useEffect(() => {
     if (!multiRunId || key === "") return;
@@ -145,7 +148,11 @@ export function useMultiRunEvents(
           return { key, events: next };
         });
         // A runtime agent failure is a stream event, not a query error: notify here (as useRunEvents).
-        if (parsed.kind === "error" && parsed.msg) notify.error(parsed.msg);
+        const seen = `${parsed.runId}:${parsed.seq}`;
+        if (parsed.kind === "error" && parsed.msg && !toasted.current.has(seen)) {
+          toasted.current.add(seen);
+          notify.error(parsed.msg);
+        }
       } catch {
         /* ignore non-JSON keepalive frames (and dataless native error events) */
       }
@@ -154,7 +161,11 @@ export function useMultiRunEvents(
     for (const kind of ["info", "tool", "result", "error"]) {
       es.addEventListener(kind, onMsg as EventListener);
     }
-    es.onerror = () => {
+    es.onerror = (ev) => {
+      // A frame the server sent with `event: error` (an agent's error log line) is also an
+      // `error`-type event: it carries data and the stream is still healthy. Only a transport
+      // failure (no data) closes the stream.
+      if (ev instanceof MessageEvent && ev.data) return;
       es.close();
       void qc.invalidateQueries({ queryKey: ["multi-agent-run", multiRunId] });
     };

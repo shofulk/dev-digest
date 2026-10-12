@@ -93,7 +93,7 @@ cleanup() {
   log "tearing down hermetic e2e stack"
   kill_tree "$WEB_PID"
   kill_tree "$SERVER_PID"
-  [ -n "$NEXT_ENV_SAVED" ] && cp "$NEXT_ENV_SAVED" client/next-env.d.ts 2>/dev/null || true
+  [ -s "$NEXT_ENV_SAVED" ] && cp "$NEXT_ENV_SAVED" client/next-env.d.ts 2>/dev/null || true
   # Backstop: reap whatever still holds the ISOLATED ports (never the dev stack's
   # 3000/3001 — only the alt ports this script started).
   for port in "$WEB_PORT" "$API_PORT"; do
@@ -267,8 +267,11 @@ esac
 # client/.next-e2e, so a `pnpm --dir client dev` running from the same checkout
 # keeps client/.next and the two never clobber each other.
 log "starting web on :$WEB_PORT"
-NEXT_ENV_SAVED="$(mktemp -t devdigest-e2e-next-env.XXXXXX)"
-cp client/next-env.d.ts "$NEXT_ENV_SAVED"
+# Publish the path only once the copy is complete: an exit in between must not make
+# cleanup restore an empty file over the tracked one.
+next_env_tmp="$(mktemp -t devdigest-e2e-next-env.XXXXXX)"
+cp client/next-env.d.ts "$next_env_tmp"
+NEXT_ENV_SAVED="$next_env_tmp"
 (cd client && DEVDIGEST_NEXT_DIST_DIR=.next-e2e pnpm exec next dev -p "$WEB_PORT") &
 WEB_PID=$!
 log "waiting for web :$WEB_PORT"

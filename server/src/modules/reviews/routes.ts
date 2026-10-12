@@ -217,8 +217,8 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     { schema: { params: IdParams, querystring: MultiRunEventsQuery }, config: { rateLimit: false } },
     async (req, reply) => {
       const { workspaceId } = await getContext(container, req);
-      await multiRuns.assertRunsInMultiRun(workspaceId, req.params.id, req.query.run_ids);
-      reply.sse(mergedRunEventStream(container.runBus, req.query.run_ids));
+      const settled = await multiRuns.assertRunsInMultiRun(workspaceId, req.params.id, req.query.run_ids);
+      reply.sse(mergedRunEventStream(container.runBus, req.query.run_ids, settled));
     },
   );
 

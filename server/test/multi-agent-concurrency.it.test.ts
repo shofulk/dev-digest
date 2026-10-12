@@ -134,9 +134,28 @@ d('multi-agent concurrency and shared stream (Testcontainers pg)', () => {
       });
       const findingId = seeded.runs[0]!.findingIds[0]!;
 
-      const responses = await Promise.all(
-        Array.from({ length: 5 }, () => env.app.inject({ method: 'POST', url: `/findings/${findingId}/learn` })),
+      // Same R20 technique as D15: plain concurrent injects serialise on their own, so a BEFORE
+      // INSERT trigger holds every new `learning` row of this finding for 300 ms. Each request
+      // then reads "no row yet" before the first insert commits, unless a lock taken before
+      // that read serialises them.
+      const fn = `slow_learn_insert_${findingId.replaceAll('-', '')}`;
+      await env.db.execute(
+        sql.raw(`create function ${fn}() returns trigger language plpgsql as $$
+          begin
+            if new.kind = 'learning' and new.sources @> '[{"context":"finding:${findingId}"}]'::jsonb then perform pg_sleep(0.3); end if;
+            return new;
+          end $$`),
       );
+      await env.db.execute(sql.raw(`create trigger ${fn} before insert on memory for each row execute function ${fn}()`));
+      let responses: Awaited<ReturnType<typeof env.app.inject>>[];
+      try {
+        responses = await Promise.all(
+          Array.from({ length: 5 }, () => env.app.inject({ method: 'POST', url: `/findings/${findingId}/learn` })),
+        );
+      } finally {
+        await env.db.execute(sql.raw(`drop trigger if exists ${fn} on memory`));
+        await env.db.execute(sql.raw(`drop function if exists ${fn}()`));
+      }
       expect(responses.map((r) => r.statusCode).sort()).toEqual([200, 200, 200, 200, 201]);
       const ids = new Set(responses.map((r) => (r.json() as { id: string }).id));
       expect(ids.size).toBe(1);
@@ -243,6 +262,24 @@ d('multi-agent concurrency and shared stream (Testcontainers pg)', () => {
       const seen = new Set(frames.map((f) => f.runId));
       expect(seen.has(runIds[0]!)).toBe(true);
       expect(seen.has(runIds[1]!)).toBe(true);
+    });
+
+    it('D17: a run that is already settled in the DB but unknown to this process (seeded, or after a restart) ends the stream instead of holding it open', async () => {
+      const { pr } = await newRepoPr(env.db, env.workspaceA);
+      const agent = await newAgent(env.db, env.workspaceA);
+      const seeded = await seedMultiRun(env.db, {
+        workspaceId: env.workspaceA,
+        prId: pr.id,
+        runs: [{ agentId: agent.id, status: 'done' }],
+      });
+      const runId = seeded.runs[0]!.runId;
+      const timedOut = Symbol('timed out');
+      const res = await Promise.race([
+        events(seeded.multiRunId, [runId]),
+        new Promise<typeof timedOut>((r) => setTimeout(() => r(timedOut), 3000)),
+      ]);
+      expect(res).not.toBe(timedOut);
+      expect((res as Awaited<ReturnType<typeof events>>).statusCode).toBe(200);
     });
 
     it('D17: a run id from another multi-run answers 404 "Run not found"; another workspace answers 404', async () => {
