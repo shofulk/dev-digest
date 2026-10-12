@@ -44,6 +44,14 @@ export class ReviewRepository {
     return pullRepo.getPrFiles(this.db, prId);
   }
 
+  /** Replace a PR's imported files (used when a run targets a PR whose page was never opened). */
+  replacePrFiles(
+    prId: string,
+    files: { path: string; additions: number; deletions: number; patch: string | null }[],
+  ): Promise<void> {
+    return pullRepo.replacePrFiles(this.db, prId, files);
+  }
+
   // ---- reviews + findings -------------------------------------------------
 
   insertReview(values: {

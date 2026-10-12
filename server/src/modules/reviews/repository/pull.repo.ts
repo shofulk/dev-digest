@@ -34,6 +34,18 @@ export async function getRepo(
   return row;
 }
 
+/** Replace a PR's imported files (the same rows GET /pulls/:id writes), in one transaction. */
+export async function replacePrFiles(
+  db: Db,
+  prId: string,
+  files: { path: string; additions: number; deletions: number; patch: string | null }[],
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.delete(t.prFiles).where(eq(t.prFiles.prId, prId));
+    if (files.length > 0) await tx.insert(t.prFiles).values(files.map((f) => ({ prId, ...f })));
+  });
+}
+
 export async function getPrFiles(
   db: Db,
   prId: string,
