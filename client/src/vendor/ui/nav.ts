@@ -44,6 +44,7 @@ export const NAV: NavGroup[] = [
         href: "/repos/:repoId/context",
         gKey: "x",
       },
+      { key: "eval", label: "Eval Dashboard", icon: "Gauge", href: "/eval" },
     ],
   },
 ];

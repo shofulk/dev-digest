@@ -44,7 +44,7 @@ module.exports = {
         'plain arguments and the Logger port instead.',
       severity: 'error',
       from: { path: '^src/', pathNot: EDGE },
-      to: { dependencyTypes: ['npm'], path: '^(fastify|@fastify/|fastify-)' },
+      to: { dependencyTypes: ['npm'], path: 'node_modules/(fastify|@fastify/[^/]+|fastify-[^/]+)/' },
     },
     {
       name: 'no-orm-outside-persistence',

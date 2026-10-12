@@ -1,0 +1,24 @@
+{
+  "name": "Eval dashboard and the agent Evals tab render on a fresh seed",
+  "description": "Read-only and data-independent: the seed has no agent-owned review, so no eval case can exist. Opens the Eval Dashboard from the sidebar and checks its subtitle and the 'Run all agents' button, then opens the Security Reviewer Evals tab and checks the 'Run all evals' button. Never changes triage state or starts a run.",
+  "steps": [
+    { "cmd": ["open", "{BASE}/agents"], "label": "load the agents page" },
+    { "cmd": ["wait", "--url", "/agents"], "label": "agents route reached" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "agents fetch settles" },
+    { "cmd": ["find", "text", "Eval Dashboard", "click"], "label": "open the dashboard from the sidebar" },
+    { "cmd": ["wait", "--url", "/eval"], "label": "eval dashboard route reached" },
+    { "cmd": ["wait", "--text", "Recall, precision and citation accuracy per agent, scored by code"], "label": "dashboard subtitle renders (not uppercased)" },
+    { "cmd": ["wait", "--text", "Run all agents"], "label": "the Run all agents button renders (never clicked)" },
+    { "cmd": ["open", "{BASE}/agents"], "label": "back to the agents page" },
+    { "cmd": ["wait", "--text", "Security Reviewer"], "label": "seeded agent card is visible" },
+    { "cmd": ["find", "text", "Security Reviewer", "click"], "label": "open the agent editor" },
+    { "cmd": ["wait", "--url", "/agents/"], "label": "agent editor route reached" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Evals"], "label": "switch to the Evals tab" },
+    { "cmd": ["wait", "--url", "tab=evals"], "label": "tab is reflected in the URL" },
+    { "cmd": ["wait", "--text", "Run all evals"], "label": "the Run all evals button renders" },
+    { "cmd": ["find", "role", "button", "click", "--name", "New eval case"], "label": "open the new eval case modal" },
+    { "cmd": ["wait", "--text", "Run case"], "label": "the modal footer renders its Run case button (never clicked)" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Cancel"], "label": "cancel the untouched modal, nothing is saved" },
+    { "cmd": ["wait", "--text", "Run all evals"], "label": "back on the Evals tab" }
+  ]
+}

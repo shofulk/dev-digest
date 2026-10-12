@@ -36,6 +36,14 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 - the kit `Modal` neither moves focus into the dialog nor traps it, and the host page's window shortcuts keep firing under it
+`@devdigest/ui` `Modal` renders `role="dialog"` but leaves focus where it was, so Tab walks the page behind the backdrop, and any `window` keydown handler on the host page still runs. `FindingsPanel`'s j/k/a/d triage shortcuts dismissed the finding behind an open `EvalCaseModal` when `d` was pressed on a focused button or `<select>` (its guard skipped only INPUT/TEXTAREA). A modal mounted over a page with window shortcuts must set its own initial focus and trap Tab, and the host handler must return early while the modal is open (and skip SELECT, contentEditable and `[role=dialog]` targets).
+**Evidence:** client/src/vendor/ui/kit/Modal.tsx, client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel/FindingsPanel.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
+
+### 2026-10-12 - the `@devdigest/ui` `SelectInput` and `Textarea` take no `id`, so `<label htmlFor>` cannot bind to them
+Both components render their native element without forwarding `id`, so `getByLabelText` finds nothing (and throws outright when `htmlFor` points at a span or pre). `EvalCaseModal` uses native `<select>`/`<textarea>` where a labelled control is needed. Separately, an `afterEach` that asserts on the DOM must call `cleanup()` first, or the previous test's tree is still mounted.
+**Evidence:** client/src/vendor/ui/kit/Textarea.tsx, client/src/vendor/ui/kit/SelectInput.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.tsx
+
 ### 2026-10-04 — a job-stream hook keyed only on the job id never recovers when the server hands back the SAME running job id
 After `onerror` marks the job `failed`, Retry/Generate can resolve with the id of the
 job that is still running (`POST /brief/generate` → `{job_id: <same>, reused: true}`,
@@ -314,6 +322,23 @@ behind it, and it would have to be faked server-side.
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-12 - jsdom has no `isContentEditable`, and a focus-trap test needs a focusable element outside the dialog
+jsdom leaves `HTMLElement.isContentEditable` undefined even with `contenteditable="true"`, so a keyboard-shortcut guard that skips editable targets cannot be exercised until the test sets it: `Object.defineProperty(el, "isContentEditable", { value: true })`. With no `@testing-library/user-event` in `client`, a Tab-trap test fires `fireEvent.keyDown(el, { key: "Tab" })` and asserts the return value (`false` = `preventDefault` called) plus `toHaveFocus` on the wrap target; it is only non-vacuous when a focusable element exists outside the dialog for native Tab to reach.
+**Evidence:** client/src/app/repos/[repoId]/pulls/[number]/_components/FindingsPanel/FindingsPanel.test.tsx, client/src/components/eval-ui/EvalCaseModal/EvalCaseModal.test.tsx
+
+### 2026-10-11 — vendor `Sparkline` renders `NaN` coordinates for a single data point
+
+It maps `i / (data.length - 1)`, so a series of length 1 divides by zero (only an empty one is
+guarded). Render it only when `data.length >= 2`, and show a plain value otherwise — a new
+agent with one eval run is the normal case, not an edge.
+**Evidence:** `client/src/vendor/ui/charts/Sparkline.tsx:15`
+
+### 2026-10-11 — there is no `--danger` colour token; the red in `vendor/ui` is `--crit`
+
+`var(--danger)` resolves to nothing and fails silently (no colour, no error). Tokens live in
+`vendor/ui/styles.css`; use `--crit` for error/regression states.
+**Evidence:** `client/src/vendor/ui/styles.css:25`
 
 ### 2026-10-04 — `@testing-library/user-event` is not installed; component tests use `fireEvent`
 Only `@testing-library/react` and `jest-dom` are dependencies, so the RTL skill's

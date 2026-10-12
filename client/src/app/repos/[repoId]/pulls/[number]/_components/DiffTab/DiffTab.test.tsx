@@ -5,6 +5,16 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { FindingRecord, PrFile, ReviewRecord, SmartDiff } from "@devdigest/shared";
 import prReviewMessages from "../../../../../../../../messages/en/prReview.json";
 import shellMessages from "../../../../../../../../messages/en/shell.json";
+const draftMutate = vi.fn();
+vi.mock("@/lib/hooks/eval", () => ({
+  useEvalCaseDraft: () => ({ mutate: draftMutate, isPending: false }),
+}));
+vi.mock("@/components/eval-ui/EvalCaseModal", () => ({
+  EvalCaseModal: ({ agentId, source }: { agentId: string; source: { kind: string } }) => (
+    <div data-testid="case-modal">{`${source.kind}|${agentId}`}</div>
+  ),
+}));
+
 import { DiffTab } from "./DiffTab";
 
 const FILES: PrFile[] = [
@@ -59,6 +69,10 @@ const SMART_DIFF: SmartDiff = {
   ],
   split_suggestion: { too_big: false, total_lines: 9, proposed_splits: [] },
 };
+
+const REVIEWS_ACCEPTED: ReviewRecord[] = [
+  { ...REVIEWS[0]!, findings: [finding({ accepted_at: "2026-01-02T00:00:00Z" })] },
+];
 
 const REVIEWS_DISMISSED: ReviewRecord[] = [
   { ...REVIEWS[0]!, findings: [finding({ dismissed_at: "2026-01-02T00:00:00Z" })] },
@@ -199,5 +213,17 @@ describe("DiffTab", () => {
       expect(screen.queryByLabelText("This file has open findings")).not.toBeInTheDocument();
     });
     expect(screen.queryByLabelText("1 files with findings")).not.toBeInTheDocument();
+  });
+
+  it("Turn into eval case asks for the finding's draft and renders the modal from the answer", async () => {
+    replies["/pulls/pr1/reviews"] = { status: 200, body: REVIEWS_ACCEPTED };
+    draftMutate.mockImplementationOnce(
+      (_id: string, opts: { onSuccess: (r: unknown) => void }) =>
+        opts.onSuccess({ agent_id: "a1", existing_case: null, draft: { name: "d" } }),
+    );
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: /Turn into eval case/ }));
+    expect(draftMutate.mock.calls[0]![0]).toBe("f1");
+    expect(screen.getByTestId("case-modal")).toHaveTextContent("finding|a1");
   });
 });

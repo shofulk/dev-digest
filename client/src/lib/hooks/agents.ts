@@ -3,6 +3,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
+import { evalKeys } from "./eval";
 import type { Agent, ModelInfo, Provider, ReviewStrategy } from "@devdigest/shared";
 
 export function useAgents() {
@@ -65,6 +66,25 @@ export function useUpdateAgent() {
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["agents"] });
       qc.setQueryData(["agent", data.id], data);
+    },
+  });
+}
+
+export interface RestoreAgentVersionInput {
+  id: string;
+  version: number;
+}
+
+/** POST /agents/:id/versions/:version/restore — restore an old config as a NEW version. */
+export function useRestoreAgentVersion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, version }: RestoreAgentVersionInput) =>
+      api.post<Agent>(`/agents/${id}/versions/${version}/restore`),
+    onSuccess: (data, { id }) => {
+      qc.setQueryData(["agent", id], data);
+      void qc.invalidateQueries({ queryKey: ["agents"] });
+      void qc.invalidateQueries({ queryKey: evalKeys.all });
     },
   });
 }
