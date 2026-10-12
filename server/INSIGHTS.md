@@ -703,6 +703,10 @@ Dated summaries of sessions worth remembering as a whole.
 
 <!-- newest first: session-notes -->
 
+### 2026-10-12 - the eval suite separates a precision regression from a recall regression, and also exposes a prompt edit that did nothing
+Security Reviewer (deepseek-v4-flash) on four hand-written cases (2 `must_find`, 2 `must_not_flag`), one suite run per version: v1 baseline 1.0/1.0; v2 = an appended "security is out of scope" line → no change at all (the long security prompt outweighed one trailing line); v3 = "flag every changed line" → precision 0.6, `benign-local-rename` pass→fail; v4 = prompt replaced by a performance-only reviewer → recall 0.5, `hardcoded-admin-password` pass→fail. Compare names the flipped case and the prompt diff each time. Appending a scope override to the end of a focused prompt is not a reliable way to change an agent's behaviour - measure it. One run per version is a demonstration, not a statistic.
+**Evidence:** docs/eval-regression-experiment.md (run ids b2999286, b45e6b18, 3b48ace4, 349031dc on the isolated `devdigest_l06` database)
+
 ## Open Questions
 
 Things left unresolved, so the next session does not re-derive the same uncertainty.
