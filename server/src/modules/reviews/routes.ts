@@ -8,6 +8,7 @@ import {
   MultiAgentRun,
   MultiAgentRunRequest,
   MultiAgentRunStarted,
+  MultiAgentRunSummary,
   RunEstimate,
   RunRequest,
 } from '@devdigest/shared';
@@ -30,11 +31,14 @@ import { learnFromFinding } from './learn.js';
  *   GET    /multi-agent-runs/:id                       → columns, totals, disagreement groups, stale flag
  *   POST   /multi-agent-runs/:id/cancel                → cancel every running agent run of the multi-run
  *   POST   /multi-agent-runs/:id/agents/:agentId/retry → re-run one agent in the same multi-run
+ *   GET    /repos/:id/multi-agent-runs?pr_id=          → newest 20 multi-runs of a repo (or of one PR), with status and totals
  *   GET    /run-estimates                              → per-agent median time/cost estimates
  *   POST   /findings/:id/learn                         → store a `learning` memory row for a finding
  */
 const FINDING_ACTIONS = ['accept', 'dismiss'] as const;
 const RetryParams = z.object({ id: z.string().uuid(), agentId: z.string().uuid() });
+/** Query of GET /repos/:id/multi-agent-runs: optional PR filter. */
+const MultiRunListQuery = z.object({ pr_id: z.string().uuid().optional() });
 export default async function reviewsRoutes(appBase: FastifyInstance) {
   const app = appBase.withTypeProvider<ZodTypeProvider>();
   const { container } = app;
@@ -157,6 +161,22 @@ export default async function reviewsRoutes(appBase: FastifyInstance) {
     async (req) => {
       const { workspaceId } = await getContext(container, req);
       return multiRuns.read(workspaceId, req.params.id);
+    },
+  );
+
+  // ---- Multi-agent run list: newest 20 of a repo, or of one PR ------------
+  app.get(
+    '/repos/:id/multi-agent-runs',
+    {
+      schema: {
+        params: IdParams,
+        querystring: MultiRunListQuery,
+        response: { 200: z.array(MultiAgentRunSummary) },
+      },
+    },
+    async (req) => {
+      const { workspaceId } = await getContext(container, req);
+      return multiRuns.list(workspaceId, req.params.id, req.query.pr_id, req.log);
     },
   );
 

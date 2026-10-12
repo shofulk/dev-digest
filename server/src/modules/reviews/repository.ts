@@ -220,6 +220,16 @@ export class ReviewRepository {
     return multiRunRepo.estimateRunRows(this.db, workspaceId);
   }
 
+  /** True when the repo exists and belongs to the workspace. */
+  repoInWorkspace(workspaceId: string, repoId: string): Promise<boolean> {
+    return pullRepo.repoInWorkspace(this.db, workspaceId, repoId);
+  }
+
+  /** Newest `limit` multi-runs of a repo (or one PR) with their agent runs, for the run list. */
+  listMultiRunSummaryRows(workspaceId: string, repoId: string, prId: string | undefined, limit: number) {
+    return multiRunRepo.listMultiRunSummaryRows(this.db, workspaceId, repoId, prId, limit);
+  }
+
   // ---- Learn (memory) -----------------------------------------------------
 
   /** Which of `findingIds` already have a Learn memory row. */

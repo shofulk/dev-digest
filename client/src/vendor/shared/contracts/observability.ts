@@ -7,7 +7,8 @@ import { ReviewRunTarget } from './review-api.js';
  *
  * These are NEW contracts (A5 owns this file; the barrel re-exports it). They
  * sit alongside A2's `review-api.ts`:
- *   - MultiAgentRun        the response of POST /pulls/:id/multi-agent-run
+ *   - MultiAgentRun        the read model of GET /multi-agent-runs/:id
+ *   - MultiAgentRunSummary one row of GET /repos/:id/multi-agent-runs
  *   - AgentColumn          one agent's column in the multi-agent view
  *   - Conflict / ConflictTake  where agents disagree on the same file:line
  *   - AgentStats           per-agent quality aggregates (GET /agents/:id/stats)
@@ -78,7 +79,7 @@ export const Conflict = z.object({
 });
 export type Conflict = z.infer<typeof Conflict>;
 
-/** Response of POST /pulls/:id/multi-agent-run and GET /pulls/:id/multi-agent. */
+/** Response of GET /multi-agent-runs/:id. */
 export const MultiAgentRun = z.object({
   id: z.string(),
   pr_id: z.string(),
@@ -95,6 +96,24 @@ export const MultiAgentRun = z.object({
   stale: z.boolean(),
 });
 export type MultiAgentRun = z.infer<typeof MultiAgentRun>;
+
+/** Overall status of a multi-run in the run list: running, done, partial (some done, some not) or failed. */
+export const MultiAgentRunStatus = z.enum(['running', 'done', 'partial', 'failed']);
+export type MultiAgentRunStatus = z.infer<typeof MultiAgentRunStatus>;
+
+/** One row of GET /repos/:id/multi-agent-runs. */
+export const MultiAgentRunSummary = z.object({
+  id: z.string(),
+  pr_id: z.string(),
+  pr_number: z.number().int(),
+  pr_title: z.string(),
+  ran_at: z.string(),
+  agent_count: z.number().int(),
+  status: MultiAgentRunStatus,
+  total_duration_ms: z.number().int(),
+  total_cost_usd: z.number().nullable(),
+});
+export type MultiAgentRunSummary = z.infer<typeof MultiAgentRunSummary>;
 
 /** Body of POST /pulls/:id/multi-agent-run. */
 export const MultiAgentRunRequest = z.object({ agent_ids: z.array(z.string().min(1)).min(1).max(20) });

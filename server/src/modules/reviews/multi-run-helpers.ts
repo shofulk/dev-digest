@@ -1,4 +1,4 @@
-import type { Conflict, RunEstimate, Severity } from '@devdigest/shared';
+import type { AgentColumn, Conflict, MultiAgentRunStatus, RunEstimate, Severity } from '@devdigest/shared';
 
 /**
  * Ring 1 (application). Pure helpers for multi-run reads: finding groups,
@@ -142,4 +142,34 @@ export function buildEstimates(agentIds: string[], rows: EstimateRow[]): RunEsti
       sample_size: mine.length,
     };
   });
+}
+
+// ---- run list (SPEC-04) ----------------------------------------------------
+
+/** The first row per non-null agent id wins (rows arrive newest first); null agent ids are skipped. */
+export function newestPerAgent<T>(rowsNewestFirst: T[], agentIdOf: (row: T) => string | null): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const row of rowsNewestFirst) {
+    const id = agentIdOf(row);
+    if (id === null || seen.has(id)) continue;
+    seen.add(id);
+    out.push(row);
+  }
+  return out;
+}
+
+const COLUMN_STATUSES: readonly AgentColumn['status'][] = ['done', 'failed', 'running', 'cancelled'];
+
+/** The four column statuses map to themselves; anything else is `failed`. */
+export function columnStatus(raw: string | null): AgentColumn['status'] {
+  return COLUMN_STATUSES.find((s) => s === raw) ?? 'failed';
+}
+
+/** Overall status of a multi-run from its counted agent runs' statuses. */
+export function summaryStatus(statuses: AgentColumn['status'][]): MultiAgentRunStatus {
+  if (statuses.includes('running')) return 'running';
+  if (statuses.length === 0) return 'failed';
+  if (statuses.every((s) => s === 'done')) return 'done';
+  return statuses.includes('done') ? 'partial' : 'failed';
 }

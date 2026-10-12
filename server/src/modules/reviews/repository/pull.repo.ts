@@ -17,6 +17,15 @@ export async function getPull(
   return row;
 }
 
+/** True when the repo exists and belongs to the workspace. */
+export async function repoInWorkspace(db: Db, workspaceId: string, repoId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: t.repos.id })
+    .from(t.repos)
+    .where(and(eq(t.repos.workspaceId, workspaceId), eq(t.repos.id, repoId)));
+  return row !== undefined;
+}
+
 export async function getRepo(
   db: Db,
   repoId: string,

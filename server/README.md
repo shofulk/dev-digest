@@ -69,7 +69,7 @@ flowchart TB
     polling["polling<br/>/repos/:id/poll"]
   end
   subgraph Review["Review & runs"]
-    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/multi-agent-run<br/>/multi-agent-runs/:id<br/>/multi-agent-runs/:id/cancel<br/>/multi-agent-runs/:id/agents/:agentId/retry<br/>/run-estimates<br/>/findings/:id/learn"]
+    reviews["reviews<br/>/pulls/:id/review · /reviews · /findings/:id/(accept|dismiss)<br/>/runs/:id/(events|trace)<br/>/pulls/:id/multi-agent-run<br/>/repos/:id/multi-agent-runs<br/>/multi-agent-runs/:id<br/>/multi-agent-runs/:id/cancel<br/>/multi-agent-runs/:id/agents/:agentId/retry<br/>/run-estimates<br/>/findings/:id/learn"]
     intent["intent<br/>/pulls/:id/intent · /pulls/:id/intent/derive"]
     smartDiff["smart-diff<br/>/pulls/:id/smart-diff"]
     blast["blast<br/>/pulls/:id/blast"]
@@ -105,6 +105,7 @@ re-runs one agent in the same multi-run (409 `agent_running` while it still runs
 `GET /run-estimates` gives per-agent median time and cost over the last 10 `done` runs, with no
 model call. `POST /findings/:id/learn` stores one `learning` row in `memory` (201 created, 200
 when the finding was already learned); the PR reviews and multi-run reads flag it as `learned`.
+`GET /repos/:id/multi-agent-runs` (optional `pr_id`) lists the newest 20 multi-runs of a repo or a PR with an aggregate status (`running`/`done`/`partial`/`failed`) and totals from each agent's newest run, read from the DB only.
 
 `smart-diff` is a deterministic, DB-only route: it groups a PR's files by role
 (core → tests → wiring → docs → boilerplate) and makes no LLM/GitHub/git call.

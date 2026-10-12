@@ -6,6 +6,7 @@ import type {
   MultiAgentRetryResult,
   MultiAgentRun,
   MultiAgentRunStarted,
+  MultiAgentRunSummary,
   RunEstimate,
   Severity,
 } from '@devdigest/shared';
@@ -15,7 +16,16 @@ import type { AgentRow } from '../../db/rows.js';
 import { findingRowToDto } from './helpers.js';
 import { intentDeriverFor } from '../_shared/intent/deps.js';
 import { ReviewRunExecutor, type Logger } from './run-executor.js';
-import { buildEstimates, computeTotals, groupFindings, type GroupInputColumn } from './multi-run-helpers.js';
+import {
+  buildEstimates,
+  columnStatus,
+  computeTotals,
+  groupFindings,
+  newestPerAgent,
+  summaryStatus,
+  type GroupInputColumn,
+} from './multi-run-helpers.js';
+import { MULTI_RUN_LIST_LIMIT } from './constants.js';
 
 /**
  * Ring 1 (application). Multi-agent run use cases: start, read, cancel, retry
@@ -25,7 +35,6 @@ import { buildEstimates, computeTotals, groupFindings, type GroupInputColumn } f
  * names, error text, titles, rationale, prompts or diff.
  */
 
-const COLUMN_STATUSES = ['done', 'failed', 'running', 'cancelled'] as const;
 const isUuid = (v: string): boolean => z.string().uuid().safeParse(v).success;
 
 type ColumnWithGroupInput = { column: AgentColumn; group: GroupInputColumn };
@@ -94,11 +103,7 @@ export class MultiRunService {
     ]);
 
     // Newest run per agent (runs arrive ran_at desc, id desc).
-    const newest = new Map<string, (typeof runs)[number]>();
-    for (const r of runs) {
-      if (r.run.agentId && !newest.has(r.run.agentId)) newest.set(r.run.agentId, r);
-    }
-    const chosen = [...newest.values()];
+    const chosen = newestPerAgent(runs, (r) => r.run.agentId);
     const reviews = await this.repo.reviewsWithFindingsForRuns(
       workspaceId,
       chosen.map((r) => r.run.id),
@@ -117,9 +122,7 @@ export class MultiRunService {
       const rows = [...(found?.findings ?? [])].sort(
         (a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0) || a.startLine - b.startLine || (a.id < b.id ? -1 : 1),
       );
-      const status = (COLUMN_STATUSES as readonly string[]).includes(run.status ?? '')
-        ? (run.status as AgentColumn['status'])
-        : 'failed';
+      const status = columnStatus(run.status);
       const findings: AgentColumnFinding[] = rows.map((f) => {
         const dto = findingRowToDto(f, learned.has(f.id));
         return {
@@ -240,6 +243,51 @@ export class MultiRunService {
         logger?.error({ runId, agentId, multiRunId: multi.id }, 'multi-run: retry execution crashed');
       });
     return { run_id: runId };
+  }
+
+  /** The newest multi-runs of a repo (or of one PR), with status and totals. */
+  async list(
+    workspaceId: string,
+    repoId: string,
+    prId?: string,
+    logger?: Logger,
+  ): Promise<MultiAgentRunSummary[]> {
+    if (!(await this.repo.repoInWorkspace(workspaceId, repoId))) throw new NotFoundError('Repo not found');
+    if (prId) {
+      const pull = await this.repo.getPull(workspaceId, prId);
+      if (!pull || pull.repoId !== repoId) throw new NotFoundError('Pull request not found');
+    }
+    const { multiRuns, runs } = await this.repo.listMultiRunSummaryRows(
+      workspaceId,
+      repoId,
+      prId,
+      MULTI_RUN_LIST_LIMIT,
+    );
+    const runsByMulti = new Map<string, typeof runs>();
+    for (const r of runs) {
+      const list = runsByMulti.get(r.multiAgentRunId);
+      if (list) list.push(r);
+      else runsByMulti.set(r.multiAgentRunId, [r]);
+    }
+    const items = multiRuns.map((m): MultiAgentRunSummary => {
+      const counted = newestPerAgent(runsByMulti.get(m.id) ?? [], (r) => r.agentId);
+      const statuses = counted.map((r) => columnStatus(r.status));
+      const totals = computeTotals(
+        counted.map((r) => ({ status: columnStatus(r.status), duration_ms: r.durationMs, cost_usd: r.costUsd })),
+      );
+      return {
+        id: m.id,
+        pr_id: m.prId,
+        pr_number: m.prNumber,
+        pr_title: m.prTitle,
+        ran_at: m.ranAt.toISOString(),
+        agent_count: counted.length,
+        status: summaryStatus(statuses),
+        ...totals,
+      };
+    });
+    logger?.debug({ repoId, prId, count: items.length }, 'multi-run: list');
+    return items;
   }
 
   /** Per-agent run estimates for the workspace. */

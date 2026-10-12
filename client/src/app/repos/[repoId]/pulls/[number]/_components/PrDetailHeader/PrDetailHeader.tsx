@@ -3,6 +3,7 @@
 import React, { useCallback } from "react";
 import { Icon, Avatar, Badge, Button, Tabs } from "@devdigest/ui";
 import { RunReviewDropdown } from "../RunReviewDropdown";
+import { OpenMultiRunLink } from "./_components/OpenMultiRunLink";
 import { SeverityCounters, type SeverityCounts } from "@/components/severity-counters";
 import { s } from "./styles";
 import type { Severity } from "@devdigest/shared";
@@ -101,6 +102,7 @@ export function PrDetailHeader({
           >
             View on GitHub
           </Button>
+          <OpenMultiRunLink repoId={repoId} prId={prId} />
           {prId && (
             <RunReviewDropdown
               prId={prId}

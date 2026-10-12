@@ -47,6 +47,7 @@ beforeEach(() => {
       body: [pull({ number: 7, title: "Add cache" }), pull({ number: 8, title: "Fix bug" })],
     },
     "GET /agents": { status: 200, body: AGENTS },
+    "GET /repos/r1/multi-agent-runs": { status: 200, body: [] },
     // a1: 10s / $0.05 · a2: 20s / $0.10 · a3 has no finished run
     "GET /run-estimates": {
       status: 200,

@@ -36,6 +36,11 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-12 — `./scripts/e2e.sh` with a dev web from the same checkout running fails flows at "land on the PR list"
+Both `next dev` instances share `client/.next`; measured 7/12 flows green with
+`pnpm --dir client dev` up, 12/12 with it stopped. Stop the dev web before a hermetic run.
+**Evidence:** `scripts/e2e.sh`
+
 ### 2026-10-03 - the hermetic stack isolated only the DB and ports, not the seed's files on disk
 `db:seed` also writes the Project Context demo checkout into `DEVDIGEST_CLONE_DIR`, and only when
 that folder is absent. Without its own per-run value, a hermetic run wrote into the developer's
@@ -65,6 +70,13 @@ fixture setup actually calls before assuming a run trace exists.
 Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
+
+### 2026-10-12 — `find role link … --name` resolves no link at all; use `find text` for links
+Control: `find role link click --name "Eval Dashboard"` returns Element not found while the
+snapshot lists that link. This is the opposite of the 2026-10-11 popover entry (which says
+use `find role button` for buttons): for LINKS use `find text "<unique text>" click` and pick
+text that appears once on the page, or the misclick described there returns.
+**Evidence:** `e2e/specs/13-multi-agent-review.flow.json` (AC-100)
 
 ## Recurring Errors & Fixes
 

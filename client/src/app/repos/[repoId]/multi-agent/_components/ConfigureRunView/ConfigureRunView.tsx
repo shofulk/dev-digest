@@ -14,6 +14,7 @@ import { estimateTotals } from "@/lib/multi-agent-estimates";
 import { formatCost } from "@/lib/format-cost";
 import { pickablePulls, preselectedPrId } from "./helpers";
 import { AgentCard } from "./_components/AgentCard";
+import { RecentRuns } from "./_components/RecentRuns";
 import { s } from "./styles";
 
 export function ConfigureRunView() {
@@ -173,6 +174,8 @@ export function ConfigureRunView() {
             </span>
           )}
         </div>
+
+        <RecentRuns repoId={repoId} />
       </div>
     </AppShell>
   );

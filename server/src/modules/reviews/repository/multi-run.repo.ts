@@ -135,3 +135,73 @@ export async function estimateRunRows(
     (r) => ({ agent_id: r.agent_id, duration_ms: r.duration_ms, cost_usd: r.cost_usd }),
   );
 }
+
+/** One multi-run of the run list, with its PR's number and title. */
+export type MultiRunListRow = { id: string; prId: string; ranAt: Date; prNumber: number; prTitle: string };
+
+/** One agent run of a listed multi-run: just the fields the summary needs. */
+export type MultiRunListRunRow = {
+  id: string;
+  multiAgentRunId: string;
+  agentId: string | null;
+  status: string | null;
+  durationMs: number | null;
+  costUsd: number | null;
+};
+
+/**
+ * The newest `limit` multi-runs of a repo (or of one PR) plus their agent runs.
+ * `runs` are ordered `ran_at` desc, then `id` desc. Workspace-scoped in the query.
+ */
+export async function listMultiRunSummaryRows(
+  db: Db,
+  workspaceId: string,
+  repoId: string,
+  prId: string | undefined,
+  limit: number,
+): Promise<{ multiRuns: MultiRunListRow[]; runs: MultiRunListRunRow[] }> {
+  const multiRuns = await db
+    .select({
+      id: t.multiAgentRuns.id,
+      prId: t.multiAgentRuns.prId,
+      ranAt: t.multiAgentRuns.ranAt,
+      prNumber: t.pullRequests.number,
+      prTitle: t.pullRequests.title,
+    })
+    .from(t.multiAgentRuns)
+    .innerJoin(t.pullRequests, eq(t.pullRequests.id, t.multiAgentRuns.prId))
+    .where(
+      and(
+        eq(t.multiAgentRuns.workspaceId, workspaceId),
+        eq(t.pullRequests.workspaceId, workspaceId),
+        eq(t.pullRequests.repoId, repoId),
+        prId ? eq(t.multiAgentRuns.prId, prId) : undefined,
+      ),
+    )
+    .orderBy(desc(t.multiAgentRuns.ranAt), desc(t.multiAgentRuns.id))
+    .limit(limit);
+  if (multiRuns.length === 0) return { multiRuns, runs: [] };
+
+  const rows = await db
+    .select({
+      id: t.agentRuns.id,
+      multiAgentRunId: t.agentRuns.multiAgentRunId,
+      agentId: t.agentRuns.agentId,
+      status: t.agentRuns.status,
+      durationMs: t.agentRuns.durationMs,
+      costUsd: t.agentRuns.costUsd,
+    })
+    .from(t.agentRuns)
+    .where(
+      and(
+        eq(t.agentRuns.workspaceId, workspaceId),
+        inArray(
+          t.agentRuns.multiAgentRunId,
+          multiRuns.map((m) => m.id),
+        ),
+      ),
+    )
+    .orderBy(desc(t.agentRuns.ranAt), desc(t.agentRuns.id));
+  const runs = rows.flatMap((r) => (r.multiAgentRunId ? [{ ...r, multiAgentRunId: r.multiAgentRunId }] : []));
+  return { multiRuns, runs };
+}

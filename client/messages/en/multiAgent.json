@@ -25,5 +25,25 @@
     "total": "≈ {seconds}s · {cost} · parallel fan-out",
     "partial": "partial",
     "loadError": "Could not load pull requests"
+  },
+  "history": {
+    "title": "Recent runs",
+    "prItem": "#{number} · {title}",
+    "agents": "{count} agents",
+    "status": {
+      "running": "Running",
+      "done": "Done",
+      "partial": "Partial",
+      "failed": "Failed"
+    },
+    "seconds": "{seconds}s",
+    "none": "—",
+    "emptyTitle": "No multi-agent runs yet",
+    "emptyBody": "Runs you start here appear in this list.",
+    "error": "Could not load recent runs",
+    "retry": "Retry"
+  },
+  "prLink": {
+    "open": "Open multi-agent review"
   }
 }

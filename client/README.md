@@ -27,7 +27,7 @@ flowchart TD
   ONB["/onboarding<br/>add repo"] -->|"POST /repos"| API[("Fastify API")]
   PULLS --> PR["/pulls/:number<br/>review detail<br/>(overview · diff · findings)"]
   ROOT --> CONTEXT["/repos/:repoId/context<br/>Project Context: grouped list + preview"]
-  PULLS --> MULTI["/repos/:repoId/multi-agent<br/>Configure run: pick a PR and agents<br/>?pr=prId"]
+  PULLS --> MULTI["/repos/:repoId/multi-agent<br/>Configure run: pick a PR and agents, then Recent runs list<br/>?pr=prId"]
   MULTI --> RESULTS["/repos/:repoId/multi-agent/:multiRunId<br/>results: Columns or Tabs + Where agents disagree<br/>?view=columns|tabs"]
 
   AGENTS["/agents"] --> AGENT["/agents/:id<br/>editor (config · skills · context · evals)"]
@@ -36,8 +36,8 @@ flowchart TD
   SETTINGS["/settings/:section<br/>API keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls · /repos/:id/index-state"| API
-  PR -->|"GET /pulls/:id · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss) · /findings/:id/eval-case<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
-  MULTI -->|"GET /run-estimates · /repos/:id/pulls · /agents<br/>POST /pulls/:id/multi-agent-run"| API
+  PR -->|"GET /pulls/:id · /repos/:id/multi-agent-runs?pr_id= · /reviews · /pulls/:id/comments · /pulls/:id/intent · /pulls/:id/smart-diff · /pulls/:id/blast · /pulls/:id/brief<br/>POST /pulls/:id/review · /pulls/:id/intent/derive · /pulls/:id/brief/generate · /findings/:id/(accept|dismiss) · /findings/:id/eval-case<br/>SSE /pulls/:id/brief/jobs/:jobId/events"| API
+  MULTI -->|"GET /run-estimates · /repos/:id/pulls · /agents · /repos/:id/multi-agent-runs<br/>POST /pulls/:id/multi-agent-run"| API
   RESULTS -->|"GET /multi-agent-runs/:id · /pulls/:id · /pulls/:id/reviews<br/>POST /multi-agent-runs/:id/cancel · /multi-agent-runs/:id/agents/:agentId/retry · /runs/:id/cancel · /findings/:id/(accept|dismiss|learn|eval-case)<br/>SSE /runs/:id/events"| API
   CONTEXT -->|"GET /repos/:id/context · /repos/:id/context/file<br/>POST /repos/:id/context/reindex"| API
   AGENTS -->|"/agents · /agents/:id · /agents/:id/skills · /agents/:id/context-docs · /agents/:id/versions/:v/restore"| API

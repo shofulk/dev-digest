@@ -32,6 +32,7 @@ const ROUTES = {
     body: [agent({ id: "a1", name: "Security" }), agent({ id: "a2", name: "Performance" })],
   },
   "GET /run-estimates": { status: 200, body: [estimate("a1", 10_000, 0.05)] },
+  "GET /repos/r1/multi-agent-runs": { status: 200, body: [] },
 };
 
 let consoleError: ReturnType<typeof vi.spyOn>;

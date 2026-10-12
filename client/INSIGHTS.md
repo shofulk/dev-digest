@@ -318,6 +318,18 @@ Quirks of dependencies, CLIs and the toolchain.
 
 <!-- newest first: tool-and-library-notes -->
 
+### 2026-10-12 — a query hook with `retry: retryRead` never reaches its error state in a test; relative times drift
+Reaching `isError` through `retryRead` needs fake timers with `shouldAdvanceTime: true`
+(real waiting takes the whole backoff). For deterministic relative times ("3 minutes ago")
+pass `timeZone` and a fixed `now` to `NextIntlClientProvider`; the shared test wrapper does both.
+**Evidence:** `client/src/test/multi-agent-history-intl.tsx`, `client/src/lib/hooks/multi-agent-runs.test.ts`
+
+### 2026-10-12 — `@testing-library/user-event` IS installed
+**Supersedes:** 2026-10-04 entry "`@testing-library/user-event` is not installed" — it is a
+client devDependency now and `multi-agent-a11y.test.tsx` uses it; `userEvent` is available
+for new tests, and a reviewer asking for it over `fireEvent` is no longer a false positive.
+**Evidence:** `client/package.json:32`, `client/src/test/multi-agent-a11y.test.tsx`
+
 ### 2026-10-11 — vendor `Sparkline` renders `NaN` coordinates for a single data point
 
 It maps `i / (data.length - 1)`, so a series of length 1 divides by zero (only an empty one is
@@ -367,6 +379,16 @@ fallback to represent "no link".
 Errors seen more than once, each with the signal that identifies it.
 
 <!-- newest first: recurring-errors-and-fixes -->
+
+### 2026-10-12 — navigation after `await mutateAsync` stalls behind a slow list query
+**Cause:** a mutation `onSuccess` that RETURNS `qc.invalidateQueries(...)` (or is an arrow
+expression body) makes TanStack Query await it, so `mutateAsync` resolves only after every
+active matching query has refetched. A slow or hung list query (e.g. `["multi-agent-runs"]`
+on the same page) then blocks the `router.push` that follows the await.
+**Signal:** the button sits in its pending state with the POST already answered; `RecentRuns.test.tsx` AC-93 (list GET never resolves, navigation still expected) times out.
+**Fix:** fire-and-forget the invalidation: `void qc.invalidateQueries(...)` inside a block body
+that returns nothing, as `useStartMultiRun` does.
+**Evidence:** `client/src/lib/hooks/multi-agent.ts:33`
 
 ### 2026-10-04 - an absence assertion in `waitFor` passes trivially right after a raw `FakeEventSource.emit()`
 **Cause:** `waitFor` runs its callback once synchronously before polling. A test-double
