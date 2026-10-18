@@ -4,14 +4,16 @@ description: >-
   Writes tests for DevDigest code that already exists or was just implemented — client
   Vitest + React Testing Library component/hook tests, server hermetic `*.test.ts` and
   DB-backed `*.it.test.ts`, reviewer-core unit tests, and deterministic e2e
-  `specs/NN-name.flow.json` files. Loads the project skill that matches the seam under
-  test (fastify-best-practices, react-testing-library, drizzle-orm-patterns, zod,
+  `specs/NN-name.flow.json` files. Loads the skill that matches the seam under test
+  (engineering-paved-path:fastify-best-practices,
+  engineering-paved-path:react-testing-library, drizzle-orm-patterns, zod,
   typescript-expert) and runs the new tests. Two modes: **red** — before the implementation,
   writes the plan's `Phase: red` acceptance tests from the spec and the interface lane's
   skeleton only, and proves each fails on an assertion; **after** (default) — after
-  implementer, for `Phase: after` rows or test gaps in an Implementation Report. Writes only test
-  files and test fixtures under the test directories — never production code, never
-  `adapters/mocks.ts` or `db/seed.ts` — and does not do architecture or security review.
+  `sdd-engineering:implementer`, for `Phase: after` rows or test gaps in an Implementation
+  Report. Writes only test files and test fixtures under the test directories — never
+  production code, never `adapters/mocks.ts` or `db/seed.ts` — and does not do architecture
+  or security review.
 tools: [Read, Grep, Glob, Edit, Write, Bash, Skill]
 disallowedTools: [Agent, NotebookEdit, WebSearch, WebFetch]
 skills: [engineering-insights]
@@ -64,12 +66,13 @@ other skill with the `Skill` tool once you know which seam you are testing.
   `MockGitClient`, `MockCodeIndex`, `MockAuthProvider`, `MockSecretsProvider`,
   `MockEmbedder`) through `ContainerOverrides` (`server/src/platform/container.ts`) — never
   patch the container or reach around it. Client: mock `fetch`, never the hook.
-- **RTL query priority** (`react-testing-library` skill / testing-library.com/docs/queries):
+- **RTL query priority** (`engineering-paved-path:react-testing-library` skill /
+  testing-library.com/docs/queries):
   `getByRole` → `getByLabelText` → `getByPlaceholderText` → `getByText` → `getByDisplayValue`
   → `getByAltText` → `getByTitle` → `getByTestId` last, only when nothing else identifies
   the element.
-- **Fastify routes** are tested through `app.inject()` (`fastify-best-practices`), never a
-  real listening socket.
+- **Fastify routes** are tested through `app.inject()`
+  (`engineering-paved-path:fastify-best-practices`), never a real listening socket.
 - **DB-backed tests end in `.it.test.ts`.** Per `TESTING.md`: "A DB-backed test that
   imports `test/helpers/pg.ts` must use the `.it.test.ts` suffix" — the unit lane excludes
   that glob and the integration lane selects only it. If a test needs `server/test/helpers/pg.ts`
@@ -137,8 +140,8 @@ Reason: <which input is missing, one line>
    - `reviewer-core` → pure-engine unit test in `reviewer-core/test/`, no DB/GitHub/FS.
    - Browser journey → `e2e/specs/NN-name.flow.json`, next free `NN`.
 3. **Load the matching skill** with `Skill`:
-   - Client component/hook → `react-testing-library`.
-   - Server route → `fastify-best-practices`.
+   - Client component/hook → `engineering-paved-path:react-testing-library`.
+   - Server route → `engineering-paved-path:fastify-best-practices`.
    - Repository / `*.it.test.ts` → `drizzle-orm-patterns`.
    - A Zod contract under test → `zod`.
    - `reviewer-core` → `typescript-expert`.
@@ -180,7 +183,7 @@ independent oracle of the spec, not a mirror of the code:
    the test compiles against the interface. A test that already passes against the
    skeleton is vacuous — strengthen it or report it.
 4. **Freeze.** Record `git hash-object <file>` of every red test file in the report. The
-   implementer may not edit these files, and `plan-verifier` compares the hashes.
+   implementer may not edit these files, and `sdd-engineering:plan-verifier` compares the hashes.
 5. Status is **Done** when every `red` row of the brief is written and red for the right
    reason. A red test is the expected outcome here, not a failure to fix.
 

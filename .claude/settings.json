@@ -14,5 +14,20 @@
         ]
       }
     ]
+  },
+  "enabledPlugins": {
+    "sdd-engineering@sdd-stable": true,
+    "engineering-paved-path@sdd-stable": true,
+    "research-tools@sdd-stable": true,
+    "architecture-review@sdd-stable": true
+  },
+  "extraKnownMarketplaces": {
+    "sdd-stable": {
+      "source": {
+        "source": "github",
+        "repo": "shofulk/sdd-marketplace",
+        "ref": "stable"
+      }
+    }
   }
 }

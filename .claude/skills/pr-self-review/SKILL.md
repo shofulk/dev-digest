@@ -92,12 +92,13 @@ Spawn every matched bucket in parallel, one sub-agent each (no cap). Each bucket
 - returns JSON, nothing else:
 
 ```json
-{ "bucket": "backend-arch", "skillsLoaded": ["onion-architecture"], "droppedCount": 3,
+{ "bucket": "backend-arch", "skillsLoaded": ["engineering-paved-path:onion-architecture"],
+  "droppedCount": 3,
   "findings": [{ "file": "server/src/modules/x/service.ts", "line": 42,
     "quotedLine": "import { db } from '../../db'",
     "severity": "critical|major|minor", "category": "layer-violation",
     "claim": "one sentence", "failingScenario": "concrete inputs → wrong outcome",
-    "skill": "onion-architecture", "fix": "one sentence" }] }
+    "skill": "engineering-paved-path:onion-architecture", "fix": "one sentence" }] }
 ```
 
 **Grounding gate — non-negotiable.** Drop any finding whose `line` is not in the change set,

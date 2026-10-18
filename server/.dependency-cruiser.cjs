@@ -1,9 +1,8 @@
 /**
  * Onion-architecture rules for @devdigest/api — the machine-checkable subset of
- * .claude/skills/onion-architecture/SKILL.md.
+ * the ring map in the root AGENTS.md (*Backend rings*) and the
+ * engineering-paved-path:onion-architecture skill. This file is the live copy.
  *
- * Install:   cp .claude/skills/onion-architecture/enforcement/dependency-cruiser.cjs \
- *              server/.dependency-cruiser.cjs
  * Run:       pnpm --dir server exec depcruise src --config .dependency-cruiser.cjs
  *
  * dependency-cruiser is already a server dependency (it also backs

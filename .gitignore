@@ -29,3 +29,7 @@ test-results/
 
 # agent-harness raw material: retro files (retro-writer) and analyses (harness-analyst); local, short-lived, never committed
 .harness/
+
+# sdd-engineering plugin: run state and the version trace stay local; the project contract is committed
+.sdd/*
+!.sdd/config.json

@@ -24,7 +24,8 @@ package runs from TypeScript through `tsx` (O6).
 - **Stdout is the JSON-RPC channel.** Nothing but MCP frames goes to stdout. Every
   diagnostic goes to stderr through `src/log.ts` — never a bare `console.log` or
   `process.stdout.write` (enforced by `eslint.config.js`).
-- **Onion rings (C1 of the plan; the `onion-architecture` skill applied by analogy).**
+- **Onion rings (C1 of the plan; the `engineering-paved-path:onion-architecture` skill
+  applied by analogy).**
   Dependencies point inward: `src/domain/**` (contracts, the `DevDigestApi` port, typed
   domain errors, pure findings rules) ← `src/app/**` (use cases: `resolve.ts`,
   `run-review.ts`, `use-cases.ts`) ← `src/adapters/**` (the HTTP adapter) ← `src/tools/**` +

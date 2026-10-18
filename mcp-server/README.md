@@ -8,8 +8,9 @@ on the existing DevDigest HTTP API. No database access, no DI container, no chan
 
 ## Architecture
 
-Dependencies point inward, one ring per concern (the `onion-architecture` skill applied by
-analogy — see `.claude/skills/onion-architecture` at the repo root):
+Dependencies point inward, one ring per concern (the
+`engineering-paved-path:onion-architecture` skill applied by analogy — see *Backend rings*
+in the root `AGENTS.md`):
 
 ```
 src/domain/**        ring 0 — contracts, the DevDigestApi port, typed domain errors

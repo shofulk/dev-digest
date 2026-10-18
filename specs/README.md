@@ -14,9 +14,10 @@ every `<pkg>/.spec/`.
 feature request + designs ─► spec-creator ─► spec (draft ─► approved) ─► implementation-planner ─► plan ─► implementer
 ```
 
-The `spec-creator` agent writes the spec. The `implementation-planner` takes the approved
-spec as its input and writes the plan. The spec fixes behaviour, boundaries and
-contracts; the plan decides files, modules, step order and code.
+The `sdd-engineering:spec-creator` agent writes the spec. The
+`sdd-engineering:implementation-planner` takes the approved spec as its input and writes
+the plan. The spec fixes behaviour, boundaries and contracts; the plan decides files,
+modules, step order and code.
 
 ## Rules
 
@@ -56,10 +57,11 @@ contracts; the plan decides files, modules, step order and code.
 - `Supersedes: <path> (SPEC-NN-<feature>)` when the spec replaces an earlier decision;
   otherwise `none`.
 
-`.claude/hooks/scope-guard.sh write spec` enforces this for `spec-creator`: a new spec is
-born `draft`, and only a `draft` file can be edited. `.claude/hooks/spec-lint.mjs` checks
-the format below on every spec it writes — including the `[NEEDS CLARIFICATION: Q-n]`
-markers — and blocks the switch to `approved` while the spec has a format error.
+The `sdd-engineering` plugin's spec guard enforces this for its spec-creator: a new spec is
+born `draft`, and only a `draft` file can be edited. The plugin's spec-lint checks the format
+below on every spec it writes — including the `[NEEDS CLARIFICATION: Q-n]` markers — and
+blocks the switch to `approved` while the spec has a format error;
+`node .claude/hooks/spec-lint.mjs check <file>` runs the same format check here.
 
 ## Template
 
@@ -155,4 +157,5 @@ Words that cannot be tested are not allowed in criteria and NFRs: *fast*, *quick
 *appropriate*, *as needed*, *etc.*
 
 How to write a good spec — design review checklist, examples, self-check — is the
-`spec-writing` skill (`.claude/skills/spec-writing/`).
+`sdd-engineering:spec-writing` skill (from the `sdd-engineering` plugin, root `AGENTS.md`
+*Plugins*).

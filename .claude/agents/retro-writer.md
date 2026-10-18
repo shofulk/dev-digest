@@ -174,9 +174,11 @@ nothing.
 would have stopped the finding, with a concrete path where one exists:
 - `agent prompt: <name>` → `.claude/agents/<name>.md`
 - `hook: <file>` → `.claude/hooks/<file>`
-- `skill: <name>` → `.claude/skills/<name>/SKILL.md` (first-party or vendored, as is)
-- `plan template` → the Output Format in `.claude/agents/implementation-planner.md`
-- `flow` → README *Flow* or the main-session protocol in `.claude/agents/README.md`
+- `skill: <name>` → `.claude/skills/<name>/SKILL.md` (first-party or vendored, as is); a
+  `<plugin>:<name>` skill lives in its plugin's marketplace repository
+- `plan template` → the Output Format of the `sdd-engineering:implementation-planner` agent
+  (its plugin)
+- `flow` → the `sdd-engineering` plugin's README (spec → plan → run-plan → workflow-retro)
 - `AGENTS.md/INSIGHTS` → the concrete `AGENTS.md` or `INSIGHTS.md`
 - `other: <text>` → must name the closest fixed value and why it does not fit
 

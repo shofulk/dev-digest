@@ -7,7 +7,8 @@
 - Starting any work here → `./INSIGHTS.md` first; at the end of the task run
   `engineering-insights` to append what is worth keeping (append-only)
 - Adding or moving a file under `src/` (new module, new adapter, container/service/
-  repository/route changes) → the `onion-architecture` skill first; it says which ring the
+  repository/route changes) → *Backend rings* in the root `AGENTS.md` and the
+  `engineering-paved-path:onion-architecture` skill first; they say which ring the
   file belongs to and what it may import. Check with `pnpm arch`.
 - "Why is it built this way" → `./.doc/<topic>.md`
 - Touching tests or CI → `../TESTING.md`

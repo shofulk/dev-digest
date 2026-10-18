@@ -21,7 +21,7 @@ new 2 · resolved 3 · unchanged 4
 ### 1. `server/src/modules/reviews/service.ts:42` — layer-violation
 > `import { db } from '../../db'`
 
-A ring-1 service imports the database directly. *(onion-architecture)*
+A ring-1 service imports the database directly. *(engineering-paved-path:onion-architecture)*
 
 **Fails when:** any call to `runReview` — the service cannot be unit-tested without a live
 Postgres, and swapping the repository becomes a rewrite.
@@ -31,7 +31,8 @@ Postgres, and swapping the repository becomes a rewrite.
 ## Major — answer before merging
 
 - `client/src/app/repos/page.tsx:88` — **data-fetching**: `useEffect` fetch races the route
-  change; use the TanStack query already defined in `lib/hooks`. *(react-best-practices)*
+  change; use the TanStack query already defined in `lib/hooks`.
+  *(engineering-paved-path:react-best-practices)*
 
 ## Minor — <N> shown, <M> more cut
 
@@ -45,7 +46,7 @@ Postgres, and swapping the repository becomes a rewrite.
 
 | Bucket | Files | Skills loaded | Findings (kept/dropped) |
 |---|---|---|---|
-| backend-arch | 7 | onion-architecture | 3 / 2 |
+| backend-arch | 7 | engineering-paved-path:onion-architecture | 3 / 2 |
 
 Deterministic checks: typecheck ✅ · lint ⚠️ 2 · test ✅ · arch ❌ 1 error
 

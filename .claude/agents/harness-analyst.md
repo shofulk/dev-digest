@@ -170,7 +170,8 @@ the digest reports `Sessions: 0` → write nothing and return only:
    under its own `In flight (uncommitted)` line with the diff evidence, not to
    *Proposals*, and it is not "addressed at `HEAD`" either.
 7. Draft proposals, class-fix preferred over point-fix, each with a route: `direct` for a
-   single-file change, `implementation-planner → implementer` for more than one file.
+   single-file change, `sdd-engineering:implementation-planner → sdd-engineering:implementer`
+   for more than one file.
 8. Write a consumption recommendation per retro file (see *Analysis file and report shape*
    and the open-fix-loop rule below).
 9. Choose the file name: `.harness/analysis/<Date>.md`, or `<Date>-<n>.md` if that date's
@@ -195,8 +196,9 @@ The file (English) and the report share these sections:
   (`<retro file> · <entry heading> · finding #<n>`, `usage · <table> · <row key>`,
   `<pkg>/INSIGHTS.md · <entry heading>`, one per member).
 - `## Proposals`: `P#`, target file(s), the change (what, not how), the cluster(s) it
-  answers, evidence, route (`direct` | `implementation-planner → implementer` | `needs the user to lift
-  do-not-touch`), and whether it is already addressed at `HEAD` (with the `git log`
+  answers, evidence, route (`direct` |
+  `sdd-engineering:implementation-planner → sdd-engineering:implementer` | `needs the user to
+  lift do-not-touch`), and whether it is already addressed at `HEAD` (with the `git log`
   evidence, if so — such a cluster moves to *Not proposed* instead).
 - `## Not proposed`: single-occurrence findings, and clusters already fixed at `HEAD`.
 - `## Retro files`: per file, the proposals that cover it and a consume recommendation
