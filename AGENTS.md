@@ -140,6 +140,11 @@ the four placement questions, the per-tool rules. This is DevDigest's classifica
 `modules/_shared/**` is ring 1 unless it touches Fastify (`context.ts` does) — then it is
 ring 3.
 
+- `reviewer-core/src/**` may also import the `openai` SDK: it is the transport of
+  `OpenRouterProvider` (`reviewer-core/src/llm/openrouter.ts`), the one adapter the package
+  owns. The `reviewer-core-stays-pure` rule in `server/.dependency-cruiser.cjs` forbids
+  fastify, the database, `fs`, `child_process`, GitHub and the server's `src/` (except
+  `src/vendor/shared/`).
 - `platform/` is **not** a ring. It is split; the table above is the classification, and a
   new file in `platform/` must be placed into one of the two halves in its header comment.
 - A module folder is a vertical slice, not a layer. `modules/reviews/` contains ring 1, 2

@@ -30,7 +30,7 @@ Code only; Cursor sees the project skills above.
 | `engineering-paved-path:security` | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | `sdd-engineering:mermaid-diagram` | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | `sdd-engineering:spec-writing` | Process | Writing and reviewing feature specs — EARS + verify + traceability, final self-check |
-| `sdd-engineering:run-plan` | Process | `/sdd-engineering:run-plan <plan>` — runs an approved plan through lanes, checks gate, review round and fix rounds to a PR draft |
+| `sdd-engineering:run-plan` | Process | `/sdd-engineering:run-plan <spec-or-plan>` — runs an approved plan through lanes, the checks gate, the review round and fix rounds, then `/pr-self-review`; ends with `summary.md` and asks before committing |
 | `sdd-engineering:workflow-retro` | Process | `/sdd-engineering:workflow-retro` — the run's retro and ledger row |
 
 ## What Are Skills?

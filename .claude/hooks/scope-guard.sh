@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # scope-guard.sh — shared PreToolUse hook, parametrized by profile, wired from the
-# `hooks:` block of seven subagent files: test-writer.md, architecture-reviewer.md,
-# plan-verifier.md, doc-writer.md, retro-writer.md, harness-analyst.md, spec-creator.md
-# (.claude/agents/*.md), per docs/plans/review-agents.plan.md,
+# `hooks:` block of five subagent files: test-writer.md, doc-writer.md, retro-writer.md,
+# harness-analyst.md, security-reviewer.md (.claude/agents/*.md). architecture-reviewer,
+# plan-verifier and spec-creator, which also used it, now come from the sdd-marketplace
+# plugins with their own guards. Per docs/plans/review-agents.plan.md,
 # docs/plans/retro-agent.plan.md and docs/plans/harness-retros.plan.md.
 #
 # Two axes, six call shapes:
@@ -10,13 +11,13 @@
 #   scope-guard.sh write docs     — PreToolUse(Write|Edit|NotebookEdit) for doc-writer
 #   scope-guard.sh write retro    — PreToolUse(Write|Edit|NotebookEdit) for retro-writer
 #   scope-guard.sh write analysis — PreToolUse(Write|Edit|NotebookEdit) for harness-analyst
-#   scope-guard.sh write spec     — PreToolUse(Write|Edit|NotebookEdit) for spec-creator
+#   scope-guard.sh write spec     — PreToolUse(Write|Edit|NotebookEdit) for spec-creator (unwired)
 #   scope-guard.sh bash readonly  — PreToolUse(Bash) for doc-writer, retro-writer,
 #                                    harness-analyst, security-reviewer
 #                                    (+ the READONLY_EXACT report scripts, exact string
 #                                    only: `node .claude/scripts/harness-usage.mjs`)
-#   scope-guard.sh bash checks    — PreToolUse(Bash) for test-writer, architecture-reviewer,
-#                                    plan-verifier
+#   scope-guard.sh bash checks    — PreToolUse(Bash) for test-writer (architecture-reviewer
+#                                    and plan-verifier used it before the plugins)
 #   scope-guard.sh self-test      — path matrix + command matrix, exit 0 iff every case is right
 #
 # RETRO (write retro): scope is exactly .harness/retros/<feature>.retro.md, one allow glob

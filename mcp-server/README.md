@@ -9,8 +9,8 @@ on the existing DevDigest HTTP API. No database access, no DI container, no chan
 ## Architecture
 
 Dependencies point inward, one ring per concern (the
-`engineering-paved-path:onion-architecture` skill applied by analogy — see *Backend rings*
-in the root `AGENTS.md`):
+`engineering-paved-path:onion-architecture` skill applied by analogy; this package's ring
+map is below — the root `AGENTS.md` *Backend rings* covers `server/` and `reviewer-core/`):
 
 ```
 src/domain/**        ring 0 — contracts, the DevDigestApi port, typed domain errors

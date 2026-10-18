@@ -18,7 +18,8 @@
 // Scope: only <pkg>/.spec/*.spec.md (five packages) and specs/*.spec.md, and only files
 // that carry a `Spec ID:` line (specs written before the format are left alone).
 // FAIL-OPEN on an internal error (unparsable hook JSON, unreadable file): exit 0 with a
-// warning on stderr. scope-guard.sh owns the write boundary; this hook judges only format.
+// warning on stderr. The write boundary was scope-guard.sh's `write spec` profile (unwired
+// now, like the pre/post modes); this hook judges only format.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";

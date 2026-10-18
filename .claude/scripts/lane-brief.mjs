@@ -3,6 +3,8 @@
 // acceptance criteria its steps cover, Constraints and every other non-review section,
 // its Steps rows, its Execution row, its Test-plan rows and the Plan status line.
 // The implementer reads this brief instead of the whole plan (plans run to ~100 KB).
+// Unwired since the implementer moved to the sdd-engineering plugin, which ships its own
+// lane-brief.mjs; kept as a reference.
 //
 // Usage: node .claude/scripts/lane-brief.mjs docs/plans/<feature>.plan.md L<n>
 //        node .claude/scripts/lane-brief.mjs docs/plans/<feature>.plan.md --lanes

@@ -14,7 +14,7 @@
  * to a `warn` rule.
  */
 
-// --- ring paths (keep in sync with the table in SKILL.md) -------------------
+// --- ring paths (keep in sync with *Backend rings* in the root AGENTS.md) ----
 const EDGE = '^src/(server|app)\\.ts$|^src/modules/index\\.ts$|^src/modules/[^/]+/(routes|index)\\.ts$|^src/platform/(container|config)\\.ts$|^src/plugins/|^src/modules/_shared/context\\.ts$';
 const PERSISTENCE = '^src/db/|^src/adapters/|^src/modules/[^/]+/repository(\\.ts$|/)|^src/platform/jobs\\.ts$';
 const CORE = '^src/vendor/shared/';

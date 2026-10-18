@@ -44,8 +44,8 @@ runs on the user's schedule:
 ```
 retro-writer ─► .harness/retros/*.retro.md ─(user launches)─► harness-analyst ─►
   .harness/analysis/<date>.md + Decision JSON ─► AskUserQuestion ─► main session:
-  record ## User decision · apply (direct | implementation-planner → implementer) ·
-  rm consumed retro files
+  record ## User decision · apply (direct | sdd-engineering:implementation-planner →
+  sdd-engineering:implementer) · rm consumed retro files
 ```
 
 **Reply language.** Every agent answers in the language the user started the conversation
@@ -59,8 +59,8 @@ round and before the fix round starts — this is an explicit main-session step,
 trigger. When a class label recurs across two consecutive entries, retro-writer reports
 `Converging: no` and a sign-off proposal; the main session then starts **no further fix
 round of any kind** until the user signs off. Only the retro's `Retro:` feed-forward line,
-plus `Sign-off:` when there is one, goes to the implementation-planner — never the whole
-retro file. The retro file itself is local, gitignored raw material for harness
+plus `Sign-off:` when there is one, goes to `sdd-engineering:implementation-planner` —
+never the whole retro file. The retro file itself is local, gitignored raw material for harness
 improvement, not a feature doc: it lives at `.harness/retros/<feature>.retro.md`.
 
 **Harness analysis.** At any time, the user can launch `harness-analyst` manually — never
@@ -91,9 +91,10 @@ anything.
 | harness-analyst | Read, Grep, Glob, Write, Bash | Agent, Edit, NotebookEdit, Skill, WebSearch, WebFetch | `acceptEdits` | [`scope-guard.sh`](../hooks/scope-guard.sh) `write analysis` + `bash readonly` |
 
 "Read-only commands" is a prompt rule, not a tool restriction: the allowed list lives in
-each agent's *Hard rules*. Hard enforcement exists only where a hook backs it. The plugin
-agents carry their own guards in the plugin's `hooks/hooks.json`; the scripts below stay
-for the project agents, `/pr-self-review` and harness-analyst:
+each agent's *Hard rules*. Hard enforcement exists only where a hook backs it. Each plugin
+guards its own agents from its own `hooks/hooks.json` (`research-tools:researcher` has no
+guard beyond its tool list); the scripts below stay for the project agents,
+`/pr-self-review` and harness-analyst:
 
 <!-- scope-guard canonical: begin -->
 - **[`scope-guard.sh`](../hooks/scope-guard.sh)** — one shared, parametrized hook behind
@@ -160,10 +161,11 @@ for the project agents, `/pr-self-review` and harness-analyst:
 <!-- scope-guard canonical: end -->
 - **`pr-gate.sh`** — project-wide hook from `.claude/settings.json`; applies to every
   agent and the main session.
-- **`implementer-guard.sh`**, `spec-lint.mjs` and the `write spec` profile of
-  `scope-guard.sh` are no longer wired to a project agent: the plugin's implementer and
-  spec-creator carry their own copies. `spec-lint.mjs check` still serves the `specs`
-  bucket of `/pr-self-review`.
+- **`implementer-guard.sh`**, `spec-lint.mjs`'s `pre`/`post` modes, the `write spec`
+  profile of `scope-guard.sh` and `.claude/scripts/lane-brief.mjs` are no longer wired to a
+  project agent: the plugin's implementer and spec-creator carry their own copies. They
+  stay as a reference; `spec-lint.mjs check` still serves the `specs` bucket of
+  `/pr-self-review`.
 
 No agent here may spawn subagents (`Agent` is denied on all five), so review never happens
 inside implementation.
@@ -255,7 +257,7 @@ s1–s23 accessed 2026-09-24; s24–s26 accessed 2026-09-25.
 | Per-package check commands, hermetic vs `*.it.test.ts` | `<pkg>/AGENTS.md`, [`TESTING.md`](../../TESTING.md) |
 | Command matcher and fail-open policy of the guard | [`pr-gate.sh`](../hooks/pr-gate.sh) |
 | Tokenizer and fail-open pattern reused by `scope-guard.sh` | [`implementer-guard.sh`](../hooks/implementer-guard.sh) |
-| Mermaid diagram rules (allowed types, node cap, no `AGENTS.md` diagrams) | `sdd-engineering:mermaid-diagram` |
+| Mermaid diagram rules (allowed types, node cap, no `AGENTS.md` diagrams) | [`doc-writer.md`](doc-writer.md) *Hard rules*; syntax in `sdd-engineering:mermaid-diagram` |
 | "Marker line alone in `old_string`" as the mechanical form of append-only | [`engineering-insights`](../skills/engineering-insights/SKILL.md) *Never overwrite*, reused by `scope-guard.sh`'s `write retro` profile |
 
 ## Troubleshooting

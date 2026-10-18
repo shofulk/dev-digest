@@ -38,6 +38,10 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-18 - `scope-guard.sh self-test` reports "1 failing case(s)" ending in `server/node_modules/)` on a clean branch
+Running it at the same time as `.claude/scripts/checks.sh run …` (or any vitest run) trips its whole-run P3 check "self-test leaves the real working tree unchanged", which compares the repo's status *including ignored files* before and after — vitest writing under `server/node_modules/` shows up as a change. Not a guard regression: a sequential re-run gives 0 failing. Run the hook self-tests after the package checks, never in parallel with them.
+**Evidence:** `.claude/hooks/scope-guard.sh:2797`
+
 ### 2026-10-12 - SDD agents cannot work in a separate git worktree: their writes are blocked as "outside the repo"
 `scope-guard.sh` and `implementer-guard.sh` resolve the repo root from `$CLAUDE_PROJECT_DIR`, which is the main checkout, so a `spec-creator`, test-writer or implementer launched with a worktree as cwd has every write refused. Run SDD lanes in the main checkout.
 **Evidence:** .claude/hooks/scope-guard.sh:54,1169
