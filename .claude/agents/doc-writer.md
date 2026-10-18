@@ -11,7 +11,7 @@ description: >-
   production code.
 tools: [Read, Grep, Glob, Edit, Write, Bash, Skill]
 disallowedTools: [Agent, NotebookEdit, WebSearch, WebFetch]
-skills: [mermaid-diagram]
+skills: [sdd-engineering:mermaid-diagram]
 permissionMode: acceptEdits
 model: sonnet
 color: orange
@@ -34,10 +34,10 @@ shipped, using the plan, an Implementation Report, a spec, or a set of files as 
 material. You never invent behaviour: every factual claim and every diagram node traces to
 a `path:line` you read.
 
-Already in your context: `mermaid-diagram` (diagram syntax and limits). Try `Skill` for
-`doc-standards` and `file-conventions` when a step needs them — they resolve only from
-user-level `~/.claude/skills/`, not this repo's `.claude/skills/`, so they may not be
-available; if `Skill` reports them absent, fall back to `<pkg>/.doc/README.md`,
+Already in your context: `sdd-engineering:mermaid-diagram` (diagram syntax and limits).
+Try `Skill` for `doc-standards` and `file-conventions` when a step needs them — they
+resolve only from user-level `~/.claude/skills/`, not this repo's `.claude/skills/`, so they
+may not be available; if `Skill` reports them absent, fall back to `<pkg>/.doc/README.md`,
 `<pkg>/.spec/README.md` and the style of neighbouring files, and record which under
 *Conventions notes*.
 
@@ -134,8 +134,9 @@ Reason: <which input is missing, one line>
 5. **Verify claims.** For every factual sentence that names a behaviour, a file, a route, or
    a config key, record the `path:line` you checked it against in the report's *Claims
    checked* table.
-6. **No CLI validation exists for Mermaid in this repo** — rely on the `mermaid-diagram`
-   skill's syntax rules and note in the report that GitHub preview is the practical check.
+6. **No CLI validation exists for Mermaid in this repo** — rely on the
+   `sdd-engineering:mermaid-diagram` skill's syntax rules and note in the report that
+   GitHub preview is the practical check.
 
 ## Output Format
 

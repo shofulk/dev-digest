@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# implementer-guard.sh — PreToolUse(Bash) hook scoped to the `implementer` subagent
-# (wired from the `hooks:` block of .claude/agents/implementer.md, not from settings.json).
+# implementer-guard.sh — PreToolUse(Bash) hook once scoped to the project `implementer`
+# subagent (its `hooks:` block, not settings.json). Unwired since the implementer moved to the
+# sdd-engineering plugin, which carries its own guard; kept as a reference with its self-test.
 #
 # The implementer writes code and runs checks; committing, pushing, touching pull requests
 # and migrating the dev database belong to the main session and the user. Blocked:

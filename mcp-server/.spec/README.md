@@ -7,8 +7,9 @@ root [`specs/`](../../specs/README.md) instead.
 
 - One file per feature: `<feature>.spec.md`, kebab-case.
 - Format of record — template, EARS acceptance criteria, Spec ID, statuses — is
-  [`specs/README.md`](../../specs/README.md). New specs are written by the
-  `spec-creator` agent in that format.
+  [`specs/README.md`](../../specs/README.md), which mirrors the `sdd-engineering` plugin's
+  spec template. New specs are written by the `sdd-engineering:spec-creator` agent in that
+  format.
 - Specs written before that format (Goal / Acceptance criteria / Out of scope / Open
   questions) stay as they are, as the record.
 - An `approved` spec is frozen. A change is a new spec with `Supersedes:`.

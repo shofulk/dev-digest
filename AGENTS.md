@@ -41,7 +41,8 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 | `e2e/` | deterministic browser flows (`specs/NN-name.flow.json`) |
 | `mcp-server/` | local stdio MCP server — a thin HTTP-API client exposing reviewer agents, PR review runs, findings and conventions to MCP clients (Claude Code) |
 | `docs/agent-prompts/` | built-in reviewer system prompts |
-| `docs/retros/` | committed run retros (`<feature>.md`) and `ledger.md`, one row per `/sdd-run` |
+| `docs/retros/` | committed run retros (`<feature>.md`) and `ledger.md`, one row per `/sdd-engineering:run-plan` run |
+| `.sdd/config.json` | the project contract the `sdd-engineering` plugin reads (context files, packages and their checks, routing, project agents); the rest of `.sdd/` is local |
 | `specs/` | cross-module feature specs; its `README.md` is the spec format of record (template, EARS) |
 
 ## Read when
@@ -52,7 +53,8 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
   It is the source of truth; never restate it here.
 - **Implementing a feature** → read `<pkg>/.spec/<feature>.spec.md` (one package) or
   `specs/<feature>.spec.md` (two or more packages) first. If no spec exists, ask whether
-  to write one with the `spec-creator` agent before the code.
+  to write one with the `sdd-engineering:spec-creator` agent before the code.
+- **Placing or moving a file under `server/src`** → read **Backend rings** below.
 - **Debugging anything non-trivial** → read `<pkg>/INSIGHTS.md` first (see
   **Session protocol** below).
 - **Asking "why is it built this way"** → read `<pkg>/.doc/<topic>.md`.
@@ -63,10 +65,11 @@ Migrations do **not** run on boot. `relation … does not exist` means you skipp
 The `engineering-insights` skill owns both ends of this; invoke it rather than improvising.
 
 - **Before working in a package** → read its `INSIGHTS.md` in full, plus the matching skill
-  in `.claude/skills/`, and name the three entries most relevant to the task. An unread
-  `INSIGHTS.md` makes the whole loop worthless. One exception: an agent executing a lane of
-  a Development Plan reads only the entries the plan's *Constraints* cite, plus an `rg` for
-  its steps' key terms — the planner already did the full read for the whole plan.
+  (in `.claude/skills/` or from a plugin, see **Plugins**), and name the three entries most
+  relevant to the task. An unread `INSIGHTS.md` makes the whole loop worthless. One
+  exception: an agent executing a lane of a Development Plan reads only the entries the
+  plan's *Constraints* cite, plus an `rg` for its steps' key terms — the planner already did
+  the full read for the whole plan.
 - **When a task ends, or a non-obvious cause is solved** → run `engineering-insights` and
   append what is worth keeping to the `INSIGHTS.md` of the package the work touched
   (repo-wide or cross-package findings go in the root `INSIGHTS.md`). Do not skip this.
@@ -77,6 +80,34 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 - **Before opening a pull request** → run `/pr-self-review`. It reviews the local change set
   against the skills that govern the touched files and blocks `gh pr create|merge` while a
   verified critical finding stands.
+
+## Plugins
+
+`.claude/settings.json` declares the stable channel of the
+[`shofulk/sdd-marketplace`](https://github.com/shofulk/sdd-marketplace) marketplace
+(`sdd-stable`) and enables `sdd-engineering` with its dependencies `engineering-paved-path`,
+`research-tools` and `architecture-review`. They supply the spec-driven flow and the stack
+skills:
+
+| Plugin | Agents | Skills |
+|---|---|---|
+| `sdd-engineering` | `spec-creator`, `implementation-planner`, `implementer`, `plan-verifier` | `run-plan`, `workflow-retro`, `spec-writing`, `mermaid-diagram` |
+| `engineering-paved-path` | — | `onion-architecture`, `frontend-ui-architecture`, `react-best-practices`, `react-testing-library`, `nextjs-app-router`, `fastify-best-practices`, `security` |
+| `research-tools` | `researcher` | — |
+| `architecture-review` | `architecture-reviewer` | — |
+
+- Name them with the plugin prefix: `sdd-engineering:spec-creator`,
+  `/sdd-engineering:run-plan <plan>`, `engineering-paved-path:security`.
+- The flow — spec → plan → `/sdd-engineering:run-plan` → `/sdd-engineering:workflow-retro` —
+  is described in the plugin's README. The plugin reads this repository through
+  `.sdd/config.json`; the project agents it calls when present are `test-writer`,
+  `security-reviewer`, `retro-writer` and `doc-writer`.
+- `claude plugin list --json` shows the four plugins and their versions; each session appends
+  the active versions to `.sdd/trace.jsonl`. If the list does not show them, install them
+  once: `claude plugin marketplace add shofulk/sdd-marketplace#stable`, then
+  `claude plugin install sdd-engineering@sdd-stable --scope project` (the three dependencies
+  come with it; `.claude/settings.json` stays as committed).
+- A plugin is changed in its marketplace repository, never by copying it back here.
 
 ## Conventions
 
@@ -93,6 +124,34 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 - Server tests split by filename: `*.it.test.ts` are DB-backed (testcontainers),
   everything else must be hermetic.
 
+## Backend rings
+
+`engineering-paved-path:onion-architecture` holds the rules — dependencies point inward,
+the four placement questions, the per-tool rules. This is DevDigest's classification of
+`server/` and `reviewer-core/` by real path. `pnpm --dir server arch` enforces its
+machine-checkable subset: an `error` rule fails the check, while the `warn` rules still carry
+known violations, so a rising warning count is the regression signal.
+
+| Ring | Paths | May import |
+|---|---|---|
+| **0 — Domain / contracts** | `server/src/vendor/shared/**`, `reviewer-core/src/**`, and the pure half of `platform/` (`errors.ts`, `model-router.ts`, `resilience.ts`, `grounding.ts`, `prompt.ts`, `structured.ts`, `price-book.ts`, `trace-builder.ts`) | `zod`, other ring-0 files. Nothing else. |
+| **1 — Application / services** | `modules/*/service.ts`, `modules/*/run-executor.ts`, `modules/*/helpers.ts`, `modules/*/findings.ts`, `modules/*/diff-loader.ts`, `modules/repo-intel/pipeline/**` | ring 0, port **types** (`@devdigest/shared`), repository **types**, `platform/errors.ts` |
+| **2 — Infrastructure** | `src/adapters/**`, `modules/*/repository.ts` + `modules/*/repository/**`, `src/db/**`, and the infra half of `platform/` (`jobs.ts`, `sse.ts`, `run-logger.ts`, `prompts.ts`) | ring 0, its own SDK, `src/db/**` |
+| **3 — Composition root / edge** | `src/server.ts`, `src/app.ts`, `modules/index.ts`, `modules/*/routes.ts`, `platform/container.ts`, `platform/config.ts`, plugins | everything |
+
+`modules/_shared/**` is ring 1 unless it touches Fastify (`context.ts` does) — then it is
+ring 3.
+
+- `reviewer-core/src/**` may also import the `openai` SDK: it is the transport of
+  `OpenRouterProvider` (`reviewer-core/src/llm/openrouter.ts`), the one adapter the package
+  owns. The `reviewer-core-stays-pure` rule in `server/.dependency-cruiser.cjs` forbids
+  fastify, the database, `fs`, `child_process`, GitHub and the server's `src/` (except
+  `src/vendor/shared/`).
+- `platform/` is **not** a ring. It is split; the table above is the classification, and a
+  new file in `platform/` must be placed into one of the two halves in its header comment.
+- A module folder is a vertical slice, not a layer. `modules/reviews/` contains ring 1, 2
+  and 3 files side by side; the ring is the **file**, not the folder.
+
 ## Do not touch
 
 - `*/src/vendor/**` — mirrored shared code; edit the source in
@@ -100,8 +159,8 @@ The `engineering-insights` skill owns both ends of this; invoke it rather than i
 - `server/src/db/migrations/**` — generated. Change the schema, run `db:generate`.
 - `.claude/skills/**` — vendored skills, tracked by `skills-lock.json`.
   A skill absent from `skills-lock.json` is first-party (`engineering-insights`,
-  `onion-architecture`, `frontend-ui-architecture`, `pr-self-review`, `spec-writing`, `sdd-run`) — edit it here, and
-  never add it to the lockfile.
+  `pr-self-review`) — edit it here, and never add it to the lockfile. The skills and agents
+  listed under **Plugins** are not in this repository: change them in the marketplace.
 - `*/pnpm-lock.yaml` — generated, one per package (there is no workspace-root
   lockfile). Never hand-edit and never hoist: change dependencies with
   `pnpm --dir <pkg> add|remove` and commit the lockfile that run rewrites.

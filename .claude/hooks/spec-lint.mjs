@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // spec-lint.mjs — deterministic format check for feature specs (specs/README.md is the
-// format of record). Wired from the `hooks:` block of .claude/agents/spec-creator.md.
+// format of record). `check` serves the `specs` bucket of /pr-self-review; the `pre`/`post`
+// hook modes were wired to the project spec-creator, which now comes from the sdd-engineering
+// plugin with its own copy.
 //
 //   node spec-lint.mjs check <file>...  — lint files, print errors, exit 1 if any
 //   node spec-lint.mjs pre              — PreToolUse(Write|Edit): computes the content the
@@ -16,7 +18,8 @@
 // Scope: only <pkg>/.spec/*.spec.md (five packages) and specs/*.spec.md, and only files
 // that carry a `Spec ID:` line (specs written before the format are left alone).
 // FAIL-OPEN on an internal error (unparsable hook JSON, unreadable file): exit 0 with a
-// warning on stderr. scope-guard.sh owns the write boundary; this hook judges only format.
+// warning on stderr. The write boundary was scope-guard.sh's `write spec` profile (unwired
+// now, like the pre/post modes); this hook judges only format.
 
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -337,7 +340,7 @@ function check(files) {
 
 function selfTest() {
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const example = fs.readFileSync(path.join(here, "../skills/spec-writing/references/intent-card.spec.md"), "utf8");
+  const example = fs.readFileSync(path.join(here, "fixtures/intent-card.spec.md"), "utf8");
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "spec-lint-"));
   let fails = 0;
   const run = (name, rel, content, wantOk, other) => {

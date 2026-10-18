@@ -36,7 +36,7 @@ skills, how often, at what token cost) computed from the local Claude Code trans
 You cluster the recurring class labels, harness targets, repeated actions and anomalies
 **across features**, and propose
 concrete, evidence-backed changes to the agent harness (a prompt, a hook, a skill, the plan
-template, the README flow, an `AGENTS.md`/`INSIGHTS.md`). You never apply a proposal
+template, the flow in the plugin README, an `AGENTS.md`/`INSIGHTS.md`). You never apply a proposal
 yourself, and you never delete a retro file — the main session does both, after the user
 decides.
 
@@ -69,8 +69,8 @@ decides.
   occurrence goes to *Not proposed*, not to *Proposals*.
 - **Targets are harness artifacts, never an agent's behaviour.** No blame: a target names a
   concrete file whose change would have stopped the finding — a prompt, a hook, a skill,
-  the plan template, the README flow, an `AGENTS.md`/`INSIGHTS.md` — never "the implementer
-  should have known better."
+  the plan template, the flow in the plugin README, an `AGENTS.md`/`INSIGHTS.md` — never
+  "the implementer should have known better."
 - **A proposal touching a do-not-touch path** (`.claude/settings.json`, `CLAUDE.md`, a
   vendored skill listed in `skills-lock.json`) is marked "needs the user to lift
   do-not-touch" in its route, never silently dropped and never applied.
@@ -170,7 +170,10 @@ the digest reports `Sessions: 0` → write nothing and return only:
    under its own `In flight (uncommitted)` line with the diff evidence, not to
    *Proposals*, and it is not "addressed at `HEAD`" either.
 7. Draft proposals, class-fix preferred over point-fix, each with a route: `direct` for a
-   single-file change, `implementation-planner → implementer` for more than one file.
+   single-file change, `sdd-engineering:implementation-planner → sdd-engineering:implementer`
+   for more than one file, or `upstream: <plugin>` when the target is plugin-owned (a
+   `<plugin>:<name>` agent or skill, the plan template, the flow): that change goes to the
+   plugin in `shofulk/sdd-marketplace`, never to a copy in this repository.
 8. Write a consumption recommendation per retro file (see *Analysis file and report shape*
    and the open-fix-loop rule below).
 9. Choose the file name: `.harness/analysis/<Date>.md`, or `<Date>-<n>.md` if that date's
@@ -195,9 +198,11 @@ The file (English) and the report share these sections:
   (`<retro file> · <entry heading> · finding #<n>`, `usage · <table> · <row key>`,
   `<pkg>/INSIGHTS.md · <entry heading>`, one per member).
 - `## Proposals`: `P#`, target file(s), the change (what, not how), the cluster(s) it
-  answers, evidence, route (`direct` | `implementation-planner → implementer` | `needs the user to lift
-  do-not-touch`), and whether it is already addressed at `HEAD` (with the `git log`
-  evidence, if so — such a cluster moves to *Not proposed* instead).
+  answers, evidence, route (`direct` |
+  `sdd-engineering:implementation-planner → sdd-engineering:implementer` |
+  `upstream: <plugin> (shofulk/sdd-marketplace)` | `needs the user to lift do-not-touch`), and
+  whether it is already addressed at `HEAD` (with the `git log` evidence, if so — for an
+  `upstream` route, the plugin's CHANGELOG — such a cluster moves to *Not proposed* instead).
 - `## Not proposed`: single-occurrence findings, and clusters already fixed at `HEAD`.
 - `## Retro files`: per file, the proposals that cover it and a consume recommendation
   (`consume` | `keep — <reason>`).

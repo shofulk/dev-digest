@@ -1,0 +1,39 @@
+{
+  "context": ["AGENTS.md", "INSIGHTS.md", "TESTING.md"],
+  "specs": "specs/",
+  "plans": "docs/plans/",
+  "runs": ".sdd/runs/",
+  "retros": "docs/retros/",
+  "checksDir": ".harness/checks/",
+  "checks": {
+    "client": {
+      "typecheck": "pnpm --dir client typecheck",
+      "lint": "pnpm --dir client lint",
+      "test": "pnpm --dir client test"
+    },
+    "server": {
+      "typecheck": "pnpm --dir server typecheck",
+      "lint": "pnpm --dir server lint",
+      "arch": "pnpm --dir server arch",
+      "test": "pnpm --dir server exec vitest run --exclude '**/*.it.test.ts'",
+      "it": "pnpm --dir server exec vitest run .it.test"
+    },
+    "reviewer-core": {
+      "typecheck": "pnpm --dir reviewer-core typecheck",
+      "lint": "pnpm --dir reviewer-core lint",
+      "test": "pnpm --dir reviewer-core test"
+    },
+    "mcp-server": {
+      "typecheck": "pnpm --dir mcp-server typecheck",
+      "lint": "pnpm --dir mcp-server lint",
+      "test": "pnpm --dir mcp-server test"
+    },
+    "e2e": {
+      "typecheck": "pnpm --dir e2e typecheck",
+      "lint": "pnpm --dir e2e lint"
+    }
+  },
+  "routing": ".claude/skills/pr-self-review/routing.md",
+  "agents": ["test-writer", "security-reviewer", "retro-writer", "doc-writer"],
+  "skills": { "implementer": ["engineering-insights"] }
+}
