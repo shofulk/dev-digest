@@ -128,7 +128,9 @@ skills:
 
 `engineering-paved-path:onion-architecture` holds the rules — dependencies point inward,
 the four placement questions, the per-tool rules. This is DevDigest's classification of
-`server/` and `reviewer-core/` by real path; `pnpm --dir server arch` enforces it.
+`server/` and `reviewer-core/` by real path. `pnpm --dir server arch` enforces its
+machine-checkable subset: an `error` rule fails the check, while the `warn` rules still carry
+known violations, so a rising warning count is the regression signal.
 
 | Ring | Paths | May import |
 |---|---|---|

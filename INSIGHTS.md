@@ -38,6 +38,14 @@ a documented dead end saves the next session the whole detour.
 
 <!-- newest first: what-doesnt-work -->
 
+### 2026-10-18 - `npx skills remove <name>` (skills 1.7.2) leaves `skills-lock.json` as it is
+With the skill folder already gone it prints "No matching skills found" and changes nothing; with the folder present it deletes the folder and still keeps the lock entry, so `npx skills experimental_install` would bring the skill back. Drop the entry from the lock in the same change (a JSON rewrite that keeps the two-space format) and say so in the commit message.
+**Evidence:** `skills-lock.json` and the message of commit `66172a9` on `sdd/install-plugins`
+
+### 2026-10-18 - since the sdd-engineering plugin, `plan-verifier` cannot run the hook self-tests a harness plan's Verify cells name
+The plugin's `bash-guard.mjs checks` profile admits read-only commands plus the exact `.sdd/config.json` `checks` strings and its own `checks.mjs` — nothing else. `.claude/hooks/scope-guard.sh self-test`, `bash … self-test` and `node .claude/hooks/spec-lint.mjs self-test` all exit 2 for `sdd-engineering:plan-verifier` (the old local `CHECKS_EXACT` allowance does not apply). For a plan that changes `.claude/hooks/**`, run the self-tests in the main session (after the package checks) and pass their output to the verifier as manual acceptance, or its rows come back `cannot verify`.
+**Evidence:** `plugins/sdd-engineering/hooks/lib/bash-guard.mjs:14-15,349` in `shofulk/sdd-marketplace` (branch `stable`, 1.0.0), `.sdd/config.json` (`checks`)
+
 ### 2026-10-18 - `scope-guard.sh self-test` reports "1 failing case(s)" ending in `server/node_modules/)` on a clean branch
 Running it at the same time as `.claude/scripts/checks.sh run …` (or any vitest run) trips its whole-run P3 check "self-test leaves the real working tree unchanged", which compares the repo's status *including ignored files* before and after — vitest writing under `server/node_modules/` shows up as a change. Not a guard regression: a sequential re-run gives 0 failing. Run the hook self-tests after the package checks, never in parallel with them.
 **Evidence:** `.claude/hooks/scope-guard.sh:2797`

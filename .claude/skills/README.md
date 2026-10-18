@@ -17,7 +17,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 These come with the `sdd-engineering` plugin and its dependencies (root `AGENTS.md`
 *Plugins*), not from this folder. Name them with the plugin prefix. They load in Claude
-Code only; Cursor sees the project skills above.
+Code only.
 
 | Skill | Scope | Description |
 |-------|-------|-------------|

@@ -171,7 +171,9 @@ the digest reports `Sessions: 0` → write nothing and return only:
    *Proposals*, and it is not "addressed at `HEAD`" either.
 7. Draft proposals, class-fix preferred over point-fix, each with a route: `direct` for a
    single-file change, `sdd-engineering:implementation-planner → sdd-engineering:implementer`
-   for more than one file.
+   for more than one file, or `upstream: <plugin>` when the target is plugin-owned (a
+   `<plugin>:<name>` agent or skill, the plan template, the flow): that change goes to the
+   plugin in `shofulk/sdd-marketplace`, never to a copy in this repository.
 8. Write a consumption recommendation per retro file (see *Analysis file and report shape*
    and the open-fix-loop rule below).
 9. Choose the file name: `.harness/analysis/<Date>.md`, or `<Date>-<n>.md` if that date's
@@ -197,9 +199,10 @@ The file (English) and the report share these sections:
   `<pkg>/INSIGHTS.md · <entry heading>`, one per member).
 - `## Proposals`: `P#`, target file(s), the change (what, not how), the cluster(s) it
   answers, evidence, route (`direct` |
-  `sdd-engineering:implementation-planner → sdd-engineering:implementer` | `needs the user to
-  lift do-not-touch`), and whether it is already addressed at `HEAD` (with the `git log`
-  evidence, if so — such a cluster moves to *Not proposed* instead).
+  `sdd-engineering:implementation-planner → sdd-engineering:implementer` |
+  `upstream: <plugin> (shofulk/sdd-marketplace)` | `needs the user to lift do-not-touch`), and
+  whether it is already addressed at `HEAD` (with the `git log` evidence, if so — for an
+  `upstream` route, the plugin's CHANGELOG — such a cluster moves to *Not proposed* instead).
 - `## Not proposed`: single-occurrence findings, and clusters already fixed at `HEAD`.
 - `## Retro files`: per file, the proposals that cover it and a consume recommendation
   (`consume` | `keep — <reason>`).

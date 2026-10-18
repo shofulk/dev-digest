@@ -77,7 +77,8 @@ analyse → apply → delete — is a **main-session process rule** (C7 of
 `AskUserQuestion` JSON, the main session appends a `## User decision` section to the
 analysis file, applies each picked proposal (directly for one file, through
 `sdd-engineering:implementation-planner` → `sdd-engineering:implementer` for more than
-one), and deletes each consumed retro file. The analyst itself never applies or deletes
+one, and as a change to the plugin in `shofulk/sdd-marketplace` for an `upstream:` route),
+and deletes each consumed retro file. The analyst itself never applies or deletes
 anything.
 
 ## Permissions
@@ -200,7 +201,7 @@ The rows below are the ones that still apply to the five project agents.
 | Subagents can nest by default — deny `Agent` to keep review out of implementation | all five | [Subagents][s1] |
 | Return a concise structured summary, not raw logs | all output formats | [Subagents][s1] |
 | Agent-scoped `hooks`, `permissionMode`, `model`, `skills` frontmatter; `disallowedTools` with a specifier still removes the whole tool | scope-guard hooks, modes | [Subagents][s1] |
-| `skills:` preloads the full skill body; other skills load on demand via `Skill` | preload one skill per agent, route the rest per step | [Skills][s2] |
+| `skills:` preloads the full skill body; other skills load on demand via `Skill` | test-writer, security-reviewer and doc-writer preload one skill; test-writer and doc-writer load the rest per step with `Skill` | [Skills][s2] |
 | Permission path/command rules are settings-wide, not per agent — hence a per-agent hook, not a settings rule, for scope | `scope-guard.sh` design | [Permissions][s3] |
 | `PreToolUse` hook input carries `tool_input.file_path`; exit 2 blocks with stderr as the reason | `scope-guard.sh` write profiles | [Hooks][s4] |
 | Evaluator-optimizer pattern, applied to the loop itself — a separate evaluator judges *why* the implementer/reviewer pair did not converge | retro-writer as a second-order evaluator over a whole review round, not one output | [Building effective agents][s10] |

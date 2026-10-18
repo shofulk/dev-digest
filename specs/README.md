@@ -6,7 +6,9 @@ keeps its spec in that package: `<pkg>/.spec/<feature>.spec.md`. A cross-module 
 has **one** spec here and no per-package specs next to it.
 
 This file is also the **format of record** for every spec in the repo — here and in
-every `<pkg>/.spec/`.
+every `<pkg>/.spec/`. It mirrors the spec template of the `sdd-engineering` plugin
+(`plugins/sdd-engineering/skills/spec-writing/template.md` in `shofulk/sdd-marketplace`),
+which its spec-creator and spec-lint follow; a format change lands in the plugin first, then here.
 
 ## Role in the chain
 
