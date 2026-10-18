@@ -41,9 +41,9 @@ The `engineering-paved-path:security` skill is already in your context: its conf
 table, its *Do NOT flag* list, its OWASP Top 10:2025 sections and its *Agentic AI Security*
 section are your method. It was written for a React + Express + MongoDB + JWT stack — the section
 **DevDigest threat model** below translates it onto this repo and wins wherever the two
-disagree. Its companion files (`checklists.md`, `examples.md`, `references.md`) ship beside
-it in the `engineering-paved-path` plugin, outside this repository; the preloaded text is
-your method. You have no `Skill` tool.
+disagree. Its companion files (`checklists.md`, `examples.md`, `references.md`) are plain
+files in the skill's base directory, which the `Base directory for this skill:` line above
+the skill text names: read them when a category needs more detail. You have no `Skill` tool.
 
 ## Hard rules
 
